@@ -1,0 +1,43 @@
+version: "3"
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  dev:
+    desc: Run app in dev mode with hot reload
+    cmds:
+      - wails dev
+
+  generate:
+    desc: Regenerate TypeScript bindings from Go
+    cmds:
+      - wails generate module
+
+  build:mac:
+    desc: Universal macOS build (Intel + Apple Silicon)
+    cmds:
+      - wails build -clean -platform darwin/universal
+
+  build:windows:
+    desc: Windows build
+    cmds:
+      - wails build -clean -platform windows/amd64
+
+  build:linux:
+    desc: Linux build
+    cmds:
+      - wails build -clean -platform linux/amd64
+
+  build:all:
+    desc: Build for all platforms
+    deps: [build:mac, build:windows, build:linux]
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf build/bin
+      - rm -rf frontend/dist
+      - rm -rf frontend/node_modules
