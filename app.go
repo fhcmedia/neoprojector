@@ -1,67 +1,98 @@
 package main
 
 import (
-	"log"
+	"database/sql"
 	"time"
 
+	"neoprojector/database"
+	"neoprojector/database/seed"
+
+	"github.com/adrg/xdg"
+	"github.com/charmbracelet/log"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
-// App is the bound service the splash window calls into during startup.
-type App struct{}
+type App struct {
+	db *sql.DB
+}
 
 func NewApp() *App {
 	return &App{}
 }
 
-// Initialize kicks off all startup work and returns immediately so events
-// can stream to the splash window during init. The work runs in a goroutine:
-// emit "splash:status" / "splash:progress", then spawn the main window and
-// close the splash. If init fails, the splash window stays open and shows
-// the error event.
-//
-// Phases are currently simulated with time.Sleep. Real DB open, migrations,
-// seeding, and update checks will replace each phase in place.
 func (a *App) Initialize() {
 	splash := application.Get().Window.Current()
-	go runInit(splash)
+	go a.runInit(splash)
 }
 
-func runInit(splash application.Window) {
+// The init process is too fast, so the sleep commands
+// are present purely for eye candy :D
+func (a *App) runInit(splash application.Window) {
 	if splash == nil {
-		log.Println("splash: ERROR - splash window is nil")
+		log.Error("splash window is nil")
 		return
 	}
+
 	emit := func(name string, data any) {
 		splash.EmitEvent(name, data)
 	}
 
-	log.Println("splash: Opening database...")
 	emit("splash:status", "Opening database...")
 	emit("splash:progress", 10)
+
+	dbPath, err := xdg.DataFile("neoprojector/neoprojector.db")
+	if err != nil {
+		log.Error("getting db path", "err", err)
+		emit("splash:error", err.Error())
+		return
+	}
+
+	a.db, err = database.Open(dbPath)
+	if err != nil {
+		log.Error("opening db", "err", err)
+		emit("splash:error", err.Error())
+		return
+	}
+	log.Info("database opened", "path", dbPath)
+	time.Sleep(300 * time.Millisecond)
+
+	emit("splash:status", "Laying the foundation...")
+	emit("splash:progress", 30)
+
+	if err := database.Migrate(a.db); err != nil {
+		log.Error("running migrations", "err", err)
+		emit("splash:error", err.Error())
+		return
+	}
+	log.Info("migrations complete")
 	time.Sleep(400 * time.Millisecond)
 
-	log.Println("splash: Running migrations...")
-	emit("splash:status", "Running migrations...")
-	emit("splash:progress", 30)
-	time.Sleep(700 * time.Millisecond)
+	emit("splash:status", "Etching the living Word......")
+	emit("splash:progress", 35)
 
-	log.Println("splash: Seeding scriptures...")
-	emit("splash:status", "Seeding scriptures...")
-	emit("splash:progress", 60)
-	time.Sleep(1200 * time.Millisecond)
+	if err := seed.Seed(a.db, func(_ string, pct int) {
+		emit("splash:progress", 35+pct*50/100)
+	}); err != nil {
+		log.Error("seeding", "err", err)
+		emit("splash:error", err.Error())
+		return
+	}
+	log.Info("seeding complete")
+	time.Sleep(300 * time.Millisecond)
 
-	log.Println("splash: Checking for updates...")
 	emit("splash:status", "Checking for updates...")
 	emit("splash:progress", 85)
-	time.Sleep(400 * time.Millisecond)
 
-	log.Println("splash: Ready")
-	emit("splash:status", "Ready")
+	time.Sleep(300 * time.Millisecond)
+
+	emit("splash:status", "Launching!")
 	emit("splash:progress", 100)
-	time.Sleep(150 * time.Millisecond)
+
+	// One final eye candy sleep :D
+	time.Sleep(1000 * time.Millisecond)
 
 	openMainWindow()
+
 	// Small delay ensures the native window is fully registered in the
 	// app's window map before we close the splash. Otherwise the app sees
 	// zero windows and terminates (ApplicationShouldTerminateAfterLastWindowClosed).

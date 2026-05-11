@@ -3,7 +3,9 @@ package main
 import (
 	"embed"
 	"log"
+	"log/slog"
 
+	charmlog "github.com/charmbracelet/log"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -11,9 +13,15 @@ import (
 var assets embed.FS
 
 func main() {
+	charmlog.SetLevel(charmlog.DebugLevel)
+
+	wailsLog := slog.New(newCharmSlogHandler(charmlog.Default().WithPrefix("wails")))
+
 	app := application.New(application.Options{
 		Name:        "neoprojector",
 		Description: "Church presentation software",
+		Logger:      wailsLog,
+		LogLevel:    slog.LevelDebug,
 		Services: []application.Service{
 			application.NewService(NewApp()),
 		},

@@ -1,8 +1,13 @@
 package seed
 
 import (
+	"database/sql"
 	"embed"
+	"encoding/json"
+	"fmt"
 	"strings"
+
+	"github.com/charmbracelet/log"
 )
 
 //go:embed *.json
@@ -114,7 +119,7 @@ I John             | 1 John             | 1 Иоанна
 II John            | 2 John             | 2 Иоанна
 III John           | 3 John             | 3 Иоанна
 Jude               | Jude               | Иуды
-Revelation of John | Revelation         | Откровение Иоанна Богослова
+Revelation of John | Revelation         | Откровение
 `)
 
 // Category is a stable backend key. The frontend can map it to colors later.
@@ -174,4 +179,87 @@ var bibles = []bibleConfig{
 		Name:        "Russian Synodal Translation",
 		Language:    "ru",
 	},
+}
+
+func Seed(db *sql.DB, progress func(string, int)) error {
+	var count int
+	if err := db.QueryRow("SELECT COUNT(*) FROM bible").Scan(&count); err != nil {
+		return fmt.Errorf("check seed state: %w", err)
+	}
+	if count > 0 {
+		log.Info("already seeded, skipping")
+		return nil
+	}
+
+	for _, b := range bibles {
+		if _, err := db.Exec(
+			"INSERT INTO bible (translation, name, language) VALUES (?, ?, ?)",
+			b.Translation, b.Name, b.Language,
+		); err != nil {
+			return fmt.Errorf("insert bible %s: %w", b.Translation, err)
+		}
+	}
+
+	for i, book := range bibleBooks {
+		cat := bibleBookCategory(i + 1)
+		if _, err := db.Exec(
+			"INSERT INTO bible_book (name, position, category, name_kjv, name_rst) VALUES (?, ?, ?, ?, ?)",
+			book.Name, i+1, cat, book.NameKJV, book.NameRST,
+		); err != nil {
+			return fmt.Errorf("insert bible_book %s: %w", book.Name, err)
+		}
+	}
+
+	for ti, b := range bibles {
+		progress(fmt.Sprintf("Seeding %s...", b.Name), 35+ti*50/len(bibles))
+
+		data, err := dataFS.ReadFile(b.File)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", b.File, err)
+		}
+
+		var bibleData jsonBible
+		if err := json.Unmarshal(data, &bibleData); err != nil {
+			return fmt.Errorf("unmarshal %s: %w", b.File, err)
+		}
+
+		tx, err := db.Begin()
+		if err != nil {
+			return fmt.Errorf("begin tx: %w", err)
+		}
+
+		stmt, err := tx.Prepare(
+			"INSERT INTO bible_verse (translation, book, chapter, verse, text) VALUES (?, ?, ?, ?, ?)",
+		)
+		if err != nil {
+			tx.Rollback()
+			return fmt.Errorf("prepare stmt: %w", err)
+		}
+
+		verseCount := 0
+		for _, book := range bibleData.Books {
+			for _, chapter := range book.Chapters {
+				for _, verse := range chapter.Verses {
+					if _, err := stmt.Exec(b.Translation, book.Name, chapter.Chapter, verse.Verse, verse.Text); err != nil {
+						stmt.Close()
+						tx.Rollback()
+						return fmt.Errorf("insert verse: %w", err)
+					}
+					verseCount++
+				}
+			}
+		}
+
+		if err := stmt.Close(); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("close stmt: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit tx: %w", err)
+		}
+
+		log.Info("seeded verses", "count", verseCount)
+	}
+
+	return nil
 }
