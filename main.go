@@ -2,32 +2,57 @@ package main
 
 import (
 	"embed"
+	"log"
 
-	"github.com/wailsapp/wails/v2"
-	"github.com/wailsapp/wails/v2/pkg/options"
-	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 //go:embed all:dist
 var assets embed.FS
 
 func main() {
-	app := NewApp()
-
-	err := wails.Run(&options.App{
-		Title:  "neoprojector",
-		Width:  1024,
-		Height: 768,
-		AssetServer: &assetserver.Options{
-			Assets: assets,
+	app := application.New(application.Options{
+		Name:        "neoprojector",
+		Description: "Church presentation software",
+		Services: []application.Service{
+			application.NewService(NewApp()),
 		},
-		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		OnStartup:        app.startup,
-		Bind: []any{
-			app,
+		Assets: application.AssetOptions{
+			Handler: application.AssetFileServerFS(assets),
+		},
+		Mac: application.MacOptions{
+			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 	})
-	if err != nil {
-		println("Error:", err.Error())
+
+	openSplashWindow()
+
+	if err := app.Run(); err != nil {
+		log.Fatal(err)
 	}
+}
+
+func openSplashWindow() *application.WebviewWindow {
+	return application.Get().Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:            "splash",
+		Title:           "neoprojector",
+		Width:           512,
+		Height:          256,
+		Frameless:       true,
+		DisableResize:   true,
+		DevToolsEnabled: false,
+		InitialPosition: application.WindowCentered,
+		URL: "/splash",
+	})
+}
+
+func openMainWindow() *application.WebviewWindow {
+	return application.Get().Window.NewWithOptions(application.WebviewWindowOptions{
+		Name:            "main",
+		Title:           "neoprojector",
+		Width:           1024,
+		Height:          768,
+		InitialPosition: application.WindowCentered,
+		URL:             "/",
+	})
 }

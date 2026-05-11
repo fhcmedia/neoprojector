@@ -8,13 +8,14 @@ tasks:
 
   dev:
     desc: Run app in dev mode with hot reload
+    deps: [generate:bindings]
     cmds:
-      - wails dev
+      - go tool wails3 dev -config ./build/config.yml -port 9245
 
-  generate:wails:
-    desc: Regenerate TypeScript bindings from Go
+  generate:bindings:
+    desc: Regenerate frontend bindings from Go services
     cmds:
-      - wails generate module
+      - go tool wails3 generate bindings -d ./bindings -ts
 
   generate:sqlc:
     desc: Generate Go code from SQL via sqlc
@@ -28,18 +29,21 @@ tasks:
 
   build:mac:
     desc: Universal macOS build (Intel + Apple Silicon)
+    deps: [generate:bindings]
     cmds:
-      - wails build -clean -platform darwin/universal
+      - go tool wails3 build -clean -platform darwin/universal
 
   build:windows:
     desc: Windows build
+    deps: [generate:bindings]
     cmds:
-      - wails build -clean -platform windows/amd64
+      - go tool wails3 build -clean -platform windows/amd64
 
   build:linux:
     desc: Linux build
+    deps: [generate:bindings]
     cmds:
-      - wails build -clean -platform linux/amd64
+      - go tool wails3 build -clean -platform linux/amd64
 
   build:all:
     desc: Build for all platforms
@@ -49,5 +53,6 @@ tasks:
     desc: Remove build artifacts
     cmds:
       - rm -rf build/bin
-      - rm -rf frontend/dist
-      - rm -rf frontend/node_modules
+      - rm -rf dist
+      - rm -rf node_modules
+      - rm -rf bindings
