@@ -1,21 +1,21 @@
-import { useState } from "react"
-import { createFileRoute } from "@tanstack/react-router"
-import { useQuery } from "@tanstack/react-query"
-import { Greet } from "@/wailsjs/go/main/App"
+import { useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { Greet } from "@/wailsjs/go/main/App";
 
 export const Route = createFileRoute("/")({
   component: Index,
-})
+});
 
 function Index() {
-  const [name, setName] = useState("")
-  const [submitted, setSubmitted] = useState("")
+  const [name, setName] = useState("");
+  const [submitted, setSubmitted] = useState("");
 
   const greetQuery = useQuery({
     queryKey: ["greet", submitted],
     queryFn: () => Greet(submitted),
     enabled: submitted.length > 0,
-  })
+  });
 
   return (
     <div className="flex h-screen flex-col items-center justify-center gap-6">
@@ -39,5 +39,5 @@ function Index() {
         <p className="text-lg text-muted-foreground">{greetQuery.data}</p>
       )}
     </div>
-  )
+  );
 }

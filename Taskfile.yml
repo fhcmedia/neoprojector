@@ -11,10 +11,15 @@ tasks:
     cmds:
       - wails dev
 
-  generate:
+  generate:wails:
     desc: Regenerate TypeScript bindings from Go
     cmds:
       - wails generate module
+
+  generate:sqlc:
+    desc: Generate Go code from SQL via sqlc
+    cmds:
+      - sqlc generate
 
   build:mac:
     desc: Universal macOS build (Intel + Apple Silicon)
