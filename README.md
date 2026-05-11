@@ -7,4 +7,4 @@ Modern agentic church presentation software
 
 ---
 
-Made with ❤️ by the FHCMedia team
+Made with ❤️ by the fhcmedia team!
