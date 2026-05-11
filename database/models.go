@@ -14,6 +14,8 @@ type BibleBook struct {
 	Name     string `json:"name"`
 	Position int64  `json:"position"`
 	Category string `json:"category"`
+	NameKjv  string `json:"name_kjv"`
+	NameRst  string `json:"name_rst"`
 }
 
 type BibleTranslationMap struct {

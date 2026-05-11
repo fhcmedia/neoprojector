@@ -21,6 +21,11 @@ tasks:
     cmds:
       - sqlc generate
 
+  migrate:
+    desc: Run goose migrations, e.g. task migrate -- -db ./neoprojector.db up
+    cmds:
+      - go run ./cmd/migrate {{.CLI_ARGS}}
+
   build:mac:
     desc: Universal macOS build (Intel + Apple Silicon)
     cmds:

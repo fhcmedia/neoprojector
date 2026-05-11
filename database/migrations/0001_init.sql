@@ -1,3 +1,4 @@
+-- +goose Up
 CREATE TABLE IF NOT EXISTS service (
   id          INTEGER PRIMARY KEY,
   name        TEXT UNIQUE NOT NULL DEFAULT (strftime('%m-%d-%y', 'now')),
@@ -22,31 +23,6 @@ CREATE TABLE IF NOT EXISTS service_item (
   updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS service_item_bible (
-  item_id     INTEGER PRIMARY KEY REFERENCES service_item(id) ON DELETE CASCADE,
-  translation TEXT NOT NULL REFERENCES bible(translation),
-  book        TEXT NOT NULL REFERENCES bible_book(name),
-  chapter     INTEGER NOT NULL,
-  verse_start INTEGER NOT NULL,
-  verse_end   INTEGER NOT NULL,
-  created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS service_item_song (
-  item_id     INTEGER PRIMARY KEY REFERENCES service_item(id) ON DELETE CASCADE,
-  song_id     INTEGER NOT NULL REFERENCES song(id),
-  created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS service_item_media (
-  item_id     INTEGER PRIMARY KEY REFERENCES service_item(id) ON DELETE CASCADE,
-  media_id    INTEGER NOT NULL REFERENCES media(id),
-  created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
 CREATE TABLE IF NOT EXISTS bible (
   translation TEXT PRIMARY KEY,
   name        TEXT UNIQUE NOT NULL,
@@ -56,7 +32,9 @@ CREATE TABLE IF NOT EXISTS bible (
 CREATE TABLE IF NOT EXISTS bible_book (
   name        TEXT PRIMARY KEY,
   position    INTEGER NOT NULL UNIQUE,
-  category    TEXT NOT NULL
+  category    TEXT NOT NULL,
+  name_kjv    TEXT NOT NULL,
+  name_rst    TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS bible_verse (
@@ -108,9 +86,34 @@ CREATE TABLE IF NOT EXISTS song_line (
 CREATE TABLE IF NOT EXISTS media (
   id INTEGER PRIMARY KEY,
   type TEXT NOT NULL,
-  title TEXT NOT NULL, 
+  title TEXT NOT NULL,
   path TEXT NOT NULL,
   original_filename TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS service_item_bible (
+  item_id     INTEGER PRIMARY KEY REFERENCES service_item(id) ON DELETE CASCADE,
+  translation TEXT NOT NULL REFERENCES bible(translation),
+  book        TEXT NOT NULL REFERENCES bible_book(name),
+  chapter     INTEGER NOT NULL,
+  verse_start INTEGER NOT NULL,
+  verse_end   INTEGER NOT NULL,
+  created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS service_item_song (
+  item_id     INTEGER PRIMARY KEY REFERENCES service_item(id) ON DELETE CASCADE,
+  song_id     INTEGER NOT NULL REFERENCES song(id),
+  created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS service_item_media (
+  item_id     INTEGER PRIMARY KEY REFERENCES service_item(id) ON DELETE CASCADE,
+  media_id    INTEGER NOT NULL REFERENCES media(id),
+  created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

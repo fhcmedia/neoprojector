@@ -10,18 +10,28 @@ import (
 )
 
 const bibleBookByName = `-- name: BibleBookByName :one
-SELECT name, position, category FROM bible_book WHERE name = ?
+SELECT name, position, category, name_kjv, name_rst
+FROM bible_book
+WHERE name = ?
 `
 
 func (q *Queries) BibleBookByName(ctx context.Context, name string) (BibleBook, error) {
 	row := q.db.QueryRowContext(ctx, bibleBookByName, name)
 	var i BibleBook
-	err := row.Scan(&i.Name, &i.Position, &i.Category)
+	err := row.Scan(
+		&i.Name,
+		&i.Position,
+		&i.Category,
+		&i.NameKjv,
+		&i.NameRst,
+	)
 	return i, err
 }
 
 const listBibleBooks = `-- name: ListBibleBooks :many
-SELECT name, position, category FROM bible_book ORDER BY position
+SELECT name, position, category, name_kjv, name_rst
+FROM bible_book
+ORDER BY position
 `
 
 func (q *Queries) ListBibleBooks(ctx context.Context) ([]BibleBook, error) {
@@ -33,7 +43,13 @@ func (q *Queries) ListBibleBooks(ctx context.Context) ([]BibleBook, error) {
 	items := []BibleBook{}
 	for rows.Next() {
 		var i BibleBook
-		if err := rows.Scan(&i.Name, &i.Position, &i.Category); err != nil {
+		if err := rows.Scan(
+			&i.Name,
+			&i.Position,
+			&i.Category,
+			&i.NameKjv,
+			&i.NameRst,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

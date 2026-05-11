@@ -1,5 +1,9 @@
 -- name: BibleBookByName :one
-SELECT * FROM bible_book WHERE name = ?;
+SELECT name, position, category, name_kjv, name_rst
+FROM bible_book
+WHERE name = ?;
 
 -- name: ListBibleBooks :many
-SELECT * FROM bible_book ORDER BY position;
+SELECT name, position, category, name_kjv, name_rst
+FROM bible_book
+ORDER BY position;
