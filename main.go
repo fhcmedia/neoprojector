@@ -5,6 +5,11 @@ import (
 	"log"
 	"log/slog"
 
+	"neoprojector/bible"
+	"neoprojector/media"
+	"neoprojector/schedule"
+	"neoprojector/songs"
+
 	charmlog "github.com/charmbracelet/log"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -24,6 +29,10 @@ func main() {
 		LogLevel:    slog.LevelDebug,
 		Services: []application.Service{
 			application.NewService(NewApp()),
+			application.NewService(songs.New()),
+			application.NewService(bible.New()),
+			application.NewService(media.New()),
+			application.NewService(schedule.New()),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
