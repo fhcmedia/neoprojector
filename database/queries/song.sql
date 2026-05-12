@@ -1,5 +1,5 @@
 -- name: CreateSong :one
-INSERT INTO song (title, category) VALUES (?, ?)
+INSERT INTO song (title) VALUES (?)
 RETURNING *;
 
 -- name: SongByID :one
@@ -13,9 +13,9 @@ SELECT * FROM song
 WHERE title LIKE '%' || ? || '%'
 ORDER BY title;
 
--- name: UpdateSong :one
+-- name: UpdateSongTitle :one
 UPDATE song
-SET title = ?, category = ?, updated_at = CURRENT_TIMESTAMP
+SET title = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
 RETURNING *;
 

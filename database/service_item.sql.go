@@ -33,6 +33,28 @@ func (q *Queries) CreateServiceItem(ctx context.Context, arg CreateServiceItemPa
 	return i, err
 }
 
+const createServiceItemAppend = `-- name: CreateServiceItemAppend :one
+INSERT INTO service_item (section_id, position)
+VALUES (
+  ?1,
+  COALESCE((SELECT MAX(position) + 1 FROM service_item WHERE service_item.section_id = ?1), 0)
+)
+RETURNING id, section_id, position, created_at, updated_at
+`
+
+func (q *Queries) CreateServiceItemAppend(ctx context.Context, sectionID int64) (ServiceItem, error) {
+	row := q.db.QueryRowContext(ctx, createServiceItemAppend, sectionID)
+	var i ServiceItem
+	err := row.Scan(
+		&i.ID,
+		&i.SectionID,
+		&i.Position,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const deleteServiceItem = `-- name: DeleteServiceItem :exec
 DELETE FROM service_item WHERE id = ?
 `
@@ -77,6 +99,113 @@ func (q *Queries) ListServiceItems(ctx context.Context, sectionID int64) ([]Serv
 	return items, nil
 }
 
+const listServiceItemsWithContent = `-- name: ListServiceItemsWithContent :many
+SELECT
+  si.id,
+  si.section_id,
+  si.position,
+  CASE
+    WHEN sis.item_id IS NOT NULL THEN 'song'
+    WHEN sib.item_id IS NOT NULL THEN 'bible'
+    WHEN sim.item_id IS NOT NULL THEN 'media'
+    ELSE ''
+  END AS kind,
+  CAST(COALESCE(sis.song_id, 0) AS INTEGER) AS song_id,
+  CAST(COALESCE(sib.book, '') AS TEXT) AS book,
+  CAST(COALESCE(sib.chapter, 0) AS INTEGER) AS chapter,
+  CAST(COALESCE(sib.verse_start, 0) AS INTEGER) AS verse_start,
+  CAST(COALESCE(sib.verse_end, 0) AS INTEGER) AS verse_end,
+  CAST(COALESCE(sim.media_id, 0) AS INTEGER) AS media_id,
+  CAST(COALESCE(s.title, m.title, '') AS TEXT) AS label,
+  CAST(COALESCE(bb.name_kjv, '') AS TEXT) AS book_kjv
+FROM service_item si
+LEFT JOIN service_item_song sis ON sis.item_id = si.id
+LEFT JOIN service_item_bible sib ON sib.item_id = si.id
+LEFT JOIN service_item_media sim ON sim.item_id = si.id
+LEFT JOIN song s ON s.id = sis.song_id
+LEFT JOIN media m ON m.id = sim.media_id
+LEFT JOIN bible_book bb ON bb.name = sib.book
+WHERE si.section_id = ?
+ORDER BY si.position
+`
+
+type ListServiceItemsWithContentRow struct {
+	ID         int64  `json:"id"`
+	SectionID  int64  `json:"section_id"`
+	Position   int64  `json:"position"`
+	Kind       string `json:"kind"`
+	SongID     int64  `json:"song_id"`
+	Book       string `json:"book"`
+	Chapter    int64  `json:"chapter"`
+	VerseStart int64  `json:"verse_start"`
+	VerseEnd   int64  `json:"verse_end"`
+	MediaID    int64  `json:"media_id"`
+	Label      string `json:"label"`
+	BookKjv    string `json:"book_kjv"`
+}
+
+func (q *Queries) ListServiceItemsWithContent(ctx context.Context, sectionID int64) ([]ListServiceItemsWithContentRow, error) {
+	rows, err := q.db.QueryContext(ctx, listServiceItemsWithContent, sectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListServiceItemsWithContentRow{}
+	for rows.Next() {
+		var i ListServiceItemsWithContentRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SectionID,
+			&i.Position,
+			&i.Kind,
+			&i.SongID,
+			&i.Book,
+			&i.Chapter,
+			&i.VerseStart,
+			&i.VerseEnd,
+			&i.MediaID,
+			&i.Label,
+			&i.BookKjv,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const moveServiceItem = `-- name: MoveServiceItem :one
+UPDATE service_item
+SET section_id = ?, position = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING id, section_id, position, created_at, updated_at
+`
+
+type MoveServiceItemParams struct {
+	SectionID int64 `json:"section_id"`
+	Position  int64 `json:"position"`
+	ID        int64 `json:"id"`
+}
+
+func (q *Queries) MoveServiceItem(ctx context.Context, arg MoveServiceItemParams) (ServiceItem, error) {
+	row := q.db.QueryRowContext(ctx, moveServiceItem, arg.SectionID, arg.Position, arg.ID)
+	var i ServiceItem
+	err := row.Scan(
+		&i.ID,
+		&i.SectionID,
+		&i.Position,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const nextServiceItemPosition = `-- name: NextServiceItemPosition :one
 SELECT COALESCE(MAX(position) + 1, 0) AS next_position
 FROM service_item
@@ -105,6 +234,22 @@ func (q *Queries) ServiceItemByID(ctx context.Context, id int64) (ServiceItem, e
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const setServiceItemPosition = `-- name: SetServiceItemPosition :exec
+UPDATE service_item
+SET position = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`
+
+type SetServiceItemPositionParams struct {
+	Position int64 `json:"position"`
+	ID       int64 `json:"id"`
+}
+
+func (q *Queries) SetServiceItemPosition(ctx context.Context, arg SetServiceItemPositionParams) error {
+	_, err := q.db.ExecContext(ctx, setServiceItemPosition, arg.Position, arg.ID)
+	return err
 }
 
 const updateServiceItemPosition = `-- name: UpdateServiceItemPosition :one

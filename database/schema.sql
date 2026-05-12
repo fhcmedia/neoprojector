@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS service_section (
   service_id  INTEGER NOT NULL REFERENCES service(id) ON DELETE CASCADE,
   name        TEXT NOT NULL,
   position    INTEGER NOT NULL,
+  color       TEXT NOT NULL DEFAULT '',
   created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -59,7 +60,6 @@ CREATE TABLE IF NOT EXISTS bible_translation_map (
 CREATE TABLE IF NOT EXISTS song (
   id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
-  category TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -94,7 +94,6 @@ CREATE TABLE IF NOT EXISTS media (
 
 CREATE TABLE IF NOT EXISTS service_item_bible (
   item_id     INTEGER PRIMARY KEY REFERENCES service_item(id) ON DELETE CASCADE,
-  translation TEXT NOT NULL REFERENCES bible(translation),
   book        TEXT NOT NULL REFERENCES bible_book(name),
   chapter     INTEGER NOT NULL,
   verse_start INTEGER NOT NULL,

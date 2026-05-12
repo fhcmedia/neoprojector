@@ -44,6 +44,15 @@ func (q *Queries) DeleteSongLine(ctx context.Context, id int64) error {
 	return err
 }
 
+const deleteSongLinesForSection = `-- name: DeleteSongLinesForSection :exec
+DELETE FROM song_line WHERE section_id = ?
+`
+
+func (q *Queries) DeleteSongLinesForSection(ctx context.Context, sectionID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteSongLinesForSection, sectionID)
+	return err
+}
+
 const listSongLines = `-- name: ListSongLines :many
 SELECT id, section_id, position, text, created_at, updated_at FROM song_line
 WHERE section_id = ?

@@ -7,7 +7,6 @@ import (
 	"neoprojector/database"
 	"neoprojector/database/seed"
 
-	"github.com/adrg/xdg"
 	"github.com/charmbracelet/log"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
@@ -16,8 +15,8 @@ type App struct {
 	db *sql.DB
 }
 
-func NewApp() *App {
-	return &App{}
+func NewApp(db *sql.DB) *App {
+	return &App{db: db}
 }
 
 func (a *App) Initialize() {
@@ -39,21 +38,7 @@ func (a *App) runInit(splash application.Window) {
 
 	emit("splash:status", "Opening database...")
 	emit("splash:progress", 10)
-
-	dbPath, err := xdg.DataFile("neoprojector/neoprojector.db")
-	if err != nil {
-		log.Error("getting db path", "err", err)
-		emit("splash:error", err.Error())
-		return
-	}
-
-	a.db, err = database.Open(dbPath)
-	if err != nil {
-		log.Error("opening db", "err", err)
-		emit("splash:error", err.Error())
-		return
-	}
-	log.Info("database opened", "path", dbPath)
+	log.Info("database ready")
 	time.Sleep(300 * time.Millisecond)
 
 	emit("splash:status", "Laying the foundation...")

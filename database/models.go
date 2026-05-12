@@ -62,14 +62,13 @@ type ServiceItem struct {
 }
 
 type ServiceItemBible struct {
-	ItemID      int64  `json:"item_id"`
-	Translation string `json:"translation"`
-	Book        string `json:"book"`
-	Chapter     int64  `json:"chapter"`
-	VerseStart  int64  `json:"verse_start"`
-	VerseEnd    int64  `json:"verse_end"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	ItemID     int64  `json:"item_id"`
+	Book       string `json:"book"`
+	Chapter    int64  `json:"chapter"`
+	VerseStart int64  `json:"verse_start"`
+	VerseEnd   int64  `json:"verse_end"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
 }
 
 type ServiceItemMedium struct {
@@ -91,6 +90,7 @@ type ServiceSection struct {
 	ServiceID int64  `json:"service_id"`
 	Name      string `json:"name"`
 	Position  int64  `json:"position"`
+	Color     string `json:"color"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
@@ -98,7 +98,6 @@ type ServiceSection struct {
 type Song struct {
 	ID        int64  `json:"id"`
 	Title     string `json:"title"`
-	Category  string `json:"category"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }

@@ -50,6 +50,82 @@ func (q *Queries) BibleChapter(ctx context.Context, arg BibleChapterParams) ([]B
 	return items, nil
 }
 
+const bibleChapterVerses = `-- name: BibleChapterVerses :many
+SELECT verse, text
+FROM bible_verse
+WHERE translation = ? AND book = ? AND chapter = ?
+ORDER BY verse
+`
+
+type BibleChapterVersesParams struct {
+	Translation string `json:"translation"`
+	Book        string `json:"book"`
+	Chapter     int64  `json:"chapter"`
+}
+
+type BibleChapterVersesRow struct {
+	Verse int64  `json:"verse"`
+	Text  string `json:"text"`
+}
+
+func (q *Queries) BibleChapterVerses(ctx context.Context, arg BibleChapterVersesParams) ([]BibleChapterVersesRow, error) {
+	rows, err := q.db.QueryContext(ctx, bibleChapterVerses, arg.Translation, arg.Book, arg.Chapter)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []BibleChapterVersesRow{}
+	for rows.Next() {
+		var i BibleChapterVersesRow
+		if err := rows.Scan(&i.Verse, &i.Text); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const bibleChaptersForBook = `-- name: BibleChaptersForBook :many
+SELECT DISTINCT chapter
+FROM bible_verse
+WHERE translation = ? AND book = ?
+ORDER BY chapter
+`
+
+type BibleChaptersForBookParams struct {
+	Translation string `json:"translation"`
+	Book        string `json:"book"`
+}
+
+func (q *Queries) BibleChaptersForBook(ctx context.Context, arg BibleChaptersForBookParams) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, bibleChaptersForBook, arg.Translation, arg.Book)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var chapter int64
+		if err := rows.Scan(&chapter); err != nil {
+			return nil, err
+		}
+		items = append(items, chapter)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const bibleVerse = `-- name: BibleVerse :one
 SELECT translation, book, chapter, verse, text FROM bible_verse
 WHERE translation = ? AND book = ? AND chapter = ? AND verse = ?

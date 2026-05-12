@@ -5,6 +5,137 @@
 // @ts-ignore: Unused imports
 import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
-export function Ping(): $CancellablePromise<string> {
-    return $Call.ByID(3702340261);
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as database$0 from "../../database/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
+
+export function AddBibleItem(sectionID: number, ref: $models.BibleRef): $CancellablePromise<database$0.ServiceItem> {
+    return $Call.ByID(2120413937, sectionID, ref).then(($result: any) => {
+        return $$createType0($result);
+    });
 }
+
+export function AddMediaItem(sectionID: number, mediaID: number): $CancellablePromise<database$0.ServiceItem> {
+    return $Call.ByID(1707425107, sectionID, mediaID).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+export function AddSongItem(sectionID: number, songID: number): $CancellablePromise<database$0.ServiceItem> {
+    return $Call.ByID(670158314, sectionID, songID).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+export function CreateSection(serviceID: number, name: string): $CancellablePromise<database$0.ServiceSection> {
+    return $Call.ByID(3865555328, serviceID, name).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+/**
+ * CreateService creates a service. Empty name falls back to today's date,
+ * and " (n)" is appended on UNIQUE collisions.
+ */
+export function CreateService(name: string): $CancellablePromise<database$0.Service> {
+    return $Call.ByID(2992144688, name).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
+export function DeleteItem(id: number): $CancellablePromise<void> {
+    return $Call.ByID(1856558149, id);
+}
+
+export function DeleteSection(id: number): $CancellablePromise<void> {
+    return $Call.ByID(2954496137, id);
+}
+
+export function DeleteService(id: number): $CancellablePromise<void> {
+    return $Call.ByID(595387805, id);
+}
+
+export function ListItems(sectionID: number): $CancellablePromise<database$0.ListServiceItemsWithContentRow[]> {
+    return $Call.ByID(3763613111, sectionID).then(($result: any) => {
+        return $$createType4($result);
+    });
+}
+
+export function ListSections(serviceID: number): $CancellablePromise<database$0.ServiceSection[]> {
+    return $Call.ByID(3766434421, serviceID).then(($result: any) => {
+        return $$createType5($result);
+    });
+}
+
+export function ListServices(): $CancellablePromise<database$0.Service[]> {
+    return $Call.ByID(1287597501).then(($result: any) => {
+        return $$createType6($result);
+    });
+}
+
+/**
+ * MoveItem moves an item to a different section (or just repositions within
+ * the same section). Used by cross-section drag-and-drop.
+ */
+export function MoveItem(itemID: number, targetSectionID: number, position: number): $CancellablePromise<void> {
+    return $Call.ByID(3208277887, itemID, targetSectionID, position);
+}
+
+export function RenameSection(id: number, name: string): $CancellablePromise<database$0.ServiceSection> {
+    return $Call.ByID(925547402, id, name).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+export function RenameService(id: number, name: string): $CancellablePromise<database$0.Service> {
+    return $Call.ByID(2014165490, id, name).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
+export function ReorderItems(ids: number[]): $CancellablePromise<void> {
+    return $Call.ByID(78175248, ids);
+}
+
+/**
+ * ReorderSections sets section positions to match the given id order.
+ */
+export function ReorderSections(ids: number[]): $CancellablePromise<void> {
+    return $Call.ByID(3716704840, ids);
+}
+
+export function ServiceByID(id: number): $CancellablePromise<database$0.Service> {
+    return $Call.ByID(3320647704, id).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
+/**
+ * SetSectionColor stores a color key (e.g. "red", "blue", or "" for none).
+ * The frontend maps this key to concrete styling.
+ */
+export function SetSectionColor(id: number, color: string): $CancellablePromise<database$0.ServiceSection> {
+    return $Call.ByID(3673670661, id, color).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+/**
+ * UpdateBibleItem rewrites the bible reference attached to an existing item.
+ */
+export function UpdateBibleItem(itemID: number, ref: $models.BibleRef): $CancellablePromise<void> {
+    return $Call.ByID(742852777, itemID, ref);
+}
+
+// Private type creation functions
+const $$createType0 = database$0.ServiceItem.createFrom;
+const $$createType1 = database$0.ServiceSection.createFrom;
+const $$createType2 = database$0.Service.createFrom;
+const $$createType3 = database$0.ListServiceItemsWithContentRow.createFrom;
+const $$createType4 = $Create.Array($$createType3);
+const $$createType5 = $Create.Array($$createType1);
+const $$createType6 = $Create.Array($$createType2);

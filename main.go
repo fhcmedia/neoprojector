@@ -5,13 +5,16 @@ import (
 	"log"
 	"log/slog"
 
+	"neoprojector/database"
 	"neoprojector/services/bible"
 	"neoprojector/services/media"
 	"neoprojector/services/schedule"
 	"neoprojector/services/songs"
 
+	"github.com/adrg/xdg"
 	charmlog "github.com/charmbracelet/log"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 //go:embed all:dist
@@ -19,6 +22,15 @@ var assets embed.FS
 
 func main() {
 	charmlog.SetLevel(charmlog.DebugLevel)
+
+	dbPath, err := xdg.DataFile("neoprojector/neoprojector.db")
+	if err != nil {
+		log.Fatal("get db path: ", err)
+	}
+	db, err := database.Open(dbPath)
+	if err != nil {
+		log.Fatal("open db: ", err)
+	}
 
 	wailsLog := slog.New(newCharmSlogHandler(charmlog.Default().WithPrefix("wails")))
 
@@ -28,11 +40,11 @@ func main() {
 		Logger:      wailsLog,
 		LogLevel:    slog.LevelDebug,
 		Services: []application.Service{
-			application.NewService(NewApp()),
-			application.NewService(songs.New()),
-			application.NewService(bible.New()),
-			application.NewService(media.New()),
-			application.NewService(schedule.New()),
+			application.NewService(NewApp(db)),
+			application.NewService(songs.New(db)),
+			application.NewService(bible.New(db)),
+			application.NewService(media.New(db)),
+			application.NewService(schedule.New(db)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -64,12 +76,33 @@ func openSplashWindow() *application.WebviewWindow {
 }
 
 func openMainWindow() *application.WebviewWindow {
-	return application.Get().Window.NewWithOptions(application.WebviewWindowOptions{
+	win := application.Get().Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:            "main",
 		Title:           "neoprojector",
 		Width:           1024,
 		Height:          768,
 		InitialPosition: application.WindowCentered,
 		URL:             "/",
+		EnableFileDrop:  true,
 	})
+
+	// Forward file drops to the frontend. Wails fires the WindowFilesDropped
+	// event whenever native code reports a drop on an element marked with
+	// `data-file-drop-target`. We re-emit it as a plain frontend event so the
+	// React side can react regardless of where the drop landed.
+	win.OnWindowEvent(events.Common.WindowFilesDropped, func(e *application.WindowEvent) {
+		ctx := e.Context()
+		paths := ctx.DroppedFiles()
+		target := ctx.DropTargetDetails()
+		payload := map[string]any{
+			"paths": paths,
+		}
+		if target != nil {
+			payload["target_id"] = target.ElementID
+			payload["target_attrs"] = target.Attributes
+		}
+		win.EmitEvent("media:files-dropped", payload)
+	})
+
+	return win
 }

@@ -5,6 +5,49 @@
 // @ts-ignore: Unused imports
 import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
-export function Ping(): $CancellablePromise<string> {
-    return $Call.ByID(4127052354);
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as database$0 from "../../database/models.js";
+
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
+
+export function ListBibles(): $CancellablePromise<database$0.Bible[]> {
+    return $Call.ByID(2144096765).then(($result: any) => {
+        return $$createType1($result);
+    });
 }
+
+export function ListBooks(): $CancellablePromise<database$0.BibleBook[]> {
+    return $Call.ByID(1421696104).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
+/**
+ * ListChapters returns chapter numbers for a book in the default translation.
+ */
+export function ListChapters(book: string): $CancellablePromise<number[]> {
+    return $Call.ByID(54120124, book).then(($result: any) => {
+        return $$createType4($result);
+    });
+}
+
+/**
+ * ListVerses returns all verses in a chapter (default translation) for the picker preview.
+ */
+export function ListVerses(book: string, chapter: number): $CancellablePromise<$models.ChapterVerse[]> {
+    return $Call.ByID(2139232792, book, chapter).then(($result: any) => {
+        return $$createType6($result);
+    });
+}
+
+// Private type creation functions
+const $$createType0 = database$0.Bible.createFrom;
+const $$createType1 = $Create.Array($$createType0);
+const $$createType2 = database$0.BibleBook.createFrom;
+const $$createType3 = $Create.Array($$createType2);
+const $$createType4 = $Create.Array($Create.Any);
+const $$createType5 = $models.ChapterVerse.createFrom;
+const $$createType6 = $Create.Array($$createType5);

@@ -11,22 +11,16 @@ import (
 )
 
 const createSong = `-- name: CreateSong :one
-INSERT INTO song (title, category) VALUES (?, ?)
-RETURNING id, title, category, created_at, updated_at
+INSERT INTO song (title) VALUES (?)
+RETURNING id, title, created_at, updated_at
 `
 
-type CreateSongParams struct {
-	Title    string `json:"title"`
-	Category string `json:"category"`
-}
-
-func (q *Queries) CreateSong(ctx context.Context, arg CreateSongParams) (Song, error) {
-	row := q.db.QueryRowContext(ctx, createSong, arg.Title, arg.Category)
+func (q *Queries) CreateSong(ctx context.Context, title string) (Song, error) {
+	row := q.db.QueryRowContext(ctx, createSong, title)
 	var i Song
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
-		&i.Category,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -43,7 +37,7 @@ func (q *Queries) DeleteSong(ctx context.Context, id int64) error {
 }
 
 const listSongs = `-- name: ListSongs :many
-SELECT id, title, category, created_at, updated_at FROM song ORDER BY title
+SELECT id, title, created_at, updated_at FROM song ORDER BY title
 `
 
 func (q *Queries) ListSongs(ctx context.Context) ([]Song, error) {
@@ -58,7 +52,6 @@ func (q *Queries) ListSongs(ctx context.Context) ([]Song, error) {
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
-			&i.Category,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -76,7 +69,7 @@ func (q *Queries) ListSongs(ctx context.Context) ([]Song, error) {
 }
 
 const searchSongsByTitle = `-- name: SearchSongsByTitle :many
-SELECT id, title, category, created_at, updated_at FROM song
+SELECT id, title, created_at, updated_at FROM song
 WHERE title LIKE '%' || ? || '%'
 ORDER BY title
 `
@@ -93,7 +86,6 @@ func (q *Queries) SearchSongsByTitle(ctx context.Context, dollar_1 sql.NullStrin
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
-			&i.Category,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -111,7 +103,7 @@ func (q *Queries) SearchSongsByTitle(ctx context.Context, dollar_1 sql.NullStrin
 }
 
 const songByID = `-- name: SongByID :one
-SELECT id, title, category, created_at, updated_at FROM song WHERE id = ?
+SELECT id, title, created_at, updated_at FROM song WHERE id = ?
 `
 
 func (q *Queries) SongByID(ctx context.Context, id int64) (Song, error) {
@@ -120,33 +112,30 @@ func (q *Queries) SongByID(ctx context.Context, id int64) (Song, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
-		&i.Category,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const updateSong = `-- name: UpdateSong :one
+const updateSongTitle = `-- name: UpdateSongTitle :one
 UPDATE song
-SET title = ?, category = ?, updated_at = CURRENT_TIMESTAMP
+SET title = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, title, category, created_at, updated_at
+RETURNING id, title, created_at, updated_at
 `
 
-type UpdateSongParams struct {
-	Title    string `json:"title"`
-	Category string `json:"category"`
-	ID       int64  `json:"id"`
+type UpdateSongTitleParams struct {
+	Title string `json:"title"`
+	ID    int64  `json:"id"`
 }
 
-func (q *Queries) UpdateSong(ctx context.Context, arg UpdateSongParams) (Song, error) {
-	row := q.db.QueryRowContext(ctx, updateSong, arg.Title, arg.Category, arg.ID)
+func (q *Queries) UpdateSongTitle(ctx context.Context, arg UpdateSongTitleParams) (Song, error) {
+	row := q.db.QueryRowContext(ctx, updateSongTitle, arg.Title, arg.ID)
 	var i Song
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
-		&i.Category,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

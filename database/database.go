@@ -16,19 +16,18 @@ import (
 var migrationsFS embed.FS
 
 func Open(dbPath string) (*sql.DB, error) {
-	db, err := sql.Open("sqlite", dbPath)
+	// modernc.org/sqlite applies _pragma params to every new connection
+	// in the pool, so foreign_keys and journal_mode stay enforced even
+	// when database/sql opens fresh connections under load. Without this,
+	// FK cascades silently no-op on non-primary connections.
+	dsn := fmt.Sprintf(
+		"file:%s?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)",
+		dbPath,
+	)
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
-
-	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-		return nil, fmt.Errorf("enable WAL: %w", err)
-	}
-
-	if _, err := db.Exec("PRAGMA foreign_keys=ON"); err != nil {
-		return nil, fmt.Errorf("enable foreign keys: %w", err)
-	}
-
 	return db, nil
 }
 

@@ -35,12 +35,50 @@ func (q *Queries) CreateSongSection(ctx context.Context, arg CreateSongSectionPa
 	return i, err
 }
 
+const createSongSectionAppend = `-- name: CreateSongSectionAppend :one
+INSERT INTO song_section (song_id, type, position)
+VALUES (
+  ?1,
+  ?2,
+  COALESCE((SELECT MAX(position) + 1 FROM song_section WHERE song_section.song_id = ?1), 0)
+)
+RETURNING id, song_id, type, position, created_at, updated_at
+`
+
+type CreateSongSectionAppendParams struct {
+	SongID int64  `json:"song_id"`
+	Type   string `json:"type"`
+}
+
+func (q *Queries) CreateSongSectionAppend(ctx context.Context, arg CreateSongSectionAppendParams) (SongSection, error) {
+	row := q.db.QueryRowContext(ctx, createSongSectionAppend, arg.SongID, arg.Type)
+	var i SongSection
+	err := row.Scan(
+		&i.ID,
+		&i.SongID,
+		&i.Type,
+		&i.Position,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const deleteSongSection = `-- name: DeleteSongSection :exec
 DELETE FROM song_section WHERE id = ?
 `
 
 func (q *Queries) DeleteSongSection(ctx context.Context, id int64) error {
 	_, err := q.db.ExecContext(ctx, deleteSongSection, id)
+	return err
+}
+
+const deleteSongSectionsForSong = `-- name: DeleteSongSectionsForSong :exec
+DELETE FROM song_section WHERE song_id = ?
+`
+
+func (q *Queries) DeleteSongSectionsForSong(ctx context.Context, songID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteSongSectionsForSong, songID)
 	return err
 }
 
@@ -80,6 +118,22 @@ func (q *Queries) ListSongSections(ctx context.Context, songID int64) ([]SongSec
 	return items, nil
 }
 
+const setSongSectionPosition = `-- name: SetSongSectionPosition :exec
+UPDATE song_section
+SET position = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`
+
+type SetSongSectionPositionParams struct {
+	Position int64 `json:"position"`
+	ID       int64 `json:"id"`
+}
+
+func (q *Queries) SetSongSectionPosition(ctx context.Context, arg SetSongSectionPositionParams) error {
+	_, err := q.db.ExecContext(ctx, setSongSectionPosition, arg.Position, arg.ID)
+	return err
+}
+
 const songSectionByID = `-- name: SongSectionByID :one
 SELECT id, song_id, type, position, created_at, updated_at FROM song_section WHERE id = ?
 `
@@ -113,6 +167,32 @@ type UpdateSongSectionParams struct {
 
 func (q *Queries) UpdateSongSection(ctx context.Context, arg UpdateSongSectionParams) (SongSection, error) {
 	row := q.db.QueryRowContext(ctx, updateSongSection, arg.Type, arg.Position, arg.ID)
+	var i SongSection
+	err := row.Scan(
+		&i.ID,
+		&i.SongID,
+		&i.Type,
+		&i.Position,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateSongSectionType = `-- name: UpdateSongSectionType :one
+UPDATE song_section
+SET type = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING id, song_id, type, position, created_at, updated_at
+`
+
+type UpdateSongSectionTypeParams struct {
+	Type string `json:"type"`
+	ID   int64  `json:"id"`
+}
+
+func (q *Queries) UpdateSongSectionType(ctx context.Context, arg UpdateSongSectionTypeParams) (SongSection, error) {
+	row := q.db.QueryRowContext(ctx, updateSongSectionType, arg.Type, arg.ID)
 	var i SongSection
 	err := row.Scan(
 		&i.ID,

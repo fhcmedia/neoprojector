@@ -5,3 +5,10 @@ import * as Service from "./service.js";
 export {
     Service
 };
+
+export {
+    SectionWithLines,
+    SongFull,
+    SongSectionSpec,
+    SongSpec
+} from "./models.js";

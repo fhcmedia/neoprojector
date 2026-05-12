@@ -3,6 +3,32 @@ INSERT INTO service_section (service_id, name, position)
 VALUES (?, ?, ?)
 RETURNING *;
 
+-- name: CreateServiceSectionAppend :one
+INSERT INTO service_section (service_id, name, position)
+VALUES (
+  sqlc.arg(service_id),
+  sqlc.arg(name),
+  COALESCE((SELECT MAX(position) + 1 FROM service_section WHERE service_section.service_id = sqlc.arg(service_id)), 0)
+)
+RETURNING *;
+
+-- name: RenameServiceSection :one
+UPDATE service_section
+SET name = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING *;
+
+-- name: SetServiceSectionPosition :exec
+UPDATE service_section
+SET position = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+
+-- name: SetServiceSectionColor :one
+UPDATE service_section
+SET color = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING *;
+
 -- name: ServiceSectionByID :one
 SELECT * FROM service_section WHERE id = ?;
 

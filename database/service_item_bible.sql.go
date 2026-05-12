@@ -10,24 +10,22 @@ import (
 )
 
 const createServiceItemBible = `-- name: CreateServiceItemBible :one
-INSERT INTO service_item_bible (item_id, translation, book, chapter, verse_start, verse_end)
-VALUES (?, ?, ?, ?, ?, ?)
-RETURNING item_id, translation, book, chapter, verse_start, verse_end, created_at, updated_at
+INSERT INTO service_item_bible (item_id, book, chapter, verse_start, verse_end)
+VALUES (?, ?, ?, ?, ?)
+RETURNING item_id, book, chapter, verse_start, verse_end, created_at, updated_at
 `
 
 type CreateServiceItemBibleParams struct {
-	ItemID      int64  `json:"item_id"`
-	Translation string `json:"translation"`
-	Book        string `json:"book"`
-	Chapter     int64  `json:"chapter"`
-	VerseStart  int64  `json:"verse_start"`
-	VerseEnd    int64  `json:"verse_end"`
+	ItemID     int64  `json:"item_id"`
+	Book       string `json:"book"`
+	Chapter    int64  `json:"chapter"`
+	VerseStart int64  `json:"verse_start"`
+	VerseEnd   int64  `json:"verse_end"`
 }
 
 func (q *Queries) CreateServiceItemBible(ctx context.Context, arg CreateServiceItemBibleParams) (ServiceItemBible, error) {
 	row := q.db.QueryRowContext(ctx, createServiceItemBible,
 		arg.ItemID,
-		arg.Translation,
 		arg.Book,
 		arg.Chapter,
 		arg.VerseStart,
@@ -36,7 +34,6 @@ func (q *Queries) CreateServiceItemBible(ctx context.Context, arg CreateServiceI
 	var i ServiceItemBible
 	err := row.Scan(
 		&i.ItemID,
-		&i.Translation,
 		&i.Book,
 		&i.Chapter,
 		&i.VerseStart,
@@ -57,7 +54,7 @@ func (q *Queries) DeleteServiceItemBible(ctx context.Context, itemID int64) erro
 }
 
 const serviceItemBibleByItemID = `-- name: ServiceItemBibleByItemID :one
-SELECT item_id, translation, book, chapter, verse_start, verse_end, created_at, updated_at FROM service_item_bible WHERE item_id = ?
+SELECT item_id, book, chapter, verse_start, verse_end, created_at, updated_at FROM service_item_bible WHERE item_id = ?
 `
 
 func (q *Queries) ServiceItemBibleByItemID(ctx context.Context, itemID int64) (ServiceItemBible, error) {
@@ -65,7 +62,6 @@ func (q *Queries) ServiceItemBibleByItemID(ctx context.Context, itemID int64) (S
 	var i ServiceItemBible
 	err := row.Scan(
 		&i.ItemID,
-		&i.Translation,
 		&i.Book,
 		&i.Chapter,
 		&i.VerseStart,
@@ -78,24 +74,22 @@ func (q *Queries) ServiceItemBibleByItemID(ctx context.Context, itemID int64) (S
 
 const updateServiceItemBible = `-- name: UpdateServiceItemBible :one
 UPDATE service_item_bible
-SET translation = ?, book = ?, chapter = ?, verse_start = ?, verse_end = ?,
+SET book = ?, chapter = ?, verse_start = ?, verse_end = ?,
     updated_at = CURRENT_TIMESTAMP
 WHERE item_id = ?
-RETURNING item_id, translation, book, chapter, verse_start, verse_end, created_at, updated_at
+RETURNING item_id, book, chapter, verse_start, verse_end, created_at, updated_at
 `
 
 type UpdateServiceItemBibleParams struct {
-	Translation string `json:"translation"`
-	Book        string `json:"book"`
-	Chapter     int64  `json:"chapter"`
-	VerseStart  int64  `json:"verse_start"`
-	VerseEnd    int64  `json:"verse_end"`
-	ItemID      int64  `json:"item_id"`
+	Book       string `json:"book"`
+	Chapter    int64  `json:"chapter"`
+	VerseStart int64  `json:"verse_start"`
+	VerseEnd   int64  `json:"verse_end"`
+	ItemID     int64  `json:"item_id"`
 }
 
 func (q *Queries) UpdateServiceItemBible(ctx context.Context, arg UpdateServiceItemBibleParams) (ServiceItemBible, error) {
 	row := q.db.QueryRowContext(ctx, updateServiceItemBible,
-		arg.Translation,
 		arg.Book,
 		arg.Chapter,
 		arg.VerseStart,
@@ -105,7 +99,6 @@ func (q *Queries) UpdateServiceItemBible(ctx context.Context, arg UpdateServiceI
 	var i ServiceItemBible
 	err := row.Scan(
 		&i.ItemID,
-		&i.Translation,
 		&i.Book,
 		&i.Chapter,
 		&i.VerseStart,

@@ -5,6 +5,32 @@
 // @ts-ignore: Unused imports
 import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
-export function Ping(): $CancellablePromise<string> {
-    return $Call.ByID(1410905228);
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as database$0 from "../../database/models.js";
+
+export function DeleteMedia(id: number): $CancellablePromise<void> {
+    return $Call.ByID(3130460193, id);
 }
+
+/**
+ * ImportFiles copies each given absolute file path into the app's media
+ * storage directory under a uuid-prefixed filename, then inserts a media row
+ * for it. Files of unknown type are skipped. Returns the created rows in
+ * input order; missing entries indicate skipped files.
+ */
+export function ImportFiles(paths: string[]): $CancellablePromise<database$0.Medium[]> {
+    return $Call.ByID(4277240612, paths).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+export function ListMedia(): $CancellablePromise<database$0.Medium[]> {
+    return $Call.ByID(3428398416).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
+// Private type creation functions
+const $$createType0 = database$0.Medium.createFrom;
+const $$createType1 = $Create.Array($$createType0);

@@ -1,5 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useTheme } from "next-themes"
+import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react"
+import { ToggleGroup, ToggleGroupItem } from "@/components/toggle-group"
 
 export const Route = createFileRoute("/_app/settings")({
   component: Settings,
@@ -33,6 +36,82 @@ function SectionHeader({
   )
 }
 
+function Row({
+  label,
+  description,
+  children,
+}: {
+  label: string
+  description?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex items-center justify-between gap-6 py-3">
+      <div className="space-y-0.5">
+        <div className="text-xs font-medium">{label}</div>
+        {description && (
+          <div className="text-[11px] text-muted-foreground">
+            {description}
+          </div>
+        )}
+      </div>
+      <div className="shrink-0">{children}</div>
+    </div>
+  )
+}
+
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme()
+  // Avoid SSR/hydration mismatch — render once mounted.
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+  const value = mounted ? (theme ?? "system") : "system"
+
+  return (
+    <ToggleGroup
+      type="single"
+      value={value}
+      onValueChange={(v) => v && setTheme(v)}
+      variant="outline"
+      size="sm"
+    >
+      <ToggleGroupItem value="system" aria-label="System theme">
+        <MonitorIcon className="size-3.5" />
+        System
+      </ToggleGroupItem>
+      <ToggleGroupItem value="light" aria-label="Light theme">
+        <SunIcon className="size-3.5" />
+        Light
+      </ToggleGroupItem>
+      <ToggleGroupItem value="dark" aria-label="Dark theme">
+        <MoonIcon className="size-3.5" />
+        Dark
+      </ToggleGroupItem>
+    </ToggleGroup>
+  )
+}
+
+function GeneralPanel() {
+  return (
+    <div className="divide-y divide-border/40">
+      <Row
+        label="Theme"
+        description="Follow your OS preference or pin to a specific theme."
+      >
+        <ThemeToggle />
+      </Row>
+    </div>
+  )
+}
+
+function Placeholder({ label }: { label: string }) {
+  return (
+    <div className="py-3 text-[11px] text-muted-foreground">
+      {label} settings will live here.
+    </div>
+  )
+}
+
 function Settings() {
   const [active, setActive] = useState<SectionId>("general")
   const current = sections.find((s) => s.id === active)!
@@ -62,8 +141,17 @@ function Settings() {
         <div className="mx-auto max-w-2xl space-y-6">
           <SectionHeader
             title={current.label}
-            description={`${current.label} settings will live here.`}
+            description={
+              active === "general"
+                ? "Look and feel."
+                : `${current.label} settings will live here.`
+            }
           />
+          {active === "general" ? (
+            <GeneralPanel />
+          ) : (
+            <Placeholder label={current.label} />
+          )}
         </div>
       </section>
     </div>

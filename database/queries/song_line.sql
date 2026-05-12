@@ -19,3 +19,6 @@ RETURNING *;
 
 -- name: DeleteSongLine :exec
 DELETE FROM song_line WHERE id = ?;
+
+-- name: DeleteSongLinesForSection :exec
+DELETE FROM song_line WHERE section_id = ?;
