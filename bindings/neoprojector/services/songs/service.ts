@@ -6,5 +6,5 @@
 import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
 export function Ping(): $CancellablePromise<string> {
-    return $Call.ByID(1251173);
+    return $Call.ByID(135103418);
 }

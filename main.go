@@ -5,10 +5,10 @@ import (
 	"log"
 	"log/slog"
 
-	"neoprojector/bible"
-	"neoprojector/media"
-	"neoprojector/schedule"
-	"neoprojector/songs"
+	"neoprojector/services/bible"
+	"neoprojector/services/media"
+	"neoprojector/services/schedule"
+	"neoprojector/services/songs"
 
 	charmlog "github.com/charmbracelet/log"
 	"github.com/wailsapp/wails/v3/pkg/application"
