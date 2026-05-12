@@ -77,13 +77,14 @@ func openSplashWindow() *application.WebviewWindow {
 
 func openMainWindow() *application.WebviewWindow {
 	win := application.Get().Window.NewWithOptions(application.WebviewWindowOptions{
-		Name:            "main",
-		Title:           "neoprojector",
-		Width:           1024,
-		Height:          768,
-		InitialPosition: application.WindowCentered,
-		URL:             "/",
-		EnableFileDrop:  true,
+		Name:                       "main",
+		Title:                      "neoprojector",
+		Width:                      1024,
+		Height:                     768,
+		InitialPosition:            application.WindowCentered,
+		URL:                        "/",
+		EnableFileDrop:             true,
+		DefaultContextMenuDisabled: true,
 	})
 
 	// Forward file drops to the frontend. Wails fires the WindowFilesDropped

@@ -144,6 +144,37 @@ export function BiblePicker(props: Props) {
     addMut.mutate(ref, { onSuccess: props.onSaved })
   }
 
+  // Pull the active chapter's verses up here so we know the chapter's max
+  // verse number — used to clamp a typed range like "Gen 1:45-100" down to
+  // 31 and to drive the muted hint below the verse view.
+  const { data: chapterVerses } = useQuery({
+    queryKey: ["bible", "verses", sel?.book, sel?.chapter],
+    queryFn: () =>
+      Bible.ListVerses(sel!.book, sel!.chapter) as unknown as Promise<
+        ChapterVerse[]
+      >,
+    enabled: !!sel?.book && !!sel?.chapter,
+  })
+  const maxVerse = chapterVerses?.length ?? 0
+  const [clampNotice, setClampNotice] = useState(false)
+
+  // Clamp the verse range to the chapter's actual length once verses load
+  // for the active chapter. Fires after applyParse so a user pasting an
+  // out-of-range ref gets pulled into bounds silently.
+  useEffect(() => {
+    if (!sel || maxVerse === 0) return
+    if (sel.from <= maxVerse && sel.to <= maxVerse) return
+    const from = Math.min(sel.from, maxVerse)
+    const to = Math.min(sel.to, maxVerse)
+    setSel({ ...sel, from, to })
+    setClampNotice(true)
+  }, [sel?.book, sel?.chapter, maxVerse]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Drop the clamp notice when the user moves to a different chapter.
+  useEffect(() => {
+    setClampNotice(false)
+  }, [sel?.book, sel?.chapter])
+
   const stepIndex =
     step === "books" ? 0 : step === "chapters" ? 1 : 2
   const selectedBook = books?.find((b) => b.name === sel?.book)
@@ -229,6 +260,14 @@ export function BiblePicker(props: Props) {
           </div>
         </div>
       </div>
+
+      {step === "verses" && sel && maxVerse > 0 && (
+        <div className="text-[10px] text-muted-foreground/60">
+          {clampNotice
+            ? `Chapter has ${maxVerse} verse${maxVerse === 1 ? "" : "s"} — range trimmed`
+            : `Chapter has ${maxVerse} verse${maxVerse === 1 ? "" : "s"}`}
+        </div>
+      )}
 
       <Button
         onClick={() => submit()}

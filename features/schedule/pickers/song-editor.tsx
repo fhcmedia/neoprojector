@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
   PlusIcon,
@@ -134,7 +134,44 @@ export function SongEditor(props: Props) {
     }
   }
 
-  const canSubmit = title.trim().length > 0 || sections.length > 0
+  // Fetch the library for live duplicate-title detection. React Query
+  // dedupes against the same key the picker uses, so no extra fetch.
+  const { data: librarySongs } = useQuery({
+    queryKey: ["songs", "list"],
+    queryFn: () => Songs.ListSongs() as unknown as Promise<Song[]>,
+  })
+
+  const validation = useMemo<{ ok: boolean; reason: string }>(() => {
+    const trimmedTitle = title.trim()
+    if (!trimmedTitle) return { ok: false, reason: "Title is required." }
+
+    // Duplicate title check (case-insensitive). Exclude the song being edited.
+    if (librarySongs) {
+      const lower = trimmedTitle.toLowerCase()
+      const clash = librarySongs.find(
+        (s) =>
+          s.title.toLowerCase() === lower && s.id !== editingSongId
+      )
+      if (clash) {
+        return {
+          ok: false,
+          reason: "A song with this title already exists.",
+        }
+      }
+    }
+
+    if (sections.length === 0) {
+      return { ok: false, reason: "Add at least one section." }
+    }
+
+    const emptySection = sections.find((s) => !s.text.trim())
+    if (emptySection) {
+      return { ok: false, reason: "Every section needs lyrics." }
+    }
+
+    return { ok: true, reason: "" }
+  }, [title, sections, librarySongs, editingSongId])
+
   const submitLabel = isEdit ? "Save" : "Create & add to schedule"
 
   if (isEdit && isLoading) {
@@ -161,6 +198,7 @@ export function SongEditor(props: Props) {
             <SectionBlock
               key={sec.localId}
               section={sec}
+              empty={!sec.text.trim()}
               onChangeType={(t) => handleChangeType(sec.localId, t)}
               onChangeText={(t) => handleChangeText(sec.localId, t)}
               onDelete={() => handleDeleteSection(sec.localId)}
@@ -173,11 +211,17 @@ export function SongEditor(props: Props) {
         </div>
       </div>
 
+      {!validation.ok && (
+        <div className="text-[11px] text-muted-foreground/80">
+          {validation.reason}
+        </div>
+      )}
+
       <Button
         type="button"
         size="sm"
         onClick={handleSubmit}
-        disabled={busy || !canSubmit}
+        disabled={busy || !validation.ok}
         className="w-full"
       >
         {submitLabel}
@@ -221,11 +265,13 @@ function InsertSection({
 
 function SectionBlock({
   section,
+  empty,
   onChangeType,
   onChangeText,
   onDelete,
 }: {
   section: LocalSection
+  empty: boolean
   onChangeType: (type: string) => void
   onChangeText: (text: string) => void
   onDelete: () => void
@@ -233,7 +279,12 @@ function SectionBlock({
   const type = songSectionType(section.type)
 
   return (
-    <div className="rounded-md border border-border/50">
+    <div
+      className={cn(
+        "rounded-md border",
+        empty ? "border-destructive/40" : "border-border/50"
+      )}
+    >
       <div
         className={cn(
           "flex items-center justify-between gap-2 rounded-t-md px-2 py-1.5",

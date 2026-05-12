@@ -97,6 +97,7 @@ function ItemRow({
   )
   const Icon = iconFor(item.kind)
   const label = labelFor(item)
+  const editable = item.kind === "song" || item.kind === "bible"
 
   return (
     <ContextMenu>
@@ -106,10 +107,7 @@ function ItemRow({
           style={style}
           className={cn(
             "group flex w-full items-center gap-1 pl-3 pr-2 text-left text-xs transition-colors",
-            // Resting state: section color (dimmer than the header) or none.
             !isActive && color.item,
-            // Hover state: section-color variant for colored sections, muted
-            // gray fallback for the default/no-color section.
             !isActive && color.itemHover,
             !isActive && "text-muted-foreground hover:text-foreground",
             isActive && cn(color.itemActive, "text-foreground")
@@ -139,7 +137,7 @@ function ItemRow({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        {(item.kind === "song" || item.kind === "bible") && (
+        {editable && (
           <ContextMenuItem onSelect={onEdit}>
             <PencilIcon className="size-3.5" />
             Edit

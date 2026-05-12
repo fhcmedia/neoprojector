@@ -23,16 +23,6 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/context-menu"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/alert-dialog"
 import { Input } from "@/components/input"
 import { cn } from "@/lib/utils"
 import {
@@ -61,6 +51,8 @@ import {
 import { PlayedProvider } from "./played-context"
 import { sectionColor, sectionColorList } from "./section-colors"
 import { PaletteIcon, XIcon, CheckIcon } from "lucide-react"
+import { AddArea } from "./add-area"
+import { InlineConfirm } from "./inline-confirm"
 
 type Props = {
   serviceId: number
@@ -239,47 +231,45 @@ export function ScheduleView({
             {service?.name ?? "…"}
           </button>
         )}
-        <button
-          type="button"
-          aria-label="Add section"
-          onClick={handleCreateSection}
-          className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <PlusIcon className="size-3.5" />
-        </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto py-1">
+      <div className="flex flex-1 flex-col overflow-y-auto py-1">
         {isLoading ? (
           <div className="px-3 py-2 text-xs text-muted-foreground/60">
             Loading…
           </div>
-        ) : !sections || sections.length === 0 ? (
-          <div className="px-3 py-3 text-xs text-muted-foreground/60">
-            No sections yet. Click + to add one.
-          </div>
         ) : (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-          >
-            <VerticalSortable
-              ids={sections.map((s) => `section-${s.id}`)}
-            >
-              {sections.map((section) => (
-                <SectionRow
-                  key={section.id}
-                  section={section}
-                  serviceId={serviceId}
-                  activeItemId={activeItemId}
-                  onSelectItem={onSelectItem}
-                  onAddItem={onAddItem}
-                  onEditItem={onEditItem}
-                />
-              ))}
-            </VerticalSortable>
-          </DndContext>
+          <>
+            {sections && sections.length > 0 && (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <VerticalSortable
+                  ids={sections.map((s) => `section-${s.id}`)}
+                >
+                  {sections.map((section) => (
+                    <SectionRow
+                      key={section.id}
+                      section={section}
+                      serviceId={serviceId}
+                      activeItemId={activeItemId}
+                      onSelectItem={onSelectItem}
+                      onAddItem={onAddItem}
+                      onEditItem={onEditItem}
+                    />
+                  ))}
+                </VerticalSortable>
+              </DndContext>
+            )}
+            <AddArea
+              hasContent={!!sections && sections.length > 0}
+              onClick={handleCreateSection}
+              fullLabel="Click to add your first section"
+              hoverLabel="Add new section"
+            />
+          </>
         )}
         </div>
       </div>
@@ -316,6 +306,21 @@ function SectionRow({
 
   const color = sectionColor(section.color)
   const colored = color.key !== ""
+
+  if (confirmDelete) {
+    return (
+      <div ref={setNodeRef} style={style}>
+        <InlineConfirm
+          message={`Delete "${section.name}"?`}
+          onCancel={() => setConfirmDelete(false)}
+          onConfirm={() => {
+            deleteMut.mutate(section.id)
+            setConfirmDelete(false)
+          }}
+        />
+      </div>
+    )
+  }
 
   return (
     <div ref={setNodeRef} style={style} className="border-b border-border/40">
@@ -453,31 +458,6 @@ function SectionRow({
         </div>
       )}
 
-      <AlertDialog
-        open={confirmDelete}
-        onOpenChange={(open) => !open && setConfirmDelete(false)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete section?</AlertDialogTitle>
-            <AlertDialogDescription>
-              All items in this section will be removed.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                deleteMut.mutate(section.id)
-                setConfirmDelete(false)
-              }}
-            >
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   )
 }
-
