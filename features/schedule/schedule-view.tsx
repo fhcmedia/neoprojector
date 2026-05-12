@@ -48,7 +48,6 @@ import {
   useRenameService,
 } from "./api"
 import { ItemList } from "./item-list"
-import { AddItemDialog } from "./add-item-dialog"
 import {
   DndContext,
   PointerSensor,
@@ -68,6 +67,8 @@ type Props = {
   onBack: () => void
   activeItemId: number | undefined
   onSelectItem: (id: number | undefined) => void
+  onAddItem: (sectionId: number) => void
+  onEditItem: (itemId: number) => void
 }
 
 export function ScheduleView({
@@ -75,6 +76,8 @@ export function ScheduleView({
   onBack,
   activeItemId,
   onSelectItem,
+  onAddItem,
+  onEditItem,
 }: Props) {
   const { data: services } = useServices()
   const service = services?.find((s) => s.id === serviceId)
@@ -271,6 +274,8 @@ export function ScheduleView({
                   serviceId={serviceId}
                   activeItemId={activeItemId}
                   onSelectItem={onSelectItem}
+                  onAddItem={onAddItem}
+                  onEditItem={onEditItem}
                 />
               ))}
             </VerticalSortable>
@@ -287,11 +292,15 @@ function SectionRow({
   serviceId,
   activeItemId,
   onSelectItem,
+  onAddItem,
+  onEditItem,
 }: {
   section: ServiceSection
   serviceId: number
   activeItemId: number | undefined
   onSelectItem: (id: number | undefined) => void
+  onAddItem: (sectionId: number) => void
+  onEditItem: (itemId: number) => void
 }) {
   const renameMut = useRenameSection(serviceId)
   const deleteMut = useDeleteSection(serviceId)
@@ -430,9 +439,17 @@ function SectionRow({
             sectionId={section.id}
             activeItemId={activeItemId}
             onSelectItem={onSelectItem}
+            onEditItem={onEditItem}
             color={color}
           />
-          <AddItemDialog sectionId={section.id} />
+          <button
+            type="button"
+            onClick={() => onAddItem(section.id)}
+            className="ml-7 mt-0.5 flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground/60 hover:bg-muted/50 hover:text-foreground"
+          >
+            <PlusIcon className="size-3" />
+            Add
+          </button>
         </div>
       )}
 

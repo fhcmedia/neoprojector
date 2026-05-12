@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
-  ArrowLeftIcon,
   PlusIcon,
   XIcon,
 } from "lucide-react"
@@ -46,7 +45,7 @@ type Props =
       mode: "edit"
       songId: number
       onSaved: () => void
-      onCancel: () => void
+      onCancel?: () => void
     }
 
 export function SongEditor(props: Props) {
@@ -147,36 +146,17 @@ export function SongEditor(props: Props) {
   }
 
   return (
-    <div className="flex h-full flex-col gap-3 pt-2">
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          onClick={props.onCancel}
-          aria-label="Cancel"
-        >
-          <ArrowLeftIcon className="size-4" />
-        </Button>
-        <Input
-          autoFocus={!isEdit}
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Song title"
-          className="h-8 flex-1 text-sm"
-        />
-        <Button
-          type="button"
-          size="sm"
-          onClick={handleSubmit}
-          disabled={busy || !canSubmit}
-        >
-          {submitLabel}
-        </Button>
-      </div>
+    <div className="flex h-full flex-col gap-2">
+      <Input
+        autoFocus={!isEdit}
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Song title"
+        className="h-9 text-sm"
+      />
 
-      <div className="flex-1 overflow-y-auto rounded-md border border-border/50 bg-background/30 p-3">
-        <div className="space-y-3">
+      <div className="flex-1 overflow-y-auto rounded-md border border-border/50 bg-background/30 p-2">
+        <div className="space-y-2">
           {sections.map((sec) => (
             <SectionBlock
               key={sec.localId}
@@ -192,6 +172,16 @@ export function SongEditor(props: Props) {
           />
         </div>
       </div>
+
+      <Button
+        type="button"
+        size="sm"
+        onClick={handleSubmit}
+        disabled={busy || !canSubmit}
+        className="w-full"
+      >
+        {submitLabel}
+      </Button>
     </div>
   )
 }

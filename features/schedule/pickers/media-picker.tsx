@@ -94,15 +94,14 @@ export function MediaPicker({
   }
 
   return (
-    <div className="flex h-full flex-col gap-2 pt-2">
+    <div className="flex h-full flex-col gap-2">
       <div className="relative">
         <SearchIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
         <Input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search media… or drop files anywhere here to import"
-          className="h-9 pl-8 text-sm placeholder:text-muted-foreground/40"
-          autoFocus
+          placeholder="Search or drop files…"
+          className="h-8 pl-8 text-xs placeholder:text-muted-foreground/40"
         />
       </div>
 
@@ -112,11 +111,11 @@ export function MediaPicker({
         ) : filtered.length === 0 ? (
           <Empty>
             {media && media.length === 0
-              ? "Drop files here or below to add media."
+              ? "Drop files here to add media."
               : "No matches."}
           </Empty>
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(7rem,1fr))] gap-2 p-3">
+          <div className="grid grid-cols-2 gap-2 p-2">
             {filtered.map((m) => {
               const Icon = iconFor(m.type)
               return (
@@ -124,13 +123,13 @@ export function MediaPicker({
                   key={m.id}
                   type="button"
                   onClick={() => pick(m.id)}
-                  className="group flex flex-col gap-1 overflow-hidden rounded-md border border-border/50 bg-background/40 p-2 text-left transition-colors hover:border-border hover:bg-muted/40"
+                  className="group flex flex-col gap-1 overflow-hidden rounded-md border border-border/50 bg-background/40 p-1.5 text-left transition-colors hover:border-border hover:bg-muted/40"
                 >
                   <div className="flex aspect-video items-center justify-center rounded bg-foreground/5">
-                    <Icon className="size-6 text-muted-foreground/70" />
+                    <Icon className="size-5 text-muted-foreground/70" />
                   </div>
-                  <div className="truncate text-xs">{m.title}</div>
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground/60">
+                  <div className="truncate text-[11px]">{m.title}</div>
+                  <div className="text-[9px] uppercase tracking-wider text-muted-foreground/60">
                     {m.type}
                   </div>
                 </button>
@@ -172,9 +171,9 @@ function DropTarget({
           importing && "opacity-100"
         )}
       >
-        <UploadIcon className="size-8 text-foreground/70" />
-        <div className="text-sm font-medium text-foreground/80">
-          {importing ? "Importing…" : "Drop to add to library"}
+        <UploadIcon className="size-7 text-foreground/70" />
+        <div className="text-xs font-medium text-foreground/80">
+          {importing ? "Importing…" : "Drop to add"}
         </div>
       </div>
     </div>

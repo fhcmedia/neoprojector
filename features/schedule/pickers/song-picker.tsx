@@ -4,7 +4,6 @@ import { MusicIcon, PlusIcon, SearchIcon } from "lucide-react"
 import { Service as Songs } from "@/bindings/neoprojector/services/songs"
 import type { Song } from "@/bindings/neoprojector/database"
 import { Input } from "@/components/input"
-import { Button } from "@/components/button"
 import { useAddSongItem } from "../api"
 import { SongEditor } from "./song-editor"
 
@@ -65,8 +64,8 @@ function SongList({
   }
 
   return (
-    <div className="flex h-full flex-col gap-2 pt-2">
-      <div className="flex items-center gap-2">
+    <div className="flex h-full flex-col gap-2">
+      <div className="flex items-center gap-1">
         <div className="relative flex-1">
           <SearchIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -74,13 +73,16 @@ function SongList({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search songs…"
             className="h-8 pl-8 text-xs"
-            autoFocus
           />
         </div>
-        <Button type="button" size="sm" onClick={onCreateNew}>
+        <button
+          type="button"
+          onClick={onCreateNew}
+          aria-label="New song"
+          className="grid size-8 shrink-0 place-items-center rounded-md border border-border/50 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+        >
           <PlusIcon className="size-3.5" />
-          New song
-        </Button>
+        </button>
       </div>
       <div className="flex-1 overflow-y-auto rounded-md border border-border/50">
         {isLoading ? (
@@ -88,7 +90,7 @@ function SongList({
         ) : filtered.length === 0 ? (
           <Empty>
             {songs && songs.length === 0
-              ? "No songs in your library yet. Click New song to create one."
+              ? "No songs yet. + to create."
               : "No matches."}
           </Empty>
         ) : (

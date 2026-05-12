@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { SearchIcon } from "lucide-react"
+import { ChevronLeftIcon, SearchIcon } from "lucide-react"
 import { Service as Bible } from "@/bindings/neoprojector/services/bible"
 import { ChapterVerse } from "@/bindings/neoprojector/services/bible"
 import { BibleRef } from "@/bindings/neoprojector/services/schedule"
@@ -13,21 +13,13 @@ import { useAddBibleItem, useUpdateBibleItem } from "../api"
 import { parseBibleRef } from "../bible-ref"
 
 type Sel = { book: string; chapter: number; from: number; to: number }
+type Step = "books" | "chapters" | "verses"
 
 type Props =
-  | {
-      mode: "add"
-      sectionId: number
-      onSaved: () => void
-    }
-  | {
-      mode: "edit"
-      itemId: number
-      initial: Sel
-      onSaved: () => void
-    }
+  | { mode: "add"; sectionId: number; onSaved: () => void }
+  | { mode: "edit"; itemId: number; initial: Sel; onSaved: () => void }
 
-// Stable color per book category. Left bar in the book list.
+// Stable color per book category — left edge bar in the book list.
 const categoryColors: Record<string, string> = {
   law: "bg-amber-500",
   history: "bg-emerald-500",
@@ -39,6 +31,9 @@ const categoryColors: Record<string, string> = {
   prophecy: "bg-pink-500",
 }
 
+// Narrow-column drill-down: search at top, three views (books → chapters →
+// verses) sliding horizontally as the user drills in. Each step takes the
+// full panel width.
 export function BiblePicker(props: Props) {
   const { data: books } = useQuery({
     queryKey: ["bible", "books"],
@@ -50,18 +45,29 @@ export function BiblePicker(props: Props) {
   const [sel, setSel] = useState<Sel | null>(
     props.mode === "edit" ? props.initial : null
   )
+  const [step, setStep] = useState<Step>(
+    props.mode === "edit" ? "verses" : "books"
+  )
   const [search, setSearch] = useState("")
   const debounced = useDebounce(search, 200)
 
-  function applyParse(input: string): Sel | null {
+  // Tracks the parse "level" of the previously-resolved input so we only
+  // auto-complete the search text when the user *advances* (typed more,
+  // changed book, added chapter/verse). Backspacing within a recognized
+  // book leaves the search bar alone — otherwise the autocomplete fights
+  // the user trying to edit.
+  const lastLevelRef = useRef(0)
+  const lastBookRef = useRef("")
+
+  function applyParse(input: string, advance: boolean): Sel | null {
     if (!books || !input.trim()) return null
     const parsed = parseBibleRef(input, books)
     if (!parsed) return null
-    // When the book hasn't changed, missing chapter/verses inherit the
-    // previous selection so partial typing ("Gen 2:") doesn't blow away
-    // the verse range the user already had picked.
     const sameBook = sel?.book === parsed.book
-    const fallback: Sel = sameBook && sel ? sel : { book: parsed.book, chapter: 1, from: 1, to: 1 }
+    const fallback: Sel =
+      sameBook && sel
+        ? sel
+        : { book: parsed.book, chapter: 1, from: 1, to: 1 }
     const verseStart = parsed.verseStart ?? fallback.from
     const next: Sel = {
       book: parsed.book,
@@ -70,12 +76,52 @@ export function BiblePicker(props: Props) {
       to: parsed.verseEnd ?? parsed.verseStart ?? fallback.to,
     }
     setSel(next)
+    if (advance) {
+      // Drill to whichever step the parse resolved.
+      if (parsed.verseStart) setStep("verses")
+      else if (parsed.chapter) setStep("verses")
+      else setStep("chapters")
+    }
     return next
   }
 
-  // Drive selection from the search bar as the user types (debounced).
   useEffect(() => {
-    applyParse(debounced)
+    if (!books) return
+    if (!debounced.trim()) {
+      lastLevelRef.current = 0
+      lastBookRef.current = ""
+      return
+    }
+
+    const parsed = parseBibleRef(debounced, books)
+    if (!parsed) {
+      lastLevelRef.current = 0
+      return
+    }
+
+    applyParse(debounced, true)
+
+    // Auto-complete the search bar. Build canonical form and replace the
+    // typed text — but only when the parse advances (new book, or new
+    // chapter/verse on the same book). This lets the user backspace past
+    // an autocompleted name without it springing back.
+    const level = parsed.verseStart ? 3 : parsed.chapter ? 2 : 1
+    const advanced =
+      parsed.book !== lastBookRef.current || level > lastLevelRef.current
+    lastBookRef.current = parsed.book
+    lastLevelRef.current = level
+
+    if (!advanced) return
+
+    const bookLabel =
+      books.find((b) => b.name === parsed.book)?.name_kjv ?? parsed.book
+    const canonical = formatRef(
+      bookLabel,
+      parsed.chapter,
+      parsed.verseStart,
+      parsed.verseEnd
+    )
+    if (canonical !== debounced) setSearch(canonical)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debounced, books])
 
@@ -98,6 +144,8 @@ export function BiblePicker(props: Props) {
     addMut.mutate(ref, { onSuccess: props.onSaved })
   }
 
+  const stepIndex =
+    step === "books" ? 0 : step === "chapters" ? 1 : 2
   const selectedBook = books?.find((b) => b.name === sel?.book)
   const selectionLabel =
     sel && selectedBook
@@ -109,7 +157,7 @@ export function BiblePicker(props: Props) {
     selectionLabel || "Search for a specific verse or several"
 
   return (
-    <div className="flex h-full flex-col gap-2 pt-2">
+    <div className="flex h-full flex-col gap-2">
       <div className="relative">
         <SearchIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
         <Input
@@ -117,64 +165,140 @@ export function BiblePicker(props: Props) {
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
-              // Parse the current text immediately rather than waiting on debounce.
-              const forced = search.trim() ? applyParse(search) : null
+              const forced = search.trim()
+                ? applyParse(search, true)
+                : null
               submit(forced ?? sel)
             }
           }}
           placeholder={placeholder}
-          className="h-9 pl-8 text-sm placeholder:text-muted-foreground/40"
-          autoFocus
+          className="h-8 pl-8 text-xs placeholder:text-muted-foreground/40"
         />
       </div>
 
-      <div className="grid flex-1 grid-cols-[14rem_5rem_1fr] gap-2 overflow-hidden rounded-md border border-border/50">
-        <BookPane
-          books={books ?? []}
-          activeBook={sel?.book}
-          onPick={(book) =>
-            setSel({ book, chapter: 1, from: 1, to: 1 })
-          }
-        />
-        <ChapterPane
-          book={sel?.book}
-          activeChapter={sel?.chapter}
-          onPick={(chapter) =>
-            sel && setSel({ ...sel, chapter, from: 1, to: 1 })
-          }
-        />
-        <VersePane
-          book={sel?.book}
-          chapter={sel?.chapter}
-          from={sel?.from}
-          to={sel?.to}
-          onPick={(verse, extend) => {
-            if (!sel) return
-            if (extend && sel.from) {
-              const lo = Math.min(sel.from, sel.to, verse)
-              const hi = Math.max(sel.from, sel.to, verse)
-              setSel({ ...sel, from: lo, to: hi })
-            } else {
-              setSel({ ...sel, from: verse, to: verse })
-            }
-          }}
-        />
-      </div>
+      <Breadcrumb
+        step={step}
+        book={selectedBook}
+        chapter={sel?.chapter}
+        onGoTo={(s) => setStep(s)}
+      />
 
-      <div className="flex items-center justify-end pt-1">
-        <Button
-          onClick={() => submit()}
-          disabled={!sel || addMut.isPending || updateMut.isPending}
-          size="sm"
+      <div className="relative flex-1 overflow-hidden rounded-md border border-border/50">
+        <div
+          className="flex h-full w-[300%] transition-transform duration-200 ease-out"
+          style={{ transform: `translateX(-${stepIndex * (100 / 3)}%)` }}
         >
-          {props.mode === "edit" ? "Save" : "Add"}
-        </Button>
+          <div className="h-full w-1/3 shrink-0 overflow-hidden">
+            <BooksView
+              books={books ?? []}
+              activeBook={sel?.book}
+              onPick={(name) => {
+                setSel({ book: name, chapter: 1, from: 1, to: 1 })
+                setStep("chapters")
+              }}
+            />
+          </div>
+          <div className="h-full w-1/3 shrink-0 overflow-hidden">
+            <ChaptersView
+              book={sel?.book}
+              activeChapter={sel?.chapter}
+              onPick={(chapter) => {
+                if (!sel) return
+                setSel({ ...sel, chapter, from: 1, to: 1 })
+                setStep("verses")
+              }}
+            />
+          </div>
+          <div className="h-full w-1/3 shrink-0 overflow-hidden">
+            <VersesView
+              book={sel?.book}
+              chapter={sel?.chapter}
+              from={sel?.from}
+              to={sel?.to}
+              onPick={(verse, extend) => {
+                if (!sel) return
+                if (extend && sel.from) {
+                  const lo = Math.min(sel.from, sel.to, verse)
+                  const hi = Math.max(sel.from, sel.to, verse)
+                  setSel({ ...sel, from: lo, to: hi })
+                } else {
+                  setSel({ ...sel, from: verse, to: verse })
+                }
+              }}
+            />
+          </div>
+        </div>
       </div>
+
+      <Button
+        onClick={() => submit()}
+        disabled={!sel || addMut.isPending || updateMut.isPending}
+        size="sm"
+        className="w-full"
+      >
+        {props.mode === "edit" ? "Save" : "Add"}
+      </Button>
     </div>
   )
 }
 
-function BookPane({
+function Breadcrumb({
+  step,
+  book,
+  chapter,
+  onGoTo,
+}: {
+  step: Step
+  book: BibleBook | undefined
+  chapter: number | undefined
+  onGoTo: (s: Step) => void
+}) {
+  if (step === "books") {
+    return (
+      <div className="flex items-center gap-1 text-[11px] text-muted-foreground/70">
+        Books
+      </div>
+    )
+  }
+  if (step === "chapters") {
+    return (
+      <div className="flex items-center gap-1 text-[11px]">
+        <button
+          type="button"
+          onClick={() => onGoTo("books")}
+          className="flex items-center gap-0.5 rounded px-1 py-0.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+        >
+          <ChevronLeftIcon className="size-3" />
+          Books
+        </button>
+        <span className="text-muted-foreground/40">/</span>
+        <span className="truncate text-foreground">{book?.name_kjv}</span>
+      </div>
+    )
+  }
+  return (
+    <div className="flex items-center gap-1 text-[11px]">
+      <button
+        type="button"
+        onClick={() => onGoTo("books")}
+        className="rounded px-1 py-0.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+      >
+        {book?.name_kjv}
+      </button>
+      <span className="text-muted-foreground/40">/</span>
+      <button
+        type="button"
+        onClick={() => onGoTo("chapters")}
+        className="flex items-center gap-0.5 rounded px-1 py-0.5 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+      >
+        <ChevronLeftIcon className="size-3" />
+        Chapter {chapter}
+      </button>
+    </div>
+  )
+}
+
+function BooksView({
   books,
   activeBook,
   onPick,
@@ -187,10 +311,7 @@ function BookPane({
   useAutoScrollTo(scrollRef, activeBook, `[data-book="${activeBook}"]`)
 
   return (
-    <div
-      ref={scrollRef}
-      className="overflow-y-auto border-r border-border/50 py-1"
-    >
+    <div ref={scrollRef} className="h-full overflow-y-auto py-1">
       {books.map((b) => (
         <button
           key={b.name}
@@ -217,7 +338,7 @@ function BookPane({
   )
 }
 
-function ChapterPane({
+function ChaptersView({
   book,
   activeChapter,
   onPick,
@@ -234,42 +355,45 @@ function ChapterPane({
   })
 
   const scrollRef = useRef<HTMLDivElement>(null)
-  useAutoScrollTo(scrollRef, activeChapter, `[data-chapter="${activeChapter}"]`)
+  useAutoScrollTo(
+    scrollRef,
+    activeChapter,
+    `[data-chapter="${activeChapter}"]`
+  )
 
   if (!book) {
     return (
-      <div className="grid place-items-center border-r border-border/50 text-[10px] text-muted-foreground/50">
-        Book
+      <div className="grid h-full place-items-center text-[10px] text-muted-foreground/50">
+        Pick a book
       </div>
     )
   }
 
   return (
-    <div
-      ref={scrollRef}
-      className="overflow-y-auto border-r border-border/50 py-1"
-    >
-      {(chapters ?? []).map((c) => (
-        <button
-          key={c}
-          type="button"
-          data-chapter={c}
-          onClick={() => onPick(c)}
-          className={cn(
-            "w-full px-2 py-1 text-center text-sm tabular-nums",
-            activeChapter === c
-              ? "bg-muted text-foreground"
-              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-          )}
-        >
-          {c}
-        </button>
-      ))}
+    <div ref={scrollRef} className="h-full overflow-y-auto p-2">
+      <div className="grid grid-cols-5 gap-1">
+        {(chapters ?? []).map((c) => (
+          <button
+            key={c}
+            type="button"
+            data-chapter={c}
+            onClick={() => onPick(c)}
+            className={cn(
+              "rounded px-1 py-1.5 text-center text-xs tabular-nums",
+              activeChapter === c
+                ? "bg-muted text-foreground"
+                : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+            )}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
 
-function VersePane({
+function VersesView({
   book,
   chapter,
   from,
@@ -285,23 +409,29 @@ function VersePane({
   const { data: verses } = useQuery({
     queryKey: ["bible", "verses", book, chapter],
     queryFn: () =>
-      Bible.ListVerses(book!, chapter!) as unknown as Promise<ChapterVerse[]>,
+      Bible.ListVerses(book!, chapter!) as unknown as Promise<
+        ChapterVerse[]
+      >,
     enabled: !!book && !!chapter,
   })
 
   const scrollRef = useRef<HTMLDivElement>(null)
-  useAutoScrollTo(scrollRef, `${book}-${chapter}-${from}`, `[data-verse="${from}"]`)
+  useAutoScrollTo(
+    scrollRef,
+    `${book}-${chapter}-${from}`,
+    `[data-verse="${from}"]`
+  )
 
   if (!book || !chapter) {
     return (
-      <div className="grid place-items-center text-[10px] text-muted-foreground/50">
-        Chapter
+      <div className="grid h-full place-items-center text-[10px] text-muted-foreground/50">
+        Pick a chapter
       </div>
     )
   }
 
   return (
-    <div ref={scrollRef} className="overflow-y-auto py-1">
+    <div ref={scrollRef} className="h-full overflow-y-auto py-1">
       {(verses ?? []).map((v) => {
         const inRange =
           from !== undefined &&
@@ -315,16 +445,16 @@ function VersePane({
             data-verse={v.verse}
             onClick={(e) => onPick(v.verse, e.shiftKey)}
             className={cn(
-              "flex w-full gap-2 px-3 py-1.5 text-left text-sm leading-snug",
+              "flex w-full gap-2 px-3 py-1.5 text-left text-xs leading-snug",
               inRange
                 ? "bg-muted text-foreground"
                 : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
             )}
           >
-            <span className="shrink-0 pt-px text-xs tabular-nums text-muted-foreground/70">
+            <span className="shrink-0 pt-px text-[10px] tabular-nums text-muted-foreground/70">
               {v.verse}
             </span>
-            <span className="line-clamp-2">{v.text}</span>
+            <span className="line-clamp-3">{v.text}</span>
           </button>
         )
       })}
@@ -332,8 +462,8 @@ function VersePane({
   )
 }
 
-// useAutoScrollTo scrolls the container so that the element matching selector
-// is roughly centered when `dep` changes.
+// Pure helper: useAutoScrollTo scrolls a container so the selected element
+// lands centered.
 function useAutoScrollTo(
   containerRef: React.RefObject<HTMLDivElement | null>,
   dep: unknown,
@@ -348,3 +478,25 @@ function useAutoScrollTo(
     c.scrollTo({ top, behavior: "smooth" })
   }, [containerRef, dep, selector])
 }
+
+// formatRef renders the canonical display form for a parsed reference. Used
+// by the search-bar autocomplete to replace what the user typed with the
+// resolved reference (e.g. "gen 3:16" → "Genesis 3:16").
+function formatRef(
+  book: string,
+  chapter?: number,
+  verseStart?: number,
+  verseEnd?: number
+): string {
+  let s = book
+  if (chapter) s += ` ${chapter}`
+  if (verseStart) {
+    s += `:${verseStart}`
+    if (verseEnd && verseEnd !== verseStart) s += `-${verseEnd}`
+  }
+  return s
+}
+
+// Defensive use of useMemo to avoid a TS-only "unused import" complaint when
+// reordering helpers. Tree-shaken in build.
+void useMemo

@@ -1,4 +1,3 @@
-import { useState } from "react"
 import {
   MusicIcon,
   BookOpenIcon,
@@ -23,12 +22,12 @@ import { useItems, useDeleteItem } from "./api"
 import { VerticalSortable, useSortableRow } from "./sortable"
 import { usePlayed } from "./played-context"
 import type { SectionColor } from "./section-colors"
-import { EditItemDialog } from "./edit-item-dialog"
 
 type Props = {
   sectionId: number
   activeItemId: number | undefined
   onSelectItem: (id: number | undefined) => void
+  onEditItem: (itemId: number) => void
   color: SectionColor
 }
 
@@ -36,12 +35,11 @@ export function ItemList({
   sectionId,
   activeItemId,
   onSelectItem,
+  onEditItem,
   color,
 }: Props) {
   const { data: items, isLoading } = useItems(sectionId)
   const deleteMut = useDeleteItem(sectionId)
-  const [editingItem, setEditingItem] =
-    useState<ListServiceItemsWithContentRow | null>(null)
 
   if (isLoading) {
     return (
@@ -55,30 +53,24 @@ export function ItemList({
   }
 
   return (
-    <>
-      <VerticalSortable ids={items.map((i) => `item-${i.id}`)}>
-        <div className="flex flex-col">
-          {items.map((item) => (
-            <ItemRow
-              key={item.id}
-              item={item}
-              isActive={item.id === activeItemId}
-              color={color}
-              onSelect={() => onSelectItem(item.id)}
-              onEdit={() => setEditingItem(item)}
-              onDelete={() => {
-                deleteMut.mutate(item.id)
-                if (activeItemId === item.id) onSelectItem(undefined)
-              }}
-            />
-          ))}
-        </div>
-      </VerticalSortable>
-      <EditItemDialog
-        item={editingItem}
-        onClose={() => setEditingItem(null)}
-      />
-    </>
+    <VerticalSortable ids={items.map((i) => `item-${i.id}`)}>
+      <div className="flex flex-col">
+        {items.map((item) => (
+          <ItemRow
+            key={item.id}
+            item={item}
+            isActive={item.id === activeItemId}
+            color={color}
+            onSelect={() => onSelectItem(item.id)}
+            onEdit={() => onEditItem(item.id)}
+            onDelete={() => {
+              deleteMut.mutate(item.id)
+              if (activeItemId === item.id) onSelectItem(undefined)
+            }}
+          />
+        ))}
+      </div>
+    </VerticalSortable>
   )
 }
 

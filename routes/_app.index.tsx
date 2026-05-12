@@ -11,9 +11,13 @@ import {
 } from "@/components/resizable"
 import { ServiceList } from "@/features/schedule/service-list"
 import { ScheduleView } from "@/features/schedule/schedule-view"
+import { EditorPanel } from "@/features/schedule/editor-panel"
+import { AddFlow, EditFlow } from "@/features/schedule/editor-flow"
 
 type Search = {
   service?: number
+  add?: number // section id to add into
+  edit?: number // item id to edit
 }
 
 // Session-scoped memory of the last opened service. Cleared when the user
@@ -21,14 +25,20 @@ type Search = {
 // hopping to /settings and back returns you to where you were.
 const ACTIVE_SERVICE_KEY = "neoprojector.activeService"
 
+function toOptionalNumber(v: unknown): number | undefined {
+  if (typeof v === "number") return v
+  if (typeof v === "string" && v !== "") {
+    const n = Number(v)
+    return Number.isNaN(n) ? undefined : n
+  }
+  return undefined
+}
+
 export const Route = createFileRoute("/_app/")({
   validateSearch: (search: Record<string, unknown>): Search => ({
-    service:
-      typeof search.service === "number"
-        ? search.service
-        : typeof search.service === "string" && search.service !== ""
-          ? Number(search.service)
-          : undefined,
+    service: toOptionalNumber(search.service),
+    add: toOptionalNumber(search.add),
+    edit: toOptionalNumber(search.edit),
   }),
   beforeLoad: ({ search }) => {
     if (search.service) return
@@ -73,7 +83,11 @@ function Pane({
 
 function Projector() {
   const navigate = useNavigate({ from: "/" })
-  const { service: activeServiceId } = Route.useSearch()
+  const {
+    service: activeServiceId,
+    add: addSectionId,
+    edit: editItemId,
+  } = Route.useSearch()
   const [activeItemId, setActiveItemId] = useState<number | undefined>()
 
   const setActiveService = (id: number) => {
@@ -89,24 +103,81 @@ function Projector() {
     })
   }
 
+  const closeEditor = () =>
+    navigate({
+      search: (prev) => ({ ...prev, add: undefined, edit: undefined }),
+      replace: true,
+    })
+
+  const openAdd = (sectionId: number) =>
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        add: sectionId,
+        edit: undefined,
+      }),
+      replace: true,
+    })
+
+  const openEdit = (itemId: number) =>
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        edit: itemId,
+        add: undefined,
+      }),
+      replace: true,
+    })
+
+  const editorOpen = addSectionId !== undefined || editItemId !== undefined
+  const editorTitle = addSectionId
+    ? "Add item"
+    : editItemId
+      ? "Edit item"
+      : ""
+
   return (
     <ResizablePanelGroup orientation="vertical" className="h-full">
       <ResizablePanel defaultSize="70%" minSize="30%">
         <ResizablePanelGroup orientation="horizontal">
           <ResizablePanel defaultSize="20%" minSize="10%" maxSize="40%">
-            {activeServiceId ? (
-              <ScheduleView
-                serviceId={activeServiceId}
-                onBack={() => setActiveService(0)}
-                activeItemId={activeItemId}
-                onSelectItem={setActiveItemId}
-              />
-            ) : (
-              <ServiceList
-                activeServiceId={activeServiceId}
-                onSelect={setActiveService}
-              />
-            )}
+            <div className="relative h-full w-full overflow-hidden">
+              {activeServiceId ? (
+                <ScheduleView
+                  serviceId={activeServiceId}
+                  onBack={() => setActiveService(0)}
+                  activeItemId={activeItemId}
+                  onSelectItem={setActiveItemId}
+                  onAddItem={openAdd}
+                  onEditItem={openEdit}
+                />
+              ) : (
+                <ServiceList
+                  activeServiceId={activeServiceId}
+                  onSelect={setActiveService}
+                />
+              )}
+              <EditorPanel
+                open={editorOpen}
+                title={editorTitle}
+                onBack={closeEditor}
+              >
+                {addSectionId !== undefined && (
+                  <AddFlow
+                    key={`add-${addSectionId}`}
+                    sectionId={addSectionId}
+                    onDone={closeEditor}
+                  />
+                )}
+                {editItemId !== undefined && (
+                  <EditFlow
+                    key={`edit-${editItemId}`}
+                    itemId={editItemId}
+                    onDone={closeEditor}
+                  />
+                )}
+              </EditorPanel>
+            </div>
           </ResizablePanel>
           <ResizableHandle />
           <ResizablePanel defaultSize="60%" minSize="30%">
