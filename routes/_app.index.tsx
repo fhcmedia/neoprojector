@@ -22,10 +22,14 @@ type Search = {
   edit?: number // item id to edit
 }
 
-// Session-scoped memory of the last opened service. Cleared when the user
-// explicitly backs out of a service. Persists across in-app navigation so
-// hopping to /settings and back returns you to where you were.
-const ACTIVE_SERVICE_KEY = "neoprojector.activeService"
+// AUTO_RESUME_KEY drives the auto-redirect-on-app-load. Cleared when the
+// user explicitly backs out so they actually land on the service list,
+// rather than being instantly bounced back.
+const AUTO_RESUME_KEY = "neoprojector.activeService"
+// LAST_ACTIVE_KEY is the persistent breadcrumb — the row to mark with the
+// emerald gradient. Never cleared on back-out; outlives the auto-resume so
+// the user can still find where they were even after explicit navigation.
+const LAST_ACTIVE_KEY = "neoprojector.lastActiveService"
 
 function toOptionalNumber(v: unknown): number | undefined {
   if (typeof v === "number") return v
@@ -45,7 +49,7 @@ export const Route = createFileRoute("/_app/")({
   beforeLoad: ({ search }) => {
     if (search.service) return
     if (typeof window === "undefined") return
-    const saved = window.sessionStorage.getItem(ACTIVE_SERVICE_KEY)
+    const saved = window.sessionStorage.getItem(AUTO_RESUME_KEY)
     if (!saved) return
     const id = Number(saved)
     if (!id) return
@@ -105,20 +109,29 @@ function Projector() {
     number | undefined
   >(() => {
     if (typeof window === "undefined") return undefined
-    const saved = window.sessionStorage.getItem(ACTIVE_SERVICE_KEY)
+    const saved = window.sessionStorage.getItem(LAST_ACTIVE_KEY)
     const n = saved ? Number(saved) : 0
     return n || undefined
   })
 
-  const setActiveService = (id: number) => {
+  // Set when a brand-new service is opened — ScheduleView consumes it to
+  // auto-focus its name input, replacing the old "edit row in the list"
+  // pattern that flashed during the slide-in.
+  const [pendingNameEdit, setPendingNameEdit] = useState(false)
+
+  const setActiveService = (id: number, opts?: { editName?: boolean }) => {
     setActiveItemId(undefined)
     if (id) {
-      window.sessionStorage.setItem(ACTIVE_SERVICE_KEY, String(id))
+      window.sessionStorage.setItem(AUTO_RESUME_KEY, String(id))
+      window.sessionStorage.setItem(LAST_ACTIVE_KEY, String(id))
       setLastActiveServiceId(id)
+      if (opts?.editName) setPendingNameEdit(true)
+    } else {
+      // Back-out: clear the auto-resume so the user actually sees the
+      // service list. The breadcrumb (LAST_ACTIVE_KEY) is kept so the row
+      // still shows the emerald marker.
+      window.sessionStorage.removeItem(AUTO_RESUME_KEY)
     }
-    // On back-out (id === 0) we intentionally keep the sessionStorage
-    // value AND the lastActiveServiceId — that's the breadcrumb the user
-    // follows to find the service they were just in.
     navigate({
       search: { service: id || undefined },
       replace: true,
@@ -203,7 +216,12 @@ function Projector() {
         <ResizablePanelGroup orientation="horizontal">
           <ResizablePanel defaultSize="20%" minSize="10%" maxSize="40%">
             <div className="relative h-full w-full overflow-hidden">
-              <AnimatePresence mode="wait" initial={false}>
+              {/* No mode="wait" — we want the incoming view to slide on
+                 top of the outgoing one. Otherwise the just-created
+                 service can briefly flash in the still-mounted list
+                 (the invalidation refetch lands during exit) before
+                 the schedule view enters. */}
+              <AnimatePresence initial={false}>
                 {activeServiceId ? (
                   <motion.div
                     key={`schedule-${activeServiceId}`}
@@ -211,7 +229,7 @@ function Projector() {
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -6 }}
                     transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
-                    className="absolute inset-0"
+                    className="absolute inset-0 z-[1] bg-background"
                   >
                     <ScheduleView
                       serviceId={activeServiceId}
@@ -221,6 +239,8 @@ function Projector() {
                       onAddItem={openAdd}
                       onEditItem={openEdit}
                       newItemId={newItemId}
+                      autoEditName={pendingNameEdit}
+                      onAutoEditConsumed={() => setPendingNameEdit(false)}
                     />
                   </motion.div>
                 ) : (
@@ -230,7 +250,7 @@ function Projector() {
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -6 }}
                     transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
-                    className="absolute inset-0"
+                    className="absolute inset-0 bg-background"
                   >
                     <ServiceList
                       activeServiceId={activeServiceId}

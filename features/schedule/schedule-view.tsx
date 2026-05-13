@@ -53,6 +53,8 @@ type Props = {
   onAddItem: (sectionId: number) => void
   onEditItem: (itemId: number) => void
   newItemId?: number
+  autoEditName?: boolean
+  onAutoEditConsumed?: () => void
 }
 
 // Palette dot animation: container drives the stagger, dots define their
@@ -105,11 +107,22 @@ export function ScheduleView({
   onAddItem,
   onEditItem,
   newItemId,
+  autoEditName = false,
+  onAutoEditConsumed,
 }: Props) {
   const { data: services } = useServices()
   const service = services?.find((s) => s.id === serviceId)
   const renameServiceMut = useRenameService()
   const [editingName, setEditingName] = useState(false)
+
+  // When the user lands here by creating a new service, the parent passes
+  // autoEditName=true exactly once. Consume it so the rename input opens
+  // immediately — replaces the old inline-edit-in-the-list flash.
+  useEffect(() => {
+    if (!autoEditName) return
+    setEditingName(true)
+    onAutoEditConsumed?.()
+  }, [autoEditName, onAutoEditConsumed])
 
   const { data: sections, isLoading } = useSections(serviceId)
   const createSectionMut = useCreateSection(serviceId)

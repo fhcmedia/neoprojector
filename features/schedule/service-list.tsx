@@ -1,21 +1,27 @@
 import { useEffect, useRef, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
+import { useQueryClient } from "@tanstack/react-query"
 import { FileTextIcon, Trash2Icon, PencilIcon, XIcon } from "lucide-react"
 import { AddArea } from "@/components/add-area"
 import { Input } from "@/components/input"
 import { cn } from "@/lib/utils"
 import {
+  scheduleKeys,
   useServices,
   useCreateService,
   useRenameService,
   useDeleteService,
 } from "@/features/schedule/api"
-import type { Service } from "@/bindings/neoprojector/database"
+import { Service as Schedule } from "@/bindings/neoprojector/services/schedule"
+import type {
+  Service,
+  ServiceSection,
+} from "@/bindings/neoprojector/database"
 
 type Props = {
   activeServiceId: number | undefined
   lastActiveServiceId: number | undefined
-  onSelect: (id: number) => void
+  onSelect: (id: number, opts?: { editName?: boolean }) => void
 }
 
 export function ServiceList({
@@ -29,12 +35,35 @@ export function ServiceList({
   const deleteMut = useDeleteService()
 
   const [editingId, setEditingId] = useState<number | null>(null)
+  // Hide the freshly-created service from this list until the parent's
+  // slide-out has settled. Otherwise the query-cache invalidation lands
+  // mid-transition and the new row visibly pops into the fading list.
+  const [hiddenServiceId, setHiddenServiceId] = useState<number | null>(null)
+  const hiddenTimerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (hiddenTimerRef.current !== null) {
+        window.clearTimeout(hiddenTimerRef.current)
+      }
+    }
+  }, [])
 
   function handleCreate() {
     createMut.mutate("", {
       onSuccess: (created) => {
-        onSelect(created.id)
-        setEditingId(created.id)
+        setHiddenServiceId(created.id)
+        if (hiddenTimerRef.current !== null) {
+          window.clearTimeout(hiddenTimerRef.current)
+        }
+        hiddenTimerRef.current = window.setTimeout(() => {
+          setHiddenServiceId(null)
+          hiddenTimerRef.current = null
+        }, 350)
+        // Hand the user straight into the new service with the name field
+        // already focused. Editing inline here would flash mid-transition
+        // since ServiceList is still mounted during the slide-out.
+        onSelect(created.id, { editName: true })
       },
     })
   }
@@ -45,7 +74,10 @@ export function ServiceList({
     renameMut.mutate({ id, name: name.trim() })
   }
 
-  const hasServices = !!services && services.length > 0
+  const visibleServices = services?.filter(
+    (s) => s.id !== hiddenServiceId
+  )
+  const hasServices = !!visibleServices && visibleServices.length > 0
 
   return (
     <div className="flex h-full w-full flex-col bg-background">
@@ -64,7 +96,7 @@ export function ServiceList({
           <>
             {hasServices && (
               <AnimatePresence initial={false}>
-                {services!.map((svc) => (
+                {visibleServices!.map((svc) => (
                   <ServiceRow
                     key={svc.id}
                     service={svc}
@@ -120,8 +152,42 @@ function ServiceRow({
   onCancelEdit: () => void
   onDelete: () => void
 }) {
+  const qc = useQueryClient()
   const [pendingDelete, setPendingDelete] = useState(false)
   const rowRef = useRef<HTMLDivElement>(null)
+
+  // Skip the confirm step when the service has zero sections — no risk of
+  // losing user content. Pulled via fetchQuery so the cache is consulted
+  // first; the underlying call is local Wails IPC so the worst case is a
+  // sub-frame round-trip rather than a network hop.
+  async function handleDeleteClick() {
+    let isEmpty = false
+    try {
+      const sections = await qc.fetchQuery<ServiceSection[]>({
+        queryKey: scheduleKeys.sections(service.id),
+        queryFn: () =>
+          Schedule.ListSections(service.id) as unknown as Promise<
+            ServiceSection[]
+          >,
+      })
+      isEmpty = !sections || sections.length === 0
+    } catch {
+      // If sections can't be loaded, fall through to the confirm flow —
+      // better to ask than to silently delete potentially full data.
+      isEmpty = false
+    }
+    if (isEmpty) {
+      onDelete()
+      setPendingDelete(false)
+      return
+    }
+    if (pendingDelete) {
+      onDelete()
+      setPendingDelete(false)
+    } else {
+      setPendingDelete(true)
+    }
+  }
 
   // Click anywhere outside this row cancels the pending-delete confirm.
   useEffect(() => {
@@ -157,23 +223,18 @@ function ServiceRow({
             "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
         )}
       >
-        {/* Last-active breadcrumb: same right-anchored emerald gradient as
-           a played item. Lets the user find where they were without
-           reading dates or names. Hidden while the row is the currently
-           active one to avoid layering two highlights. */}
-        {isLastActive && !pendingDelete && (
-          <span
-            aria-hidden
-            className="pointer-events-none absolute inset-y-0 right-0 w-[32%] bg-gradient-to-l from-emerald-500/55 via-emerald-500/20 to-transparent"
-          />
-        )}
         <button
           type="button"
           onClick={() => !isEditing && onSelect()}
           onDoubleClick={onStartEdit}
           className="flex flex-1 items-center gap-2 text-left"
         >
-          <FileTextIcon className="size-3.5 shrink-0 opacity-70" />
+          <FileTextIcon
+            className={cn(
+              "size-3.5 shrink-0 opacity-70",
+              isLastActive && !pendingDelete && "text-emerald-500 opacity-100"
+            )}
+          />
           {isEditing ? (
             <Input
               autoFocus
@@ -186,7 +247,19 @@ function ServiceRow({
               className="h-6 px-1.5 py-0 text-xs"
             />
           ) : (
-            <span className="truncate">{service.name}</span>
+            <span
+              className={cn(
+                "truncate",
+                // Last-active breadcrumb: just colour the label emerald
+                // (and its leading icon above). No gradient overlay so
+                // the row keeps the same visual width as the rest.
+                isLastActive &&
+                  !pendingDelete &&
+                  "font-medium text-emerald-500"
+              )}
+            >
+              {service.name}
+            </span>
           )}
         </button>
         {!isEditing && (
@@ -207,12 +280,7 @@ function ServiceRow({
               aria-label={pendingDelete ? "Confirm delete" : "Delete"}
               onClick={(e) => {
                 e.stopPropagation()
-                if (pendingDelete) {
-                  onDelete()
-                  setPendingDelete(false)
-                } else {
-                  setPendingDelete(true)
-                }
+                void handleDeleteClick()
               }}
               className={cn(
                 "grid size-5 shrink-0 place-items-center rounded transition-all",
