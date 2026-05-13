@@ -6,8 +6,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/dialog"
-import { SongEditor } from "./pickers/song-editor"
-import { BiblePicker } from "./pickers/bible-picker"
+import { SongEditor } from "@/features/songs/song-editor"
+import { BiblePicker } from "@/features/schedule/pickers/bible-picker"
 
 type Props = {
   item: ListServiceItemsWithContentRow | null

@@ -1,9 +1,9 @@
 import { CheckIcon, XIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-// InlineConfirm: in-place confirmation strip used in the schedule pane
-// instead of a centered AlertDialog. Slots into a row's position so the
-// confirmation stays where the user is acting.
+// InlineConfirm: in-place confirmation strip used instead of a centered
+// AlertDialog. Slots into a row's position so the confirmation stays
+// where the user is acting.
 export function InlineConfirm({
   message,
   onCancel,

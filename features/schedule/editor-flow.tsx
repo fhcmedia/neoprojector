@@ -7,10 +7,10 @@ import {
 } from "lucide-react"
 import type { ListServiceItemsWithContentRow } from "@/bindings/neoprojector/database"
 import { cn } from "@/lib/utils"
-import { SongEditor } from "./pickers/song-editor"
-import { SongPicker } from "./pickers/song-picker"
-import { BiblePicker } from "./pickers/bible-picker"
-import { MediaPicker } from "./pickers/media-picker"
+import { SongEditor } from "@/features/songs/song-editor"
+import { SongPicker } from "@/features/schedule/pickers/song-picker"
+import { BiblePicker } from "@/features/schedule/pickers/bible-picker"
+import { MediaPicker } from "@/features/schedule/pickers/media-picker"
 
 type AddKind = "song" | "bible" | "media"
 

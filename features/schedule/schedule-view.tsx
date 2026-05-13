@@ -1,5 +1,6 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { AnimatePresence, motion } from "motion/react"
 import {
   ArrowLeftIcon,
   PlusIcon,
@@ -13,16 +14,6 @@ import type {
   ListServiceItemsWithContentRow,
   ServiceSection,
 } from "@/bindings/neoprojector/database"
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuSub,
-  ContextMenuSubContent,
-  ContextMenuSubTrigger,
-  ContextMenuTrigger,
-} from "@/components/context-menu"
 import { Input } from "@/components/input"
 import { cn } from "@/lib/utils"
 import {
@@ -36,8 +27,8 @@ import {
   useSetSectionColor,
   useServices,
   useRenameService,
-} from "./api"
-import { ItemList } from "./item-list"
+} from "@/features/schedule/api"
+import { ItemList } from "@/features/schedule/item-list"
 import {
   DndContext,
   PointerSensor,
@@ -47,12 +38,11 @@ import {
   VerticalSortable,
   useSortableRow,
   type DragEndEvent,
-} from "./sortable"
-import { PlayedProvider } from "./played-context"
-import { sectionColor, sectionColorList } from "./section-colors"
-import { PaletteIcon, XIcon, CheckIcon } from "lucide-react"
-import { AddArea } from "./add-area"
-import { InlineConfirm } from "./inline-confirm"
+} from "@/features/schedule/sortable"
+import { PlayedProvider } from "@/features/schedule/played-context"
+import { sectionColor, sectionColorList } from "@/features/schedule/section-colors"
+import { PaletteIcon, XIcon } from "lucide-react"
+import { AddArea } from "@/components/add-area"
 
 type Props = {
   serviceId: number
@@ -61,6 +51,48 @@ type Props = {
   onSelectItem: (id: number | undefined) => void
   onAddItem: (sectionId: number) => void
   onEditItem: (itemId: number) => void
+}
+
+// Palette dot animation: container drives the stagger, dots define their
+// own keyframes. staggerDirection flips on exit so the rightmost dot is
+// the first to leave.
+const paletteContainerVariants = {
+  open: {
+    transition: { staggerChildren: 0.04, staggerDirection: 1 },
+  },
+  closed: {
+    transition: {
+      staggerChildren: 0.04,
+      staggerDirection: -1,
+    },
+  },
+}
+
+const paletteDotVariants = {
+  open: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: { type: "spring" as const, stiffness: 500, damping: 28 },
+  },
+  closed: {
+    opacity: 0,
+    y: 6,
+    scale: 0.5,
+    transition: { duration: 0.15 },
+  },
+}
+
+// Icons live "above" the visible row when hidden — pairing with dots
+// coming up from below creates a coordinated vertical swap on open;
+// closing reverses, so icons drop down from above while dots fall away.
+const actionsVariants = {
+  hidden: { opacity: 0, y: -6, transition: { duration: 0.18 } },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { type: "spring" as const, stiffness: 500, damping: 28 },
+  },
 }
 
 export function ScheduleView({
@@ -302,162 +334,255 @@ function SectionRow({
 
   const [collapsed, setCollapsed] = useState(false)
   const [editing, setEditing] = useState(false)
-  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const headerRef = useRef<HTMLDivElement>(null)
+
+  // Reset transient action states (pending delete, palette swatches) when
+  // the user clicks anywhere outside the section header.
+  useEffect(() => {
+    if (!pendingDelete && !paletteOpen) return
+    function handler(e: MouseEvent) {
+      const target = e.target as HTMLElement | null
+      if (!target) return
+      if (headerRef.current?.contains(target)) return
+      setPendingDelete(false)
+      setPaletteOpen(false)
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [pendingDelete, paletteOpen])
 
   const color = sectionColor(section.color)
   const colored = color.key !== ""
 
-  if (confirmDelete) {
-    return (
-      <div ref={setNodeRef} style={style}>
-        <InlineConfirm
-          message={`Delete "${section.name}"?`}
-          onCancel={() => setConfirmDelete(false)}
-          onConfirm={() => {
-            deleteMut.mutate(section.id)
-            setConfirmDelete(false)
-          }}
-        />
-      </div>
-    )
-  }
-
   return (
     <div ref={setNodeRef} style={style} className="border-b border-border/40">
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <div
-            className={cn(
-              "group flex items-center gap-1.5 px-2 py-1.5",
-              color.header,
-              color.headerText
-            )}
-          >
-            <button
-              type="button"
-              {...attributes}
-              {...listeners}
-              aria-label="Drag section"
-              className={cn(
-                "cursor-grab touch-none px-0.5 opacity-0 transition-opacity group-hover:opacity-50 hover:opacity-90",
-                colored ? "text-foreground/80" : "text-muted-foreground"
-              )}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <GripVerticalIcon className="size-3" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setCollapsed((v) => !v)}
-              className={cn(
-                "grid size-4 place-items-center rounded transition-colors",
-                colored
-                  ? "text-foreground/80 hover:text-foreground"
-                  : "text-muted-foreground hover:text-foreground"
-              )}
-              aria-label={collapsed ? "Expand" : "Collapse"}
-            >
-              {collapsed ? (
-                <ChevronRightIcon className="size-3" />
-              ) : (
-                <ChevronDownIcon className="size-3" />
-              )}
-            </button>
-            {editing ? (
-              <Input
-                autoFocus
-                defaultValue={section.name}
-                onBlur={(e) => {
-                  setEditing(false)
-                  const value = e.target.value.trim()
-                  if (value && value !== section.name) {
-                    renameMut.mutate({ id: section.id, name: value })
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") e.currentTarget.blur()
-                  if (e.key === "Escape") setEditing(false)
-                }}
-                className="h-5 flex-1 px-1.5 py-0 text-xs"
-              />
-            ) : (
-              <button
-                type="button"
-                onDoubleClick={() => setEditing(true)}
-                className="flex-1 truncate text-left text-[11px] font-semibold uppercase tracking-wider"
-              >
-                {section.name}
-              </button>
-            )}
-          </div>
-        </ContextMenuTrigger>
-        <ContextMenuContent>
-          <ContextMenuItem onSelect={() => setEditing(true)}>
-            <PencilIcon className="size-3.5" />
-            Rename
-          </ContextMenuItem>
-          <ContextMenuSub>
-            <ContextMenuSubTrigger>
-              <PaletteIcon className="size-3.5" />
-              Color
-            </ContextMenuSubTrigger>
-            <ContextMenuSubContent>
-              {sectionColorList.map((c) => (
-                <ContextMenuItem
-                  key={c.key}
-                  onSelect={() =>
-                    setColorMut.mutate({ id: section.id, color: c.key })
-                  }
-                >
-                  <span className={cn("size-3 rounded-full", c.swatch)} />
-                  {c.label}
-                  {section.color === c.key && (
-                    <CheckIcon className="ml-auto size-3.5 opacity-70" />
-                  )}
-                </ContextMenuItem>
-              ))}
-              <ContextMenuSeparator />
-              <ContextMenuItem
-                onSelect={() =>
-                  setColorMut.mutate({ id: section.id, color: "" })
-                }
-              >
-                <XIcon className="size-3.5" />
-                None
-              </ContextMenuItem>
-            </ContextMenuSubContent>
-          </ContextMenuSub>
-          <ContextMenuSeparator />
-          <ContextMenuItem
-            variant="destructive"
-            onSelect={() => setConfirmDelete(true)}
-          >
-            <Trash2Icon className="size-3.5" />
-            Delete
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
-
-      {!collapsed && (
-        <div className="pb-1">
-          <ItemList
-            sectionId={section.id}
-            activeItemId={activeItemId}
-            onSelectItem={onSelectItem}
-            onEditItem={onEditItem}
-            color={color}
+      <div
+        ref={headerRef}
+        className={cn(
+          "group flex items-center gap-1.5 px-2 py-1.5 transition-colors duration-200",
+          pendingDelete
+            ? "bg-destructive/25 text-foreground"
+            : cn(color.header, color.headerText)
+        )}
+      >
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          aria-label="Drag section"
+          className={cn(
+            "cursor-grab touch-none px-0.5 opacity-0 transition-opacity group-hover:opacity-50 hover:opacity-90",
+            colored ? "text-foreground/80" : "text-muted-foreground"
+          )}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVerticalIcon className="size-3" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setCollapsed((v) => !v)}
+          className={cn(
+            "grid size-4 place-items-center rounded opacity-0 transition-opacity group-hover:opacity-70 hover:!opacity-100",
+            colored
+              ? "text-foreground/80 hover:text-foreground"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+          aria-label={collapsed ? "Expand" : "Collapse"}
+        >
+          {collapsed ? (
+            <ChevronRightIcon className="size-3" />
+          ) : (
+            <ChevronDownIcon className="size-3" />
+          )}
+        </button>
+        {editing ? (
+          <Input
+            autoFocus
+            defaultValue={section.name}
+            onBlur={(e) => {
+              setEditing(false)
+              const value = e.target.value.trim()
+              if (value && value !== section.name) {
+                renameMut.mutate({ id: section.id, name: value })
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.currentTarget.blur()
+              if (e.key === "Escape") setEditing(false)
+            }}
+            className="h-5 flex-1 px-1.5 py-0 text-xs"
           />
+        ) : (
           <button
             type="button"
-            onClick={() => onAddItem(section.id)}
-            className="ml-7 mt-0.5 flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground/60 hover:bg-muted/50 hover:text-foreground"
+            onDoubleClick={() => setEditing(true)}
+            className="flex-1 truncate text-left text-[11px] font-semibold uppercase tracking-wider"
           >
-            <PlusIcon className="size-3" />
-            Add
+            {section.name}
           </button>
+        )}
+        <div className="grid min-w-[7.25rem]">
+          <AnimatePresence mode="popLayout" initial={false}>
+            {paletteOpen ? (
+              <motion.div
+                key="palette-dots"
+                className="col-start-1 row-start-1 flex items-center justify-end gap-1"
+                variants={paletteContainerVariants}
+                initial="closed"
+                animate="open"
+                exit="closed"
+              >
+                {sectionColorList.map((c) => {
+                  const active = c.key === section.color
+                  return (
+                    <motion.button
+                      key={c.key}
+                      type="button"
+                      aria-label={`Color ${c.label}`}
+                      variants={paletteDotVariants}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const next = active ? "" : c.key
+                        setColorMut.mutate({ id: section.id, color: next })
+                        setPaletteOpen(false)
+                      }}
+                      className="grid size-5 shrink-0 place-items-center rounded"
+                    >
+                      <span
+                        className={cn(
+                          "size-3 rounded-full transition-transform hover:scale-125",
+                          c.swatch,
+                          active &&
+                            "ring-2 ring-foreground/70 ring-offset-1 ring-offset-background"
+                        )}
+                      />
+                    </motion.button>
+                  )
+                })}
+              </motion.div>
+            ) : (
+              <motion.div
+                key="action-icons"
+                className="col-start-1 row-start-1 flex items-center justify-end gap-1"
+                variants={actionsVariants}
+                initial="hidden"
+                animate="visible"
+                exit="hidden"
+              >
+                <SectionAction
+                  colored={colored}
+                  ariaLabel="Rename"
+                  tone="yellow"
+                  onClick={() => setEditing(true)}
+                >
+                  <PencilIcon className="size-3" />
+                </SectionAction>
+                <SectionAction
+                  colored={colored}
+                  ariaLabel="Color"
+                  tone="purple"
+                  onClick={() => setPaletteOpen(true)}
+                >
+                  <PaletteIcon className="size-3" />
+                </SectionAction>
+                <button
+                  type="button"
+                  aria-label={pendingDelete ? "Confirm delete" : "Delete"}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (pendingDelete) {
+                      deleteMut.mutate(section.id)
+                      setPendingDelete(false)
+                    } else {
+                      setPendingDelete(true)
+                    }
+                  }}
+                  className={cn(
+                    "grid size-5 shrink-0 place-items-center rounded transition-all",
+                    pendingDelete
+                      ? "bg-destructive text-destructive-foreground opacity-100"
+                      : cn(
+                          "opacity-0 group-hover:opacity-70 hover:!opacity-100",
+                          colored
+                            ? "text-foreground/80 hover:bg-destructive/20 hover:text-destructive"
+                            : "text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+                        )
+                  )}
+                >
+                  {pendingDelete ? (
+                    <XIcon className="size-3" />
+                  ) : (
+                    <Trash2Icon className="size-3" />
+                  )}
+                </button>
+                <SectionAction
+                  colored={colored}
+                  ariaLabel="Add item"
+                  tone="green"
+                  onClick={() => onAddItem(section.id)}
+                >
+                  <PlusIcon className="size-3" />
+                </SectionAction>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
+      </div>
+
+      {!collapsed && (
+        <ItemList
+          sectionId={section.id}
+          activeItemId={activeItemId}
+          onSelectItem={onSelectItem}
+          onEditItem={onEditItem}
+          color={color}
+          sectionPendingDelete={pendingDelete}
+        />
       )}
 
     </div>
+  )
+}
+
+type ActionTone = "default" | "green" | "yellow" | "purple"
+
+const toneHover: Record<ActionTone, string> = {
+  default: "hover:bg-muted hover:text-foreground",
+  green: "hover:bg-emerald-500/15 hover:text-emerald-500",
+  yellow: "hover:bg-amber-500/15 hover:text-amber-500",
+  purple: "hover:bg-violet-500/15 hover:text-violet-500",
+}
+
+function SectionAction({
+  colored,
+  ariaLabel,
+  tone = "default",
+  onClick,
+  children,
+}: {
+  colored: boolean
+  ariaLabel: string
+  tone?: ActionTone
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      className={cn(
+        "grid size-5 shrink-0 place-items-center rounded opacity-0 transition-opacity group-hover:opacity-70 hover:!opacity-100",
+        colored ? "text-foreground/80" : "text-muted-foreground",
+        toneHover[tone]
+      )}
+    >
+      {children}
+    </button>
   )
 }

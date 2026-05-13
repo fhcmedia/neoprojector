@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { motion } from "motion/react"
 import { ChevronLeftIcon, SearchIcon } from "lucide-react"
 import { Service as Bible } from "@/bindings/neoprojector/services/bible"
 import { ChapterVerse } from "@/bindings/neoprojector/services/bible"
@@ -9,8 +10,12 @@ import { Input } from "@/components/input"
 import { Button } from "@/components/button"
 import { useDebounce } from "@/hooks/use-debounce"
 import { cn } from "@/lib/utils"
-import { useAddBibleItem, useUpdateBibleItem } from "../api"
-import { parseBibleRef } from "../bible-ref"
+import { useAddBibleItem, useUpdateBibleItem } from "@/features/schedule/api"
+import { parseBibleRef } from "@/features/schedule/bible-ref"
+import {
+  pickerContainerVariants,
+  pickerRowVariants,
+} from "@/features/schedule/picker-anim"
 
 type Sel = { book: string; chapter: number; from: number; to: number }
 type Step = "books" | "chapters" | "verses"
@@ -188,8 +193,14 @@ export function BiblePicker(props: Props) {
     selectionLabel || "Search for a specific verse or several"
 
   return (
-    <div className="flex h-full flex-col gap-2">
-      <div className="relative">
+    <motion.div
+      className="flex h-full flex-col gap-2"
+      variants={pickerContainerVariants}
+      initial="hidden"
+      animate="visible"
+      exit="hidden"
+    >
+      <motion.div variants={pickerRowVariants} className="relative">
         <SearchIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
         <Input
           value={search}
@@ -205,16 +216,21 @@ export function BiblePicker(props: Props) {
           placeholder={placeholder}
           className="h-8 pl-8 text-xs placeholder:text-muted-foreground/40"
         />
-      </div>
+      </motion.div>
 
-      <Breadcrumb
-        step={step}
-        book={selectedBook}
-        chapter={sel?.chapter}
-        onGoTo={(s) => setStep(s)}
-      />
+      <motion.div variants={pickerRowVariants}>
+        <Breadcrumb
+          step={step}
+          book={selectedBook}
+          chapter={sel?.chapter}
+          onGoTo={(s) => setStep(s)}
+        />
+      </motion.div>
 
-      <div className="relative flex-1 overflow-hidden rounded-md border border-border/50">
+      <motion.div
+        variants={pickerRowVariants}
+        className="relative flex-1 overflow-hidden rounded-md border border-border/50"
+      >
         <div
           className="flex h-full w-[300%] transition-transform duration-200 ease-out"
           style={{ transform: `translateX(-${stepIndex * (100 / 3)}%)` }}
@@ -259,25 +275,30 @@ export function BiblePicker(props: Props) {
             />
           </div>
         </div>
-      </div>
+      </motion.div>
 
       {step === "verses" && sel && maxVerse > 0 && (
-        <div className="text-[10px] text-muted-foreground/60">
+        <motion.div
+          variants={pickerRowVariants}
+          className="text-[10px] text-muted-foreground/60"
+        >
           {clampNotice
             ? `Chapter has ${maxVerse} verse${maxVerse === 1 ? "" : "s"} — range trimmed`
             : `Chapter has ${maxVerse} verse${maxVerse === 1 ? "" : "s"}`}
-        </div>
+        </motion.div>
       )}
 
-      <Button
-        onClick={() => submit()}
-        disabled={!sel || addMut.isPending || updateMut.isPending}
-        size="sm"
-        className="w-full"
-      >
-        {props.mode === "edit" ? "Save" : "Add"}
-      </Button>
-    </div>
+      <motion.div variants={pickerRowVariants}>
+        <Button
+          onClick={() => submit()}
+          disabled={!sel || addMut.isPending || updateMut.isPending}
+          size="sm"
+          className="w-full"
+        >
+          {props.mode === "edit" ? "Save" : "Add"}
+        </Button>
+      </motion.div>
+    </motion.div>
   )
 }
 

@@ -7,7 +7,8 @@
 export type SongSectionType = {
   key: string
   label: string
-  chip: string // chip background in the editor (muted)
+  chip: string // chip background in the editor (header bar)
+  body: string // body tint (rendered block)
   swatch: string // solid color for menus/legends
   text: string // chip text color
 }
@@ -16,35 +17,40 @@ export const songSectionTypes: SongSectionType[] = [
   {
     key: "verse",
     label: "Verse",
-    chip: "bg-chart-1/30",
+    chip: "bg-chart-1/35",
+    body: "bg-chart-1/12",
     swatch: "bg-chart-1",
     text: "text-foreground",
   },
   {
     key: "chorus",
     label: "Chorus",
-    chip: "bg-chart-2/30",
+    chip: "bg-chart-2/35",
+    body: "bg-chart-2/12",
     swatch: "bg-chart-2",
     text: "text-foreground",
   },
   {
     key: "pre_chorus",
     label: "Pre-Chorus",
-    chip: "bg-chart-3/30",
+    chip: "bg-chart-3/35",
+    body: "bg-chart-3/12",
     swatch: "bg-chart-3",
     text: "text-foreground",
   },
   {
     key: "bridge",
     label: "Bridge",
-    chip: "bg-chart-4/30",
+    chip: "bg-chart-4/35",
+    body: "bg-chart-4/12",
     swatch: "bg-chart-4",
     text: "text-foreground",
   },
   {
     key: "tag",
     label: "Tag",
-    chip: "bg-chart-5/30",
+    chip: "bg-chart-5/35",
+    body: "bg-chart-5/12",
     swatch: "bg-chart-5",
     text: "text-foreground",
   },

@@ -1,11 +1,12 @@
 import { useMemo, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { MusicIcon, PlusIcon, SearchIcon } from "lucide-react"
+import { CheckIcon, MusicIcon, PlusIcon, SearchIcon } from "lucide-react"
 import { Service as Songs } from "@/bindings/neoprojector/services/songs"
 import type { Song } from "@/bindings/neoprojector/database"
 import { Input } from "@/components/input"
-import { useAddSongItem } from "../api"
-import { SongEditor } from "./song-editor"
+import { cn } from "@/lib/utils"
+import { SongEditor } from "@/features/songs/song-editor"
+import { useAddSongItem, useItems } from "@/features/schedule/api"
 
 export function SongPicker({
   sectionId,
@@ -15,13 +16,15 @@ export function SongPicker({
   onAdded: () => void
 }) {
   const [mode, setMode] = useState<"list" | "editor">("list")
+  const addMut = useAddSongItem(sectionId)
 
   if (mode === "editor") {
     return (
       <SongEditor
         mode="create"
-        sectionId={sectionId}
-        onSaved={onAdded}
+        onSaved={(songId) => {
+          addMut.mutate(songId, { onSuccess: onAdded })
+        }}
         onCancel={() => setMode("list")}
       />
     )
@@ -49,8 +52,20 @@ function SongList({
     queryKey: ["songs", "list"],
     queryFn: () => Songs.ListSongs() as unknown as Promise<Song[]>,
   })
+  const { data: existingItems } = useItems(sectionId)
   const addMut = useAddSongItem(sectionId)
   const [query, setQuery] = useState("")
+
+  // Songs already in this section — adding the same song twice to the
+  // same section is disallowed (different sections in the same service
+  // are still fine).
+  const alreadyInSection = useMemo(() => {
+    const set = new Set<number>()
+    for (const item of existingItems ?? []) {
+      if (item.kind === "song" && item.song_id) set.add(item.song_id)
+    }
+    return set
+  }, [existingItems])
 
   const filtered = useMemo(() => {
     if (!songs) return []
@@ -60,6 +75,7 @@ function SongList({
   }, [songs, query])
 
   function pick(songId: number) {
+    if (alreadyInSection.has(songId)) return
     addMut.mutate(songId, { onSuccess: onAdded })
   }
 
@@ -94,17 +110,29 @@ function SongList({
               : "No matches."}
           </Empty>
         ) : (
-          filtered.map((song) => (
-            <button
-              key={song.id}
-              type="button"
-              onClick={() => pick(song.id)}
-              className="flex w-full items-center gap-2 border-b border-border/30 px-3 py-2 text-left text-xs last:border-0 hover:bg-muted/50"
-            >
-              <MusicIcon className="size-3.5 shrink-0 opacity-70" />
-              <span className="truncate">{song.title}</span>
-            </button>
-          ))
+          filtered.map((song) => {
+            const inSection = alreadyInSection.has(song.id)
+            return (
+              <button
+                key={song.id}
+                type="button"
+                disabled={inSection}
+                onClick={() => pick(song.id)}
+                className={cn(
+                  "flex w-full items-center gap-2 border-b border-border/30 px-3 py-2 text-left text-xs last:border-0",
+                  inSection
+                    ? "cursor-not-allowed text-muted-foreground/50"
+                    : "hover:bg-muted/50"
+                )}
+              >
+                <MusicIcon className="size-3.5 shrink-0 opacity-70" />
+                <span className="truncate">{song.title}</span>
+                {inSection && (
+                  <CheckIcon className="ml-auto size-3 shrink-0 text-emerald-500/70" />
+                )}
+              </button>
+            )
+          })
         )}
       </div>
     </div>

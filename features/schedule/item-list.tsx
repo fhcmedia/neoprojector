@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react"
 import {
   MusicIcon,
   BookOpenIcon,
@@ -8,20 +9,14 @@ import {
   CheckCircle2Icon,
   CircleIcon,
   PencilIcon,
+  XIcon,
 } from "lucide-react"
 import type { ListServiceItemsWithContentRow } from "@/bindings/neoprojector/database"
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/context-menu"
 import { cn } from "@/lib/utils"
-import { useItems, useDeleteItem } from "./api"
-import { VerticalSortable, useSortableRow } from "./sortable"
-import { usePlayed } from "./played-context"
-import type { SectionColor } from "./section-colors"
+import { useItems, useDeleteItem } from "@/features/schedule/api"
+import { VerticalSortable, useSortableRow } from "@/features/schedule/sortable"
+import { usePlayed } from "@/features/schedule/played-context"
+import type { SectionColor } from "@/features/schedule/section-colors"
 
 type Props = {
   sectionId: number
@@ -29,6 +24,7 @@ type Props = {
   onSelectItem: (id: number | undefined) => void
   onEditItem: (itemId: number) => void
   color: SectionColor
+  sectionPendingDelete?: boolean
 }
 
 export function ItemList({
@@ -37,6 +33,7 @@ export function ItemList({
   onSelectItem,
   onEditItem,
   color,
+  sectionPendingDelete = false,
 }: Props) {
   const { data: items, isLoading } = useItems(sectionId)
   const deleteMut = useDeleteItem(sectionId)
@@ -55,12 +52,14 @@ export function ItemList({
   return (
     <VerticalSortable ids={items.map((i) => `item-${i.id}`)}>
       <div className="flex flex-col">
-        {items.map((item) => (
+        {items.map((item, index) => (
           <ItemRow
             key={item.id}
             item={item}
+            index={index}
             isActive={item.id === activeItemId}
             color={color}
+            sectionPendingDelete={sectionPendingDelete}
             onSelect={() => onSelectItem(item.id)}
             onEdit={() => onEditItem(item.id)}
             onDelete={() => {
@@ -76,15 +75,19 @@ export function ItemList({
 
 function ItemRow({
   item,
+  index,
   isActive,
   color,
+  sectionPendingDelete,
   onSelect,
   onEdit,
   onDelete,
 }: {
   item: ListServiceItemsWithContentRow
+  index: number
   isActive: boolean
   color: SectionColor
+  sectionPendingDelete: boolean
   onSelect: () => void
   onEdit: () => void
   onDelete: () => void
@@ -99,70 +102,175 @@ function ItemRow({
   const label = labelFor(item)
   const editable = item.kind === "song" || item.kind === "bible"
 
+  const [pendingDelete, setPendingDelete] = useState(false)
+  const rowRef = useRef<HTMLDivElement | null>(null)
+
+  // Stagger the color transition after a section recolor OR a section
+  // pending-delete tint flip: the section header retints first, then each
+  // item below it in sequence. The delay must be applied in the SAME
+  // render as the bg-class change so the browser-level transition picks
+  // it up — setting it in an effect would fire after the transition has
+  // already started without delay.
+  const colorKey = color.key
+  const prevColorKeyRef = useRef(colorKey)
+  const prevSectionPendingRef = useRef(sectionPendingDelete)
+  const colorChanging = prevColorKeyRef.current !== colorKey
+  const tintChanging = prevSectionPendingRef.current !== sectionPendingDelete
+  const staggerDelay =
+    colorChanging || tintChanging ? (index + 1) * 70 : 0
+  useEffect(() => {
+    prevColorKeyRef.current = colorKey
+    prevSectionPendingRef.current = sectionPendingDelete
+  }, [colorKey, sectionPendingDelete])
+
+  // dnd-kit hands us `style.transition` set to a `transform`-only
+  // shorthand, which overrides Tailwind's `transition-colors` class on the
+  // same element. We have to compose them ourselves so background-color
+  // actually animates (and picks up our staggered delay).
+  const composedTransition = [
+    style.transition,
+    "color 150ms cubic-bezier(0.4, 0, 0.2, 1)",
+    `background-color 250ms cubic-bezier(0.4, 0, 0.2, 1) ${staggerDelay}ms`,
+  ]
+    .filter(Boolean)
+    .join(", ")
+
+  useEffect(() => {
+    if (!pendingDelete) return
+    function handler(e: MouseEvent) {
+      const target = e.target as HTMLElement | null
+      if (!target) return
+      if (rowRef.current?.contains(target)) return
+      setPendingDelete(false)
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [pendingDelete])
+
+  const tinted = pendingDelete || sectionPendingDelete
+
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <div
-          ref={setNodeRef}
-          style={style}
-          className={cn(
-            "group flex w-full items-center gap-1 pl-3 pr-2 text-left text-xs transition-colors",
-            !isActive && color.item,
-            !isActive && color.itemHover,
-            !isActive && "text-muted-foreground hover:text-foreground",
-            isActive && cn(color.itemActive, "text-foreground")
-          )}
-        >
-          <button
-            type="button"
-            {...attributes}
-            {...listeners}
-            aria-label="Drag"
-            className="cursor-grab touch-none px-1 opacity-0 group-hover:opacity-60 hover:opacity-100"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <GripVerticalIcon className="size-3" />
-          </button>
-          <button
-            type="button"
-            onClick={onSelect}
-            className="flex flex-1 items-center gap-2 py-1 text-left"
-          >
-            <Icon className="size-3.5 shrink-0 opacity-70" />
-            <span className="truncate">{label}</span>
-            {played && (
-              <CheckCircle2Icon className="ml-auto size-3 shrink-0 text-emerald-500/80" />
-            )}
-          </button>
-        </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        {editable && (
-          <ContextMenuItem onSelect={onEdit}>
-            <PencilIcon className="size-3.5" />
-            Edit
-          </ContextMenuItem>
+    <div
+      ref={(node) => {
+        setNodeRef(node)
+        rowRef.current = node
+      }}
+      style={{ ...style, transition: composedTransition }}
+      className={cn(
+        "group flex w-full items-center gap-1 pl-3 pr-2 text-left text-xs",
+        tinted && "bg-destructive/15 text-foreground",
+        !tinted && !isActive && color.item,
+        !tinted && !isActive && color.itemHover,
+        !tinted && !isActive && "text-muted-foreground hover:text-foreground",
+        !tinted && isActive && cn(color.itemActive, "text-foreground")
+      )}
+    >
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        aria-label="Drag"
+        className="cursor-grab touch-none px-1 opacity-0 group-hover:opacity-60 hover:opacity-100"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <GripVerticalIcon className="size-3" />
+      </button>
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex flex-1 items-center gap-2 py-1 text-left"
+      >
+        <Icon className="size-3.5 shrink-0 opacity-70" />
+        <span className="truncate">{label}</span>
+      </button>
+      {editable && (
+        <ItemAction ariaLabel="Edit" tone="yellow" onClick={onEdit}>
+          <PencilIcon className="size-3" />
+        </ItemAction>
+      )}
+      <button
+        type="button"
+        aria-label={pendingDelete ? "Confirm remove" : "Remove"}
+        onClick={(e) => {
+          e.stopPropagation()
+          if (pendingDelete) {
+            onDelete()
+            setPendingDelete(false)
+          } else {
+            setPendingDelete(true)
+          }
+        }}
+        className={cn(
+          "grid size-5 shrink-0 place-items-center rounded transition-all",
+          pendingDelete
+            ? "bg-destructive text-destructive-foreground opacity-100"
+            : "text-muted-foreground opacity-0 hover:bg-destructive/15 hover:text-destructive group-hover:opacity-70 hover:!opacity-100"
         )}
-        <ContextMenuItem onSelect={() => toggle(item.id)}>
-          {played ? (
-            <>
-              <CircleIcon className="size-3.5" />
-              Unmark played
-            </>
-          ) : (
-            <>
-              <CheckCircle2Icon className="size-3.5" />
-              Mark as played
-            </>
-          )}
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem variant="destructive" onSelect={onDelete}>
-          <Trash2Icon className="size-3.5" />
-          Remove
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+      >
+        {pendingDelete ? (
+          <XIcon className="size-3" />
+        ) : (
+          <Trash2Icon className="size-3" />
+        )}
+      </button>
+      <button
+        type="button"
+        aria-label={played ? "Unmark played" : "Mark as played"}
+        onClick={(e) => {
+          e.stopPropagation()
+          toggle(item.id)
+        }}
+        className={cn(
+          "grid size-5 shrink-0 place-items-center rounded transition-opacity hover:bg-sky-500/15 hover:text-sky-500",
+          played
+            ? "text-emerald-500/80 opacity-100"
+            : "text-muted-foreground opacity-0 group-hover:opacity-70 hover:!opacity-100"
+        )}
+      >
+        {played ? (
+          <CheckCircle2Icon className="size-3" />
+        ) : (
+          <CircleIcon className="size-3" />
+        )}
+      </button>
+    </div>
+  )
+}
+
+type ItemActionTone = "default" | "yellow" | "blue"
+
+const itemToneHover: Record<ItemActionTone, string> = {
+  default: "hover:bg-muted hover:text-foreground",
+  yellow: "hover:bg-amber-500/15 hover:text-amber-500",
+  blue: "hover:bg-sky-500/15 hover:text-sky-500",
+}
+
+function ItemAction({
+  ariaLabel,
+  tone = "default",
+  onClick,
+  children,
+}: {
+  ariaLabel: string
+  tone?: ItemActionTone
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick()
+      }}
+      className={cn(
+        "grid size-5 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-70 hover:!opacity-100",
+        itemToneHover[tone]
+      )}
+    >
+      {children}
+    </button>
   )
 }
 

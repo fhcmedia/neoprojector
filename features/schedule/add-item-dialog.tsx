@@ -8,9 +8,9 @@ import {
   DialogTrigger,
 } from "@/components/dialog"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/tabs"
-import { SongPicker } from "./pickers/song-picker"
-import { BiblePicker } from "./pickers/bible-picker"
-import { MediaPicker } from "./pickers/media-picker"
+import { SongPicker } from "@/features/schedule/pickers/song-picker"
+import { BiblePicker } from "@/features/schedule/pickers/bible-picker"
+import { MediaPicker } from "@/features/schedule/pickers/media-picker"
 
 export function AddItemDialog({ sectionId }: { sectionId: number }) {
   const [open, setOpen] = useState(false)

@@ -6,7 +6,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/context-menu"
-import { AddArea } from "./add-area"
+import { AddArea } from "@/components/add-area"
 import { Input } from "@/components/input"
 import { cn } from "@/lib/utils"
 import {
@@ -14,7 +14,7 @@ import {
   useCreateService,
   useRenameService,
   useDeleteService,
-} from "./api"
+} from "@/features/schedule/api"
 
 type Props = {
   activeServiceId: number | undefined

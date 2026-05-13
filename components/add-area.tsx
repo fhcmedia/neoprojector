@@ -1,8 +1,8 @@
 import { PlusIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-// AddArea: clickable empty-space affordance used by both the services
-// sidebar and the sections list. Two states:
+// AddArea: clickable empty-space affordance used across feature lists.
+// Two states:
 //   - hasContent === false → prompt fully visible, fills available space.
 //   - hasContent === true  → prompt hidden by default, fades in on hover
 //                            so the populated list isn't cluttered.

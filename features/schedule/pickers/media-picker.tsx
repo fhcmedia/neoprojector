@@ -13,8 +13,13 @@ import { Events } from "@wailsio/runtime"
 import { Service as Media } from "@/bindings/neoprojector/services/media"
 import { Service as Schedule } from "@/bindings/neoprojector/services/schedule"
 import type { Medium } from "@/bindings/neoprojector/database"
+import { motion } from "motion/react"
 import { Input } from "@/components/input"
 import { cn } from "@/lib/utils"
+import {
+  pickerContainerVariants,
+  pickerRowVariants,
+} from "@/features/schedule/picker-anim"
 
 const DROP_EVENT = "media:files-dropped"
 
@@ -94,8 +99,14 @@ export function MediaPicker({
   }
 
   return (
-    <div className="flex h-full flex-col gap-2">
-      <div className="relative">
+    <motion.div
+      className="flex h-full flex-col gap-2"
+      variants={pickerContainerVariants}
+      initial="hidden"
+      animate="visible"
+      exit="hidden"
+    >
+      <motion.div variants={pickerRowVariants} className="relative">
         <SearchIcon className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
         <Input
           value={query}
@@ -103,43 +114,67 @@ export function MediaPicker({
           placeholder="Search or drop files…"
           className="h-8 pl-8 text-xs placeholder:text-muted-foreground/40"
         />
-      </div>
+      </motion.div>
 
-      <DropTarget importing={importing}>
-        {isLoading ? (
-          <Empty>Loading…</Empty>
-        ) : filtered.length === 0 ? (
-          <Empty>
-            {media && media.length === 0
-              ? "Drop files here to add media."
-              : "No matches."}
-          </Empty>
-        ) : (
-          <div className="grid grid-cols-2 gap-2 p-2">
-            {filtered.map((m) => {
-              const Icon = iconFor(m.type)
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => pick(m.id)}
-                  className="group flex flex-col gap-1 overflow-hidden rounded-md border border-border/50 bg-background/40 p-1.5 text-left transition-colors hover:border-border hover:bg-muted/40"
-                >
-                  <div className="flex aspect-video items-center justify-center rounded bg-foreground/5">
-                    <Icon className="size-5 text-muted-foreground/70" />
-                  </div>
-                  <div className="truncate text-[11px]">{m.title}</div>
-                  <div className="text-[9px] uppercase tracking-wider text-muted-foreground/60">
-                    {m.type}
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        )}
-      </DropTarget>
-    </div>
+      <motion.div variants={pickerRowVariants} className="flex-1 min-h-0">
+        <DropTarget importing={importing}>
+          {isLoading ? (
+            <Empty>Loading…</Empty>
+          ) : filtered.length === 0 ? (
+            <Empty>
+              {media && media.length === 0
+                ? "Drop files here to add media."
+                : "No matches."}
+            </Empty>
+          ) : (
+            <motion.div
+              className="grid grid-cols-2 gap-2 p-2"
+              variants={mediaGridVariants}
+              initial="hidden"
+              animate="visible"
+            >
+              {filtered.map((m) => {
+                const Icon = iconFor(m.type)
+                return (
+                  <motion.button
+                    key={m.id}
+                    type="button"
+                    onClick={() => pick(m.id)}
+                    variants={mediaTileVariants}
+                    className="group flex flex-col gap-1 overflow-hidden rounded-md border border-border/50 bg-background/40 p-1.5 text-left transition-colors hover:border-border hover:bg-muted/40"
+                  >
+                    <div className="flex aspect-video items-center justify-center rounded bg-foreground/5">
+                      <Icon className="size-5 text-muted-foreground/70" />
+                    </div>
+                    <div className="truncate text-[11px]">{m.title}</div>
+                    <div className="text-[9px] uppercase tracking-wider text-muted-foreground/60">
+                      {m.type}
+                    </div>
+                  </motion.button>
+                )
+              })}
+            </motion.div>
+          )}
+        </DropTarget>
+      </motion.div>
+    </motion.div>
   )
+}
+
+const mediaGridVariants = {
+  visible: {
+    transition: { staggerChildren: 0.03 },
+  },
+  hidden: {},
+}
+
+const mediaTileVariants = {
+  visible: {
+    opacity: 1,
+    scale: 1,
+    transition: { type: "spring" as const, stiffness: 500, damping: 30 },
+  },
+  hidden: { opacity: 0, scale: 0.95 },
 }
 
 // DropTarget wraps the library area. The `data-file-drop-target` attribute is

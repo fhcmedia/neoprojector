@@ -1,9 +1,10 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   createFileRoute,
   redirect,
   useNavigate,
 } from "@tanstack/react-router"
+import { AnimatePresence } from "motion/react"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -13,6 +14,7 @@ import { ServiceList } from "@/features/schedule/service-list"
 import { ScheduleView } from "@/features/schedule/schedule-view"
 import { EditorPanel } from "@/features/schedule/editor-panel"
 import { AddFlow, EditFlow } from "@/features/schedule/editor-flow"
+import { LibraryView } from "@/features/library/library-view"
 
 type Search = {
   service?: number
@@ -103,11 +105,20 @@ function Projector() {
     })
   }
 
-  const closeEditor = () =>
+  // exitMode controls which close animation plays. Save completion uses
+  // "fade" so the panel dissolves in place; explicit back uses "slide" so
+  // the panel retreats off-screen.
+  const [editorExitMode, setEditorExitMode] = useState<"slide" | "fade">(
+    "slide"
+  )
+
+  const closeEditor = (mode: "slide" | "fade" = "slide") => {
+    setEditorExitMode(mode)
     navigate({
       search: (prev) => ({ ...prev, add: undefined, edit: undefined }),
       replace: true,
     })
+  }
 
   const openAdd = (sectionId: number) =>
     navigate({
@@ -136,6 +147,10 @@ function Projector() {
       ? "Edit item"
       : ""
 
+  useEffect(() => {
+    if (editorOpen) setEditorExitMode("slide")
+  }, [editorOpen])
+
   return (
     <ResizablePanelGroup orientation="vertical" className="h-full">
       <ResizablePanel defaultSize="70%" minSize="30%">
@@ -160,22 +175,25 @@ function Projector() {
               <EditorPanel
                 open={editorOpen}
                 title={editorTitle}
-                onBack={closeEditor}
+                exitMode={editorExitMode}
+                onBack={() => closeEditor("slide")}
               >
-                {addSectionId !== undefined && (
-                  <AddFlow
-                    key={`add-${addSectionId}`}
-                    sectionId={addSectionId}
-                    onDone={closeEditor}
-                  />
-                )}
-                {editItemId !== undefined && (
-                  <EditFlow
-                    key={`edit-${editItemId}`}
-                    itemId={editItemId}
-                    onDone={closeEditor}
-                  />
-                )}
+                <AnimatePresence mode="wait" initial={false}>
+                  {addSectionId !== undefined && (
+                    <AddFlow
+                      key={`add-${addSectionId}`}
+                      sectionId={addSectionId}
+                      onDone={() => closeEditor("fade")}
+                    />
+                  )}
+                  {editItemId !== undefined && (
+                    <EditFlow
+                      key={`edit-${editItemId}`}
+                      itemId={editItemId}
+                      onDone={() => closeEditor("fade")}
+                    />
+                  )}
+                </AnimatePresence>
               </EditorPanel>
             </div>
           </ResizablePanel>
@@ -191,7 +209,7 @@ function Projector() {
       </ResizablePanel>
       <ResizableHandle />
       <ResizablePanel defaultSize="30%" minSize="10%" maxSize="60%">
-        <Pane label="Library" />
+        <LibraryView />
       </ResizablePanel>
     </ResizablePanelGroup>
   )
