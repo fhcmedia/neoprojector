@@ -1,4 +1,4 @@
-import { type ReactNode } from "react"
+import { useRef, type ReactNode } from "react"
 import { motion } from "motion/react"
 import { ArrowLeftIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -15,14 +15,17 @@ export function EditorPanel({
   title,
   exitMode = "slide",
   onBack,
+  onClosed,
   children,
 }: {
   open: boolean
   title: string
   exitMode?: "slide" | "fade"
   onBack: () => void
+  onClosed?: () => void
   children: ReactNode
 }) {
+  const wasOpenRef = useRef(false)
   const target = open
     ? { x: "0%", opacity: 1 }
     : exitMode === "fade"
@@ -35,8 +38,17 @@ export function EditorPanel({
       initial={false}
       animate={target}
       transition={{
-        x: { type: "spring", stiffness: 360, damping: 36 },
-        opacity: { duration: 0.22, ease: "easeOut" },
+        x: { duration: 0.2, ease: [0.32, 0.72, 0, 1] },
+        opacity: { duration: 0.14, ease: "easeOut" },
+      }}
+      onAnimationComplete={() => {
+        // Only signal "closed" on the transition that took the panel from
+        // open to closed — not on initial render or open-side transitions.
+        if (!open && wasOpenRef.current) {
+          wasOpenRef.current = false
+          onClosed?.()
+        }
+        if (open) wasOpenRef.current = true
       }}
       className={cn(
         "absolute inset-0 z-10 flex flex-col border-r border-border/50 bg-background shadow-2xl",

@@ -13,7 +13,7 @@ export function SongPicker({
   onAdded,
 }: {
   sectionId: number
-  onAdded: () => void
+  onAdded: (newItemId?: number) => void
 }) {
   const [mode, setMode] = useState<"list" | "editor">("list")
   const addMut = useAddSongItem(sectionId)
@@ -23,7 +23,9 @@ export function SongPicker({
       <SongEditor
         mode="create"
         onSaved={(songId) => {
-          addMut.mutate(songId, { onSuccess: onAdded })
+          addMut.mutate(songId, {
+            onSuccess: (item) => onAdded(item?.id),
+          })
         }}
         onCancel={() => setMode("list")}
       />
@@ -45,7 +47,7 @@ function SongList({
   onCreateNew,
 }: {
   sectionId: number
-  onAdded: () => void
+  onAdded: (newItemId?: number) => void
   onCreateNew: () => void
 }) {
   const { data: songs, isLoading } = useQuery({
@@ -76,7 +78,9 @@ function SongList({
 
   function pick(songId: number) {
     if (alreadyInSection.has(songId)) return
-    addMut.mutate(songId, { onSuccess: onAdded })
+    addMut.mutate(songId, {
+      onSuccess: (item) => onAdded(item?.id),
+    })
   }
 
   return (

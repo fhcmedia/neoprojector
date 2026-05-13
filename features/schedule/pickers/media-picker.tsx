@@ -34,7 +34,7 @@ export function MediaPicker({
   onAdded,
 }: {
   sectionId: number
-  onAdded: () => void
+  onAdded: (newItemId?: number) => void
 }) {
   const qc = useQueryClient()
   const { data: media, isLoading } = useQuery({
@@ -62,13 +62,18 @@ export function MediaPicker({
       const created = (await Media.ImportFiles(
         paths
       )) as unknown as Medium[]
-      // Add each new media as an item under the active section.
+      // Add each new media as an item under the active section. Highlight
+      // the last one added for the squeeze-in.
+      let lastId: number | undefined
       for (const m of created) {
-        await Schedule.AddMediaItem(sectionId, m.id)
+        const item = (await Schedule.AddMediaItem(sectionId, m.id)) as
+          | { id?: number }
+          | undefined
+        if (item?.id) lastId = item.id
       }
       qc.invalidateQueries({ queryKey: ["media", "list"] })
       qc.invalidateQueries({ queryKey: ["schedule", "items"] })
-      onAdded()
+      onAdded(lastId)
     } finally {
       setImporting(false)
     }
@@ -92,9 +97,9 @@ export function MediaPicker({
   }, [sectionId])
 
   function pick(mediaId: number) {
-    void Schedule.AddMediaItem(sectionId, mediaId).then(() => {
+    void Schedule.AddMediaItem(sectionId, mediaId).then((item) => {
       qc.invalidateQueries({ queryKey: ["schedule", "items"] })
-      onAdded()
+      onAdded((item as { id?: number } | undefined)?.id)
     })
   }
 
@@ -163,7 +168,7 @@ export function MediaPicker({
 
 const mediaGridVariants = {
   visible: {
-    transition: { staggerChildren: 0.03 },
+    transition: { staggerChildren: 0.018 },
   },
   hidden: {},
 }
@@ -172,9 +177,9 @@ const mediaTileVariants = {
   visible: {
     opacity: 1,
     scale: 1,
-    transition: { type: "spring" as const, stiffness: 500, damping: 30 },
+    transition: { duration: 0.14, ease: [0.32, 0.72, 0, 1] as const },
   },
-  hidden: { opacity: 0, scale: 0.95 },
+  hidden: { opacity: 0, scale: 0.96 },
 }
 
 // DropTarget wraps the library area. The `data-file-drop-target` attribute is

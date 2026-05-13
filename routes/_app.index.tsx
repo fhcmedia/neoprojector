@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   createFileRoute,
   redirect,
   useNavigate,
 } from "@tanstack/react-router"
-import { AnimatePresence } from "motion/react"
+import { AnimatePresence, motion } from "motion/react"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -91,14 +91,34 @@ function Projector() {
     edit: editItemId,
   } = Route.useSearch()
   const [activeItemId, setActiveItemId] = useState<number | undefined>()
+  // newItemId is set after the add-drawer finishes sliding away. It cues
+  // the matching ItemRow to play a brief squeeze-in so the user can see
+  // what they just created. Cleared shortly after.
+  const [newItemId, setNewItemId] = useState<number | undefined>()
+  const pendingNewItemRef = useRef<number | undefined>(undefined)
+  const newItemTimerRef = useRef<number | undefined>(undefined)
+
+  // Persisted "last opened" service id. Survives back-out so the service
+  // list can mark the most recently used row — handy after a reload or
+  // when the user backs out and wants to find where they were.
+  const [lastActiveServiceId, setLastActiveServiceId] = useState<
+    number | undefined
+  >(() => {
+    if (typeof window === "undefined") return undefined
+    const saved = window.sessionStorage.getItem(ACTIVE_SERVICE_KEY)
+    const n = saved ? Number(saved) : 0
+    return n || undefined
+  })
 
   const setActiveService = (id: number) => {
     setActiveItemId(undefined)
     if (id) {
       window.sessionStorage.setItem(ACTIVE_SERVICE_KEY, String(id))
-    } else {
-      window.sessionStorage.removeItem(ACTIVE_SERVICE_KEY)
+      setLastActiveServiceId(id)
     }
+    // On back-out (id === 0) we intentionally keep the sessionStorage
+    // value AND the lastActiveServiceId — that's the breadcrumb the user
+    // follows to find the service they were just in.
     navigate({
       search: { service: id || undefined },
       replace: true,
@@ -112,13 +132,39 @@ function Projector() {
     "slide"
   )
 
-  const closeEditor = (mode: "slide" | "fade" = "slide") => {
+  const closeEditor = (
+    mode: "slide" | "fade" = "slide",
+    addedItemId?: number
+  ) => {
     setEditorExitMode(mode)
+    pendingNewItemRef.current = addedItemId
     navigate({
       search: (prev) => ({ ...prev, add: undefined, edit: undefined }),
       replace: true,
     })
   }
+
+  // Fires once the editor panel finishes closing — that's the cue to
+  // emphasise the newly added item.
+  const handleEditorClosed = () => {
+    const id = pendingNewItemRef.current
+    pendingNewItemRef.current = undefined
+    if (!id) return
+    setNewItemId(id)
+    if (newItemTimerRef.current)
+      window.clearTimeout(newItemTimerRef.current)
+    newItemTimerRef.current = window.setTimeout(
+      () => setNewItemId(undefined),
+      600
+    )
+  }
+
+  useEffect(() => {
+    return () => {
+      if (newItemTimerRef.current)
+        window.clearTimeout(newItemTimerRef.current)
+    }
+  }, [])
 
   const openAdd = (sectionId: number) =>
     navigate({
@@ -157,33 +203,56 @@ function Projector() {
         <ResizablePanelGroup orientation="horizontal">
           <ResizablePanel defaultSize="20%" minSize="10%" maxSize="40%">
             <div className="relative h-full w-full overflow-hidden">
-              {activeServiceId ? (
-                <ScheduleView
-                  serviceId={activeServiceId}
-                  onBack={() => setActiveService(0)}
-                  activeItemId={activeItemId}
-                  onSelectItem={setActiveItemId}
-                  onAddItem={openAdd}
-                  onEditItem={openEdit}
-                />
-              ) : (
-                <ServiceList
-                  activeServiceId={activeServiceId}
-                  onSelect={setActiveService}
-                />
-              )}
+              <AnimatePresence mode="wait" initial={false}>
+                {activeServiceId ? (
+                  <motion.div
+                    key={`schedule-${activeServiceId}`}
+                    initial={{ opacity: 0, x: 6 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -6 }}
+                    transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
+                    className="absolute inset-0"
+                  >
+                    <ScheduleView
+                      serviceId={activeServiceId}
+                      onBack={() => setActiveService(0)}
+                      activeItemId={activeItemId}
+                      onSelectItem={setActiveItemId}
+                      onAddItem={openAdd}
+                      onEditItem={openEdit}
+                      newItemId={newItemId}
+                    />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="services"
+                    initial={{ opacity: 0, x: -6 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -6 }}
+                    transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
+                    className="absolute inset-0"
+                  >
+                    <ServiceList
+                      activeServiceId={activeServiceId}
+                      lastActiveServiceId={lastActiveServiceId}
+                      onSelect={setActiveService}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
               <EditorPanel
                 open={editorOpen}
                 title={editorTitle}
                 exitMode={editorExitMode}
                 onBack={() => closeEditor("slide")}
+                onClosed={handleEditorClosed}
               >
                 <AnimatePresence mode="wait" initial={false}>
                   {addSectionId !== undefined && (
                     <AddFlow
                       key={`add-${addSectionId}`}
                       sectionId={addSectionId}
-                      onDone={() => closeEditor("fade")}
+                      onDone={(id) => closeEditor("fade", id)}
                     />
                   )}
                   {editItemId !== undefined && (

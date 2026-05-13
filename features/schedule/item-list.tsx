@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { AnimatePresence, motion } from "motion/react"
 import {
   MusicIcon,
   BookOpenIcon,
@@ -25,6 +26,7 @@ type Props = {
   onEditItem: (itemId: number) => void
   color: SectionColor
   sectionPendingDelete?: boolean
+  newItemId?: number
 }
 
 export function ItemList({
@@ -34,6 +36,7 @@ export function ItemList({
   onEditItem,
   color,
   sectionPendingDelete = false,
+  newItemId,
 }: Props) {
   const { data: items, isLoading } = useItems(sectionId)
   const deleteMut = useDeleteItem(sectionId)
@@ -52,22 +55,25 @@ export function ItemList({
   return (
     <VerticalSortable ids={items.map((i) => `item-${i.id}`)}>
       <div className="flex flex-col">
-        {items.map((item, index) => (
-          <ItemRow
-            key={item.id}
-            item={item}
-            index={index}
-            isActive={item.id === activeItemId}
-            color={color}
-            sectionPendingDelete={sectionPendingDelete}
-            onSelect={() => onSelectItem(item.id)}
-            onEdit={() => onEditItem(item.id)}
-            onDelete={() => {
-              deleteMut.mutate(item.id)
-              if (activeItemId === item.id) onSelectItem(undefined)
-            }}
-          />
-        ))}
+        <AnimatePresence initial={false}>
+          {items.map((item, index) => (
+            <ItemRow
+              key={item.id}
+              item={item}
+              index={index}
+              isActive={item.id === activeItemId}
+              isNew={item.id === newItemId}
+              color={color}
+              sectionPendingDelete={sectionPendingDelete}
+              onSelect={() => onSelectItem(item.id)}
+              onEdit={() => onEditItem(item.id)}
+              onDelete={() => {
+                deleteMut.mutate(item.id)
+                if (activeItemId === item.id) onSelectItem(undefined)
+              }}
+            />
+          ))}
+        </AnimatePresence>
       </div>
     </VerticalSortable>
   )
@@ -77,6 +83,7 @@ function ItemRow({
   item,
   index,
   isActive,
+  isNew,
   color,
   sectionPendingDelete,
   onSelect,
@@ -86,6 +93,7 @@ function ItemRow({
   item: ListServiceItemsWithContentRow
   index: number
   isActive: boolean
+  isNew: boolean
   color: SectionColor
   sectionPendingDelete: boolean
   onSelect: () => void
@@ -117,7 +125,7 @@ function ItemRow({
   const colorChanging = prevColorKeyRef.current !== colorKey
   const tintChanging = prevSectionPendingRef.current !== sectionPendingDelete
   const staggerDelay =
-    colorChanging || tintChanging ? (index + 1) * 70 : 0
+    colorChanging || tintChanging ? (index + 1) * 28 : 0
   useEffect(() => {
     prevColorKeyRef.current = colorKey
     prevSectionPendingRef.current = sectionPendingDelete
@@ -129,8 +137,8 @@ function ItemRow({
   // actually animates (and picks up our staggered delay).
   const composedTransition = [
     style.transition,
-    "color 150ms cubic-bezier(0.4, 0, 0.2, 1)",
-    `background-color 250ms cubic-bezier(0.4, 0, 0.2, 1) ${staggerDelay}ms`,
+    "color 120ms cubic-bezier(0.32, 0.72, 0, 1)",
+    `background-color 160ms cubic-bezier(0.32, 0.72, 0, 1) ${staggerDelay}ms`,
   ]
     .filter(Boolean)
     .join(", ")
@@ -150,90 +158,137 @@ function ItemRow({
   const tinted = pendingDelete || sectionPendingDelete
 
   return (
-    <div
+    // Outer wrapper: hosts the dnd-kit sortable transform/transition and the
+    // exit-collapse for delete. NO bg/scale animations here — those live on
+    // the inner motion.div so we don't fight dnd-kit's transform style.
+    <motion.div
       ref={(node) => {
         setNodeRef(node)
         rowRef.current = node
       }}
-      style={{ ...style, transition: composedTransition }}
-      className={cn(
-        "group flex w-full items-center gap-1 pl-3 pr-2 text-left text-xs",
-        tinted && "bg-destructive/15 text-foreground",
-        !tinted && !isActive && color.item,
-        !tinted && !isActive && color.itemHover,
-        !tinted && !isActive && "text-muted-foreground hover:text-foreground",
-        !tinted && isActive && cn(color.itemActive, "text-foreground")
-      )}
+      style={style}
+      initial={false}
+      exit={{ height: 0, opacity: 0 }}
+      transition={{
+        height: { duration: 0.14, ease: [0.32, 0.72, 0, 1] },
+        opacity: { duration: 0.09 },
+      }}
+      className="overflow-hidden"
     >
-      <button
-        type="button"
-        {...attributes}
-        {...listeners}
-        aria-label="Drag"
-        className="cursor-grab touch-none px-1 opacity-0 group-hover:opacity-60 hover:opacity-100"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <GripVerticalIcon className="size-3" />
-      </button>
-      <button
-        type="button"
-        onClick={onSelect}
-        className="flex flex-1 items-center gap-2 py-1 text-left"
-      >
-        <Icon className="size-3.5 shrink-0 opacity-70" />
-        <span className="truncate">{label}</span>
-      </button>
-      {editable && (
-        <ItemAction ariaLabel="Edit" tone="yellow" onClick={onEdit}>
-          <PencilIcon className="size-3" />
-        </ItemAction>
-      )}
-      <button
-        type="button"
-        aria-label={pendingDelete ? "Confirm remove" : "Remove"}
-        onClick={(e) => {
-          e.stopPropagation()
-          if (pendingDelete) {
-            onDelete()
-            setPendingDelete(false)
-          } else {
-            setPendingDelete(true)
-          }
-        }}
+      <motion.div
+        // Inner: the visible row. Squeeze-in animates scale/opacity here so
+        // dnd-kit can keep ownership of the outer transform. Tight spring
+        // with no bounce — a snap, not a wobble.
+        initial={isNew ? { scale: 0.94, opacity: 0 } : false}
+        animate={isNew ? { scale: 1, opacity: 1 } : { scale: 1, opacity: 1 }}
+        transition={
+          isNew
+            ? { duration: 0.22, ease: [0.32, 0.72, 0, 1] }
+            : { duration: 0 }
+        }
+        style={{ transition: composedTransition }}
         className={cn(
-          "grid size-5 shrink-0 place-items-center rounded transition-all",
-          pendingDelete
-            ? "bg-destructive text-destructive-foreground opacity-100"
-            : "text-muted-foreground opacity-0 hover:bg-destructive/15 hover:text-destructive group-hover:opacity-70 hover:!opacity-100"
+          "group relative flex w-full items-center gap-1 pl-3 pr-2 text-left text-xs",
+          tinted && "bg-destructive/15 text-foreground",
+          !tinted && !isActive && color.item,
+          !tinted && !isActive && color.itemHover,
+          !tinted && !isActive && "text-muted-foreground hover:text-foreground",
+          !tinted && isActive && cn(color.itemActive, "text-foreground")
         )}
       >
-        {pendingDelete ? (
-          <XIcon className="size-3" />
-        ) : (
-          <Trash2Icon className="size-3" />
+        {/* Played indicator: green gradient flooding the right ~30% of
+           the row. Sweeps in from outside the right edge with a brief
+           overshoot flash so the toggle reads clearly. */}
+        <AnimatePresence initial={false}>
+          {played && (
+            <motion.span
+              key="played-glow"
+              aria-hidden
+              className="pointer-events-none absolute inset-y-0 right-0 w-[32%] bg-gradient-to-l from-emerald-500/55 via-emerald-500/20 to-transparent"
+              initial={{ opacity: 0, x: "110%" }}
+              animate={{
+                opacity: [0, 1, 0.85],
+                x: ["110%", "-4%", "0%"],
+              }}
+              exit={{ opacity: 0, x: "60%" }}
+              transition={{
+                duration: 0.4,
+                ease: [0.32, 0.72, 0, 1],
+                times: [0, 0.7, 1],
+              }}
+            />
+          )}
+        </AnimatePresence>
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          aria-label="Drag"
+          className="cursor-grab touch-none px-1 opacity-0 group-hover:opacity-60 hover:opacity-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVerticalIcon className="size-3" />
+        </button>
+        <button
+          type="button"
+          onClick={onSelect}
+          className="flex flex-1 items-center gap-2 py-1 text-left"
+        >
+          <Icon className="size-3.5 shrink-0 opacity-70" />
+          <span className="truncate">{label}</span>
+        </button>
+        {editable && (
+          <ItemAction ariaLabel="Edit" tone="yellow" onClick={onEdit}>
+            <PencilIcon className="size-3" />
+          </ItemAction>
         )}
-      </button>
-      <button
-        type="button"
-        aria-label={played ? "Unmark played" : "Mark as played"}
-        onClick={(e) => {
-          e.stopPropagation()
-          toggle(item.id)
-        }}
-        className={cn(
-          "grid size-5 shrink-0 place-items-center rounded transition-opacity hover:bg-sky-500/15 hover:text-sky-500",
-          played
-            ? "text-emerald-500/80 opacity-100"
-            : "text-muted-foreground opacity-0 group-hover:opacity-70 hover:!opacity-100"
-        )}
-      >
-        {played ? (
-          <CheckCircle2Icon className="size-3" />
-        ) : (
-          <CircleIcon className="size-3" />
-        )}
-      </button>
-    </div>
+        <button
+          type="button"
+          aria-label={pendingDelete ? "Confirm remove" : "Remove"}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (pendingDelete) {
+              onDelete()
+              setPendingDelete(false)
+            } else {
+              setPendingDelete(true)
+            }
+          }}
+          className={cn(
+            "grid size-5 shrink-0 place-items-center rounded transition-all",
+            pendingDelete
+              ? "bg-destructive text-destructive-foreground opacity-100"
+              : "text-muted-foreground opacity-0 hover:bg-destructive/15 hover:text-destructive group-hover:opacity-70 hover:!opacity-100"
+          )}
+        >
+          {pendingDelete ? (
+            <XIcon className="size-3" />
+          ) : (
+            <Trash2Icon className="size-3" />
+          )}
+        </button>
+        <button
+          type="button"
+          aria-label={played ? "Unmark played" : "Mark as played"}
+          onClick={(e) => {
+            e.stopPropagation()
+            toggle(item.id)
+          }}
+          className={cn(
+            "relative z-[1] grid size-5 shrink-0 place-items-center rounded transition-opacity hover:bg-sky-500/15 hover:text-sky-500",
+            played
+              ? "text-emerald-500/80 opacity-100"
+              : "text-muted-foreground opacity-0 group-hover:opacity-70 hover:!opacity-100"
+          )}
+        >
+          {played ? (
+            <CheckCircle2Icon className="size-3" />
+          ) : (
+            <CircleIcon className="size-3" />
+          )}
+        </button>
+      </motion.div>
+    </motion.div>
   )
 }
 

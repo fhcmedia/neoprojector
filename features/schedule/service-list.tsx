@@ -1,11 +1,6 @@
-import { useState } from "react"
-import { FileTextIcon, Trash2Icon, PencilIcon } from "lucide-react"
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuTrigger,
-} from "@/components/context-menu"
+import { useEffect, useRef, useState } from "react"
+import { AnimatePresence, motion } from "motion/react"
+import { FileTextIcon, Trash2Icon, PencilIcon, XIcon } from "lucide-react"
 import { AddArea } from "@/components/add-area"
 import { Input } from "@/components/input"
 import { cn } from "@/lib/utils"
@@ -15,13 +10,19 @@ import {
   useRenameService,
   useDeleteService,
 } from "@/features/schedule/api"
+import type { Service } from "@/bindings/neoprojector/database"
 
 type Props = {
   activeServiceId: number | undefined
+  lastActiveServiceId: number | undefined
   onSelect: (id: number) => void
 }
 
-export function ServiceList({ activeServiceId, onSelect }: Props) {
+export function ServiceList({
+  activeServiceId,
+  lastActiveServiceId,
+  onSelect,
+}: Props) {
   const { data: services, isLoading } = useServices()
   const createMut = useCreateService()
   const renameMut = useRenameService()
@@ -61,64 +62,30 @@ export function ServiceList({ activeServiceId, onSelect }: Props) {
           </div>
         ) : (
           <>
-            {hasServices &&
-              services!.map((svc) => {
-                const isActive = svc.id === activeServiceId
-                const isEditing = svc.id === editingId
-
-                return (
-                  <ContextMenu key={svc.id}>
-                    <ContextMenuTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => !isEditing && onSelect(svc.id)}
-                        onDoubleClick={() => setEditingId(svc.id)}
-                        className={cn(
-                          "flex w-full items-center gap-2 border-b border-border/40 px-3 py-1.5 text-left text-xs transition-colors",
-                          isActive
-                            ? "bg-muted text-foreground"
-                            : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                        )}
-                      >
-                        <FileTextIcon className="size-3.5 shrink-0 opacity-70" />
-                        {isEditing ? (
-                          <Input
-                            autoFocus
-                            defaultValue={svc.name}
-                            onBlur={(e) => handleRename(svc.id, e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                handleRename(svc.id, e.currentTarget.value)
-                              } else if (e.key === "Escape") {
-                                setEditingId(null)
-                              }
-                            }}
-                            className="h-6 px-1.5 py-0 text-xs"
-                          />
-                        ) : (
-                          <span className="truncate">{svc.name}</span>
-                        )}
-                      </button>
-                    </ContextMenuTrigger>
-                    <ContextMenuContent>
-                      <ContextMenuItem onSelect={() => setEditingId(svc.id)}>
-                        <PencilIcon className="size-3.5" />
-                        Rename
-                      </ContextMenuItem>
-                      <ContextMenuItem
-                        variant="destructive"
-                        onSelect={() => {
-                          deleteMut.mutate(svc.id)
-                          if (svc.id === activeServiceId) onSelect(0)
-                        }}
-                      >
-                        <Trash2Icon className="size-3.5" />
-                        Delete
-                      </ContextMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
-                )
-              })}
+            {hasServices && (
+              <AnimatePresence initial={false}>
+                {services!.map((svc) => (
+                  <ServiceRow
+                    key={svc.id}
+                    service={svc}
+                    isActive={svc.id === activeServiceId}
+                    isLastActive={
+                      svc.id === lastActiveServiceId &&
+                      svc.id !== activeServiceId
+                    }
+                    isEditing={svc.id === editingId}
+                    onSelect={() => onSelect(svc.id)}
+                    onStartEdit={() => setEditingId(svc.id)}
+                    onRename={(name) => handleRename(svc.id, name)}
+                    onCancelEdit={() => setEditingId(null)}
+                    onDelete={() => {
+                      deleteMut.mutate(svc.id)
+                      if (svc.id === activeServiceId) onSelect(0)
+                    }}
+                  />
+                ))}
+              </AnimatePresence>
+            )}
             <AddArea
               hasContent={hasServices}
               onClick={handleCreate}
@@ -129,5 +96,140 @@ export function ServiceList({ activeServiceId, onSelect }: Props) {
         )}
       </div>
     </div>
+  )
+}
+
+function ServiceRow({
+  service,
+  isActive,
+  isLastActive,
+  isEditing,
+  onSelect,
+  onStartEdit,
+  onRename,
+  onCancelEdit,
+  onDelete,
+}: {
+  service: Service
+  isActive: boolean
+  isLastActive: boolean
+  isEditing: boolean
+  onSelect: () => void
+  onStartEdit: () => void
+  onRename: (name: string) => void
+  onCancelEdit: () => void
+  onDelete: () => void
+}) {
+  const [pendingDelete, setPendingDelete] = useState(false)
+  const rowRef = useRef<HTMLDivElement>(null)
+
+  // Click anywhere outside this row cancels the pending-delete confirm.
+  useEffect(() => {
+    if (!pendingDelete) return
+    function handler(e: MouseEvent) {
+      const target = e.target as HTMLElement | null
+      if (!target) return
+      if (rowRef.current?.contains(target)) return
+      setPendingDelete(false)
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [pendingDelete])
+
+  return (
+    <motion.div
+      ref={rowRef}
+      initial={false}
+      exit={{ height: 0, opacity: 0 }}
+      transition={{
+        height: { duration: 0.14, ease: [0.32, 0.72, 0, 1] },
+        opacity: { duration: 0.09 },
+      }}
+      className="overflow-hidden"
+    >
+      <div
+        className={cn(
+          "group relative flex w-full items-center gap-2 border-b border-border/40 px-3 py-1.5 text-left text-xs transition-colors",
+          pendingDelete && "bg-destructive/15 text-foreground",
+          !pendingDelete && isActive && "bg-muted text-foreground",
+          !pendingDelete &&
+            !isActive &&
+            "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+        )}
+      >
+        {/* Last-active breadcrumb: same right-anchored emerald gradient as
+           a played item. Lets the user find where they were without
+           reading dates or names. Hidden while the row is the currently
+           active one to avoid layering two highlights. */}
+        {isLastActive && !pendingDelete && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 w-[32%] bg-gradient-to-l from-emerald-500/55 via-emerald-500/20 to-transparent"
+          />
+        )}
+        <button
+          type="button"
+          onClick={() => !isEditing && onSelect()}
+          onDoubleClick={onStartEdit}
+          className="flex flex-1 items-center gap-2 text-left"
+        >
+          <FileTextIcon className="size-3.5 shrink-0 opacity-70" />
+          {isEditing ? (
+            <Input
+              autoFocus
+              defaultValue={service.name}
+              onBlur={(e) => onRename(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") onRename(e.currentTarget.value)
+                else if (e.key === "Escape") onCancelEdit()
+              }}
+              className="h-6 px-1.5 py-0 text-xs"
+            />
+          ) : (
+            <span className="truncate">{service.name}</span>
+          )}
+        </button>
+        {!isEditing && (
+          <div className="relative z-[1] flex items-center gap-1">
+            <button
+              type="button"
+              aria-label="Rename"
+              onClick={(e) => {
+                e.stopPropagation()
+                onStartEdit()
+              }}
+              className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-amber-500/15 hover:text-amber-500 group-hover:opacity-70 hover:!opacity-100"
+            >
+              <PencilIcon className="size-3" />
+            </button>
+            <button
+              type="button"
+              aria-label={pendingDelete ? "Confirm delete" : "Delete"}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (pendingDelete) {
+                  onDelete()
+                  setPendingDelete(false)
+                } else {
+                  setPendingDelete(true)
+                }
+              }}
+              className={cn(
+                "grid size-5 shrink-0 place-items-center rounded transition-all",
+                pendingDelete
+                  ? "bg-destructive text-destructive-foreground opacity-100"
+                  : "text-muted-foreground opacity-0 hover:bg-destructive/15 hover:text-destructive group-hover:opacity-70 hover:!opacity-100"
+              )}
+            >
+              {pendingDelete ? (
+                <XIcon className="size-3" />
+              ) : (
+                <Trash2Icon className="size-3" />
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+    </motion.div>
   )
 }

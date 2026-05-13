@@ -21,7 +21,7 @@ export function AddFlow({
   onDone,
 }: {
   sectionId: number
-  onDone: () => void
+  onDone: (newItemId?: number) => void
 }) {
   const [kind, setKind] = useState<AddKind>("song")
 

@@ -18,6 +18,7 @@ import { Input } from "@/components/input"
 import { cn } from "@/lib/utils"
 import {
   scheduleKeys,
+  useItems,
   useSections,
   useCreateSection,
   useRenameSection,
@@ -51,6 +52,7 @@ type Props = {
   onSelectItem: (id: number | undefined) => void
   onAddItem: (sectionId: number) => void
   onEditItem: (itemId: number) => void
+  newItemId?: number
 }
 
 // Palette dot animation: container drives the stagger, dots define their
@@ -58,11 +60,11 @@ type Props = {
 // the first to leave.
 const paletteContainerVariants = {
   open: {
-    transition: { staggerChildren: 0.04, staggerDirection: 1 },
+    transition: { staggerChildren: 0.025, staggerDirection: 1 },
   },
   closed: {
     transition: {
-      staggerChildren: 0.04,
+      staggerChildren: 0.025,
       staggerDirection: -1,
     },
   },
@@ -73,13 +75,13 @@ const paletteDotVariants = {
     opacity: 1,
     y: 0,
     scale: 1,
-    transition: { type: "spring" as const, stiffness: 500, damping: 28 },
+    transition: { duration: 0.12, ease: "easeOut" as const },
   },
   closed: {
     opacity: 0,
-    y: 6,
-    scale: 0.5,
-    transition: { duration: 0.15 },
+    y: 4,
+    scale: 0.7,
+    transition: { duration: 0.1 },
   },
 }
 
@@ -87,11 +89,11 @@ const paletteDotVariants = {
 // coming up from below creates a coordinated vertical swap on open;
 // closing reverses, so icons drop down from above while dots fall away.
 const actionsVariants = {
-  hidden: { opacity: 0, y: -6, transition: { duration: 0.18 } },
+  hidden: { opacity: 0, y: -4, transition: { duration: 0.1 } },
   visible: {
     opacity: 1,
     y: 0,
-    transition: { type: "spring" as const, stiffness: 500, damping: 28 },
+    transition: { duration: 0.12, ease: "easeOut" as const },
   },
 }
 
@@ -102,6 +104,7 @@ export function ScheduleView({
   onSelectItem,
   onAddItem,
   onEditItem,
+  newItemId,
 }: Props) {
   const { data: services } = useServices()
   const service = services?.find((s) => s.id === serviceId)
@@ -281,17 +284,25 @@ export function ScheduleView({
                 <VerticalSortable
                   ids={sections.map((s) => `section-${s.id}`)}
                 >
-                  {sections.map((section) => (
-                    <SectionRow
-                      key={section.id}
-                      section={section}
-                      serviceId={serviceId}
-                      activeItemId={activeItemId}
-                      onSelectItem={onSelectItem}
-                      onAddItem={onAddItem}
-                      onEditItem={onEditItem}
-                    />
-                  ))}
+                  {/* initial={false} suppresses enter animations for
+                     existing rows on AnimatePresence's first render —
+                     but new sections added later still animate in via
+                     their own `initial` prop. That's the behavior we
+                     want: instant on schedule load, subtle on add. */}
+                  <AnimatePresence initial={false}>
+                    {sections.map((section) => (
+                      <SectionRow
+                        key={section.id}
+                        section={section}
+                        serviceId={serviceId}
+                        activeItemId={activeItemId}
+                        onSelectItem={onSelectItem}
+                        onAddItem={onAddItem}
+                        onEditItem={onEditItem}
+                        newItemId={newItemId}
+                      />
+                    ))}
+                  </AnimatePresence>
                 </VerticalSortable>
               </DndContext>
             )}
@@ -316,6 +327,7 @@ function SectionRow({
   onSelectItem,
   onAddItem,
   onEditItem,
+  newItemId,
 }: {
   section: ServiceSection
   serviceId: number
@@ -323,10 +335,16 @@ function SectionRow({
   onSelectItem: (id: number | undefined) => void
   onAddItem: (sectionId: number) => void
   onEditItem: (itemId: number) => void
+  newItemId?: number
 }) {
   const renameMut = useRenameSection(serviceId)
   const deleteMut = useDeleteSection(serviceId)
   const setColorMut = useSetSectionColor(serviceId)
+  // Empty sections delete without confirm — there's nothing to lose, so the
+  // confirm step is just friction. Pull the items list from cache so this
+  // doesn't trigger an extra fetch.
+  const { data: items } = useItems(section.id)
+  const isEmpty = !items || items.length === 0
   const { attributes, listeners, setNodeRef, style } = useSortableRow(
     `section-${section.id}`,
     { type: "section" }
@@ -357,7 +375,18 @@ function SectionRow({
   const colored = color.key !== ""
 
   return (
-    <div ref={setNodeRef} style={style} className="border-b border-border/40">
+    <motion.div
+      ref={setNodeRef}
+      style={style}
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height: "auto", opacity: 1 }}
+      exit={{ height: 0, opacity: 0 }}
+      transition={{
+        height: { duration: 0.22, ease: [0.32, 0.72, 0, 1] },
+        opacity: { duration: 0.14, ease: "easeOut" },
+      }}
+      className="overflow-hidden border-b border-border/40"
+    >
       <div
         ref={headerRef}
         className={cn(
@@ -492,6 +521,11 @@ function SectionRow({
                   aria-label={pendingDelete ? "Confirm delete" : "Delete"}
                   onClick={(e) => {
                     e.stopPropagation()
+                    if (isEmpty) {
+                      deleteMut.mutate(section.id)
+                      setPendingDelete(false)
+                      return
+                    }
                     if (pendingDelete) {
                       deleteMut.mutate(section.id)
                       setPendingDelete(false)
@@ -531,18 +565,32 @@ function SectionRow({
         </div>
       </div>
 
-      {!collapsed && (
-        <ItemList
-          sectionId={section.id}
-          activeItemId={activeItemId}
-          onSelectItem={onSelectItem}
-          onEditItem={onEditItem}
-          color={color}
-          sectionPendingDelete={pendingDelete}
-        />
-      )}
-
-    </div>
+      <AnimatePresence initial={false}>
+        {!collapsed && (
+          <motion.div
+            key="section-content"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{
+              height: { duration: 0.16, ease: [0.32, 0.72, 0, 1] },
+              opacity: { duration: 0.1 },
+            }}
+            className="overflow-hidden"
+          >
+            <ItemList
+              sectionId={section.id}
+              activeItemId={activeItemId}
+              onSelectItem={onSelectItem}
+              onEditItem={onEditItem}
+              color={color}
+              sectionPendingDelete={pendingDelete}
+              newItemId={newItemId}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   )
 }
 

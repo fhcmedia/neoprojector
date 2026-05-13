@@ -120,4 +120,17 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  /* Global animation kill-switch — paired with hooks/use-animations.tsx.
+     When the user disables UI animations, flip `data-no-anim` on <html>
+     and every CSS transition/animation collapses to zero so the UI snaps
+     instantly without writing per-component conditionals. */
+  html[data-no-anim] *,
+  html[data-no-anim] *::before,
+  html[data-no-anim] *::after {
+    transition-duration: 0s !important;
+    transition-delay: 0s !important;
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
 }

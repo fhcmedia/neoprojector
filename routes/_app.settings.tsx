@@ -3,6 +3,8 @@ import { useState, useEffect } from "react"
 import { useTheme } from "next-themes"
 import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react"
 import { ToggleGroup, ToggleGroupItem } from "@/components/toggle-group"
+import { Switch } from "@/components/switch"
+import { useAnimations } from "@/hooks/use-animations"
 
 export const Route = createFileRoute("/_app/settings")({
   component: Settings,
@@ -91,6 +93,17 @@ function ThemeToggle() {
   )
 }
 
+function AnimationsToggle() {
+  const { enabled, setEnabled } = useAnimations()
+  return (
+    <Switch
+      checked={enabled}
+      onCheckedChange={setEnabled}
+      aria-label="Toggle UI animations"
+    />
+  )
+}
+
 function GeneralPanel() {
   return (
     <div className="divide-y divide-border/40">
@@ -99,6 +112,12 @@ function GeneralPanel() {
         description="Follow your OS preference or pin to a specific theme."
       >
         <ThemeToggle />
+      </Row>
+      <Row
+        label="UI animations"
+        description="Subtle motion across the app. Disable for an instant, static interface."
+      >
+        <AnimationsToggle />
       </Row>
     </div>
   )

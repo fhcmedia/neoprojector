@@ -21,19 +21,69 @@ type Sel = { book: string; chapter: number; from: number; to: number }
 type Step = "books" | "chapters" | "verses"
 
 type Props =
-  | { mode: "add"; sectionId: number; onSaved: () => void }
+  | { mode: "add"; sectionId: number; onSaved: (newItemId?: number) => void }
   | { mode: "edit"; itemId: number; initial: Sel; onSaved: () => void }
 
-// Stable color per book category — left edge bar in the book list.
-const categoryColors: Record<string, string> = {
-  law: "bg-amber-500",
-  history: "bg-emerald-500",
-  poetry: "bg-sky-500",
-  major_prophets: "bg-violet-500",
-  minor_prophets: "bg-purple-500",
-  gospels: "bg-rose-500",
-  letters: "bg-orange-500",
-  prophecy: "bg-pink-500",
+// Stable color per book category. Mirrors the section accent palette so
+// the picker feels cohesive with the rest of the schedule — chart-1..5 from
+// shadcn's theme tokens, cycled across the eight categories. Rest / hover /
+// active mirror the section-color tinting levels (12 / 22 / 35) so the row
+// reads as a tinted shadcn item rather than a flat highlight.
+type CategoryStyle = {
+  rest: string
+  hover: string
+  active: string
+}
+
+const categoryStyles: Record<string, CategoryStyle> = {
+  law: {
+    rest: "bg-chart-1/12 text-foreground/80",
+    hover: "hover:bg-chart-1/22",
+    active: "bg-chart-1/35 text-foreground",
+  },
+  history: {
+    rest: "bg-chart-2/12 text-foreground/80",
+    hover: "hover:bg-chart-2/22",
+    active: "bg-chart-2/35 text-foreground",
+  },
+  poetry: {
+    rest: "bg-chart-3/12 text-foreground/80",
+    hover: "hover:bg-chart-3/22",
+    active: "bg-chart-3/35 text-foreground",
+  },
+  major_prophets: {
+    rest: "bg-chart-4/12 text-foreground/80",
+    hover: "hover:bg-chart-4/22",
+    active: "bg-chart-4/35 text-foreground",
+  },
+  minor_prophets: {
+    rest: "bg-chart-5/12 text-foreground/80",
+    hover: "hover:bg-chart-5/22",
+    active: "bg-chart-5/35 text-foreground",
+  },
+  // NT cycles back through the palette so the books still read as a
+  // continuous shadcn-tinted list.
+  gospels: {
+    rest: "bg-chart-1/12 text-foreground/80",
+    hover: "hover:bg-chart-1/22",
+    active: "bg-chart-1/35 text-foreground",
+  },
+  letters: {
+    rest: "bg-chart-2/12 text-foreground/80",
+    hover: "hover:bg-chart-2/22",
+    active: "bg-chart-2/35 text-foreground",
+  },
+  prophecy: {
+    rest: "bg-chart-3/12 text-foreground/80",
+    hover: "hover:bg-chart-3/22",
+    active: "bg-chart-3/35 text-foreground",
+  },
+}
+
+const fallbackCategoryStyle: CategoryStyle = {
+  rest: "bg-muted/40 text-muted-foreground",
+  hover: "hover:bg-muted",
+  active: "bg-muted text-foreground",
 }
 
 // Narrow-column drill-down: search at top, three views (books → chapters →
@@ -142,11 +192,13 @@ export function BiblePicker(props: Props) {
     if (props.mode === "edit") {
       updateMut.mutate(
         { itemId: props.itemId, ref },
-        { onSuccess: props.onSaved }
+        { onSuccess: () => props.onSaved() }
       )
       return
     }
-    addMut.mutate(ref, { onSuccess: props.onSaved })
+    addMut.mutate(ref, {
+      onSuccess: (item) => props.onSaved((item as { id?: number })?.id),
+    })
   }
 
   // Pull the active chapter's verses up here so we know the chapter's max
@@ -372,28 +424,25 @@ function BooksView({
 
   return (
     <div ref={scrollRef} className="h-full overflow-y-auto py-1">
-      {books.map((b) => (
-        <button
-          key={b.name}
-          type="button"
-          data-book={b.name}
-          onClick={() => onPick(b.name)}
-          className={cn(
-            "relative flex w-full items-center gap-2 py-1 pl-3 pr-2 text-left text-sm",
-            activeBook === b.name
-              ? "bg-muted text-foreground"
-              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-          )}
-        >
-          <span
+      {books.map((b) => {
+        const style =
+          categoryStyles[b.category] ?? fallbackCategoryStyle
+        const isActive = activeBook === b.name
+        return (
+          <button
+            key={b.name}
+            type="button"
+            data-book={b.name}
+            onClick={() => onPick(b.name)}
             className={cn(
-              "absolute left-0 top-0 h-full w-0.5",
-              categoryColors[b.category] ?? "bg-muted-foreground/30"
+              "flex w-full items-center gap-2 py-1 pl-3 pr-2 text-left text-sm transition-colors",
+              isActive ? style.active : cn(style.rest, style.hover)
             )}
-          />
-          {b.name_kjv}
-        </button>
-      ))}
+          >
+            {b.name_kjv}
+          </button>
+        )
+      })}
     </div>
   )
 }
