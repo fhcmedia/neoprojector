@@ -10,6 +10,7 @@ import (
 	"neoprojector/services/media"
 	"neoprojector/services/schedule"
 	"neoprojector/services/songs"
+	"neoprojector/services/templates"
 
 	"github.com/adrg/xdg"
 	charmlog "github.com/charmbracelet/log"
@@ -45,6 +46,7 @@ func main() {
 			application.NewService(bible.New(db)),
 			application.NewService(media.New(db)),
 			application.NewService(schedule.New(db)),
+			application.NewService(templates.New(db)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

@@ -121,6 +121,20 @@
     @apply bg-background text-foreground;
   }
 
+  /* Every interactive control gets the hand cursor by default — Tailwind v4
+     and shadcn ship without this, but we treat it as part of the app's
+     baseline UX so we don't have to remember `cursor-pointer` on every
+     button. Disabled buttons fall back to `not-allowed` to make the dead
+     state legible without extra classes. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+  button:disabled,
+  [role="button"][aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+
   /* Global animation kill-switch — paired with hooks/use-animations.tsx.
      When the user disables UI animations, flip `data-no-anim` on <html>
      and every CSS transition/animation collapses to zero so the UI snaps

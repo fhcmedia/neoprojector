@@ -9,13 +9,15 @@ import { cn } from "@/lib/utils"
 import { BibleTab } from "@/features/library/bible-tab"
 import { SongsTab } from "@/features/library/songs-tab"
 import { MediaTab } from "@/features/library/media-tab"
+import { TemplatesTab } from "@/features/library/templates-tab"
 
-type Tab = "bible" | "songs" | "media"
+type Tab = "bible" | "songs" | "media" | "templates"
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "bible", label: "Bible" },
   { key: "songs", label: "Songs" },
   { key: "media", label: "Media" },
+  { key: "templates", label: "Templates" },
 ]
 
 const MEDIA_DROP_EVENT = "media:files-dropped"
@@ -33,6 +35,7 @@ export function LibraryView() {
   // row as the tabs while the body of each tab stays a pure consumer.
   const [songSearch, setSongSearch] = useState("")
   const [mediaSearch, setMediaSearch] = useState("")
+  const [templateSearch, setTemplateSearch] = useState("")
 
   // Media import is also lifted so the "+" button can live in the
   // header. The drop-event handler stays here too — drops can land on
@@ -162,6 +165,21 @@ export function LibraryView() {
                 />
               </motion.div>
             )}
+            {active === "templates" && (
+              <motion.div
+                key="templates-controls"
+                initial={{ opacity: 0, x: 6 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -6 }}
+                transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
+                className="flex h-full w-full items-center gap-2"
+              >
+                <TemplateSearchInput
+                  value={templateSearch}
+                  onChange={setTemplateSearch}
+                />
+              </motion.div>
+            )}
           </AnimatePresence>
         </div>
       </div>
@@ -185,6 +203,18 @@ export function LibraryView() {
                 dropTarget={MEDIA_DROP_TARGET}
               />
             )}
+            {active === "templates" && (
+              <TemplatesTab
+                search={templateSearch}
+                onOpen={(t) => {
+                  // Editor lives in the next phase. For now log so the
+                  // wiring is obvious during development; will be
+                  // replaced by a navigation to the editor canvas.
+                  // eslint-disable-next-line no-console
+                  console.log("open template", t.id, t.name)
+                }}
+              />
+            )}
           </motion.div>
         </AnimatePresence>
       </div>
@@ -206,6 +236,26 @@ function SongSearchInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Search songs"
+        className="h-6 rounded-none border-0 bg-transparent pl-7 pr-2 py-0 text-xs shadow-none focus-visible:ring-0 dark:bg-transparent"
+      />
+    </div>
+  )
+}
+
+function TemplateSearchInput({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <div className="relative h-6 w-full max-w-[260px]">
+      <SearchIcon className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Search templates"
         className="h-6 rounded-none border-0 bg-transparent pl-7 pr-2 py-0 text-xs shadow-none focus-visible:ring-0 dark:bg-transparent"
       />
     </div>

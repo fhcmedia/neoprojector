@@ -119,3 +119,15 @@ type SongSection struct {
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }
+
+type Template struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	ViewportW int64  `json:"viewport_w"`
+	ViewportH int64  `json:"viewport_h"`
+	DataJson  string `json:"data_json"`
+	IsDefault int64  `json:"is_default"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+}

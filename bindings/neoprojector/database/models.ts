@@ -410,3 +410,56 @@ export class SongSection {
         return new SongSection($$parsedSource as Partial<SongSection>);
     }
 }
+
+export class Template {
+    "id": number;
+    "name": string;
+    "kind": string;
+    "viewport_w": number;
+    "viewport_h": number;
+    "data_json": string;
+    "is_default": number;
+    "created_at": string;
+    "updated_at": string;
+
+    /** Creates a new Template instance. */
+    constructor($$source: Partial<Template> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = 0;
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("kind" in $$source)) {
+            this["kind"] = "";
+        }
+        if (!("viewport_w" in $$source)) {
+            this["viewport_w"] = 0;
+        }
+        if (!("viewport_h" in $$source)) {
+            this["viewport_h"] = 0;
+        }
+        if (!("data_json" in $$source)) {
+            this["data_json"] = "";
+        }
+        if (!("is_default" in $$source)) {
+            this["is_default"] = 0;
+        }
+        if (!("created_at" in $$source)) {
+            this["created_at"] = "";
+        }
+        if (!("updated_at" in $$source)) {
+            this["updated_at"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Template instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Template {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new Template($$parsedSource as Partial<Template>);
+    }
+}

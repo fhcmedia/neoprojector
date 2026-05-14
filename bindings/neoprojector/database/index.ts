@@ -11,5 +11,6 @@ export {
     ServiceSection,
     Song,
     SongLine,
-    SongSection
+    SongSection,
+    Template
 } from "./models.js";
