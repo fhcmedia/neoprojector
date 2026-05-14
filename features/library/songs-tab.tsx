@@ -1,7 +1,6 @@
 import { useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { SearchIcon, MusicIcon } from "lucide-react"
-import { Input } from "@/components/input"
+import { MusicIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDebounce } from "@/hooks/use-debounce"
 import { songSectionType } from "@/features/songs/section-types"
@@ -11,9 +10,8 @@ import {
 } from "@/features/schedule/picker-anim"
 import { useLibrarySongs, useLibrarySong } from "@/features/library/api"
 
-export function SongsTab() {
+export function SongsTab({ search }: { search: string }) {
   const { data: songs, isLoading } = useLibrarySongs()
-  const [search, setSearch] = useState("")
   const [selectedId, setSelectedId] = useState<number | null>(null)
 
   const debounced = useDebounce(search, 200)
@@ -36,15 +34,6 @@ export function SongsTab() {
         variants={pickerRowVariants}
         className="flex h-full w-[30%] min-w-[200px] flex-col border-r border-border/50"
       >
-        <div className="flex h-8 shrink-0 items-center gap-1.5 border-b border-border/40 px-2">
-          <SearchIcon className="size-3.5 shrink-0 text-muted-foreground/60" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search songs"
-            className="h-6 border-0 bg-transparent px-0 py-0 text-xs shadow-none focus-visible:ring-0"
-          />
-        </div>
         <div className="flex flex-1 flex-col overflow-y-auto">
           {isLoading ? (
             <div className="px-3 py-2 text-xs text-muted-foreground/60">

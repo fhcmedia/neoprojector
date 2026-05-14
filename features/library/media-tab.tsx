@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMemo, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import {
-  SearchIcon,
   ImageIcon,
   FilmIcon,
   FileAudioIcon,
@@ -10,33 +9,33 @@ import {
   PlusIcon,
   UploadIcon,
 } from "lucide-react"
-import { Dialogs, Events } from "@wailsio/runtime"
 import { Service as Media } from "@/bindings/neoprojector/services/media"
 import type { Medium } from "@/bindings/neoprojector/database"
-import { Input } from "@/components/input"
 import { cn } from "@/lib/utils"
 import { useDebounce } from "@/hooks/use-debounce"
 
-type Kind = "all" | "image" | "video" | "audio" | "pdf"
-const DROP_EVENT = "media:files-dropped"
-const DROP_TARGET = "library-media"
+export type MediaKind = "all" | "image" | "video" | "audio" | "pdf"
 
-type DropPayload = {
-  paths?: string[]
-  target_id?: string
-  target_attrs?: Record<string, string>
+type Props = {
+  search: string
+  kind?: MediaKind
+  importing: boolean
+  onImport: () => void | Promise<void>
+  dropTarget: string
 }
 
-export function MediaTab() {
-  const qc = useQueryClient()
+export function MediaTab({
+  search,
+  kind = "all",
+  importing,
+  onImport,
+  dropTarget,
+}: Props) {
   const { data: media, isLoading } = useQuery({
     queryKey: ["media", "list"],
     queryFn: () => Media.ListMedia() as unknown as Promise<Medium[]>,
   })
-  const [search, setSearch] = useState("")
-  const [kind, setKind] = useState<Kind>("all")
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [importing, setImporting] = useState(false)
 
   const debounced = useDebounce(search, 200)
 
@@ -53,91 +52,10 @@ export function MediaTab() {
     })
   }, [media, kind, debounced])
 
-  async function importPaths(paths: string[]) {
-    if (paths.length === 0) return
-    setImporting(true)
-    try {
-      await Media.ImportFiles(paths)
-      qc.invalidateQueries({ queryKey: ["media", "list"] })
-    } finally {
-      setImporting(false)
-    }
-  }
-
-  async function openFileDialog() {
-    const picked = await Dialogs.OpenFile({
-      Title: "Add media",
-      AllowsMultipleSelection: true,
-      CanChooseFiles: true,
-      CanChooseDirectories: false,
-      Filters: [
-        {
-          DisplayName: "Media (images, videos, audio, PDF)",
-          Pattern:
-            "*.png;*.jpg;*.jpeg;*.gif;*.webp;*.svg;*.mp4;*.webm;*.mov;*.mp3;*.wav;*.ogg;*.pdf",
-        },
-        { DisplayName: "All files", Pattern: "*.*" },
-      ],
-    })
-    const paths = Array.isArray(picked)
-      ? picked
-      : typeof picked === "string" && picked
-        ? [picked]
-        : []
-    await importPaths(paths)
-  }
-
-  // Wails bridges native file drops as `media:files-dropped`. We claim
-  // drops landing on this tab via the target_id we set on the drop area.
-  useEffect(() => {
-    const off = Events.On(DROP_EVENT, (event: { data?: DropPayload }) => {
-      const data = event?.data ?? {}
-      if (data.target_id !== DROP_TARGET) return
-      const paths = data.paths ?? []
-      if (paths.length === 0) return
-      void importPaths(paths)
-    })
-    return () => {
-      Events.Off(DROP_EVENT)
-      void off
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   return (
     <div className="flex h-full w-full flex-col">
-      <div className="flex h-8 shrink-0 items-center gap-2 border-b border-border/40 px-2">
-        <SearchIcon className="size-3.5 shrink-0 text-muted-foreground/60" />
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search media"
-          className="h-6 border-0 bg-transparent px-0 py-0 text-xs shadow-none focus-visible:ring-0"
-        />
-        <KindChip current={kind} value="all" label="All" onSelect={setKind} />
-        <KindChip
-          current={kind}
-          value="image"
-          label="Images"
-          onSelect={setKind}
-        />
-        <KindChip
-          current={kind}
-          value="video"
-          label="Videos"
-          onSelect={setKind}
-        />
-        <KindChip
-          current={kind}
-          value="audio"
-          label="Audio"
-          onSelect={setKind}
-        />
-        <KindChip current={kind} value="pdf" label="PDFs" onSelect={setKind} />
-      </div>
-
       <div
-        data-file-drop-target={DROP_TARGET}
+        data-file-drop-target={dropTarget}
         className="relative min-h-0 flex-1 overflow-y-auto p-3"
       >
         {isLoading ? (
@@ -147,7 +65,7 @@ export function MediaTab() {
         ) : filtered.length === 0 ? (
           <button
             type="button"
-            onClick={openFileDialog}
+            onClick={() => void onImport()}
             className="grid h-full w-full place-items-center gap-2 rounded border border-dashed border-border/50 text-center text-xs text-muted-foreground/50 transition-colors hover:border-border hover:text-muted-foreground"
           >
             <UploadIcon className="size-6 opacity-60" />
@@ -191,7 +109,7 @@ export function MediaTab() {
             })}
             <button
               type="button"
-              onClick={openFileDialog}
+              onClick={() => void onImport()}
               disabled={importing}
               className="group flex aspect-[4/3] flex-col items-center justify-center gap-1 rounded border border-dashed border-border/50 text-muted-foreground/40 transition-colors hover:border-border hover:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -220,32 +138,4 @@ function iconFor(type: string) {
     default:
       return FileIcon
   }
-}
-
-function KindChip({
-  current,
-  value,
-  label,
-  onSelect,
-}: {
-  current: Kind
-  value: Kind
-  label: string
-  onSelect: (k: Kind) => void
-}) {
-  const active = current === value
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(value)}
-      className={cn(
-        "h-5 rounded px-2 text-[10px] font-medium uppercase tracking-wider transition-colors",
-        active
-          ? "bg-muted text-foreground"
-          : "text-muted-foreground/70 hover:bg-muted/50 hover:text-foreground"
-      )}
-    >
-      {label}
-    </button>
-  )
 }
