@@ -3,3 +3,6 @@ node_modules
 dist
 package.json.md5
 tsconfig.tsbuildinfo
+build/
+*.db
+.wails/

@@ -143,7 +143,7 @@ export function ScaledTemplate({
   useLayoutEffect(() => {
     const el = wrapRef.current
     if (!el) return
-    const observer = new ResizeObserver(() => {
+    const update = () => {
       const { width, height } = el.getBoundingClientRect()
       if (width === 0 || height === 0) return
       const s = Math.min(
@@ -151,7 +151,9 @@ export function ScaledTemplate({
         height / template.viewport_h
       )
       setScale(s)
-    })
+    }
+    update() // synchronous before first paint
+    const observer = new ResizeObserver(update)
     observer.observe(el)
     return () => observer.disconnect()
   }, [template.viewport_w, template.viewport_h])
@@ -398,6 +400,12 @@ function BoxRenderer({
         overflow: "hidden",
         textAlign: box.align,
         cursor: isInteractive ? "pointer" : undefined,
+        opacity: box.opacity,
+        backgroundColor: box.bgColor,
+        padding:
+          box.paddingX || box.paddingY
+            ? `${box.paddingY ?? 0}px ${box.paddingX ?? 0}px`
+            : undefined,
         // Selection ring sits inside the box bounds via outline so it
         // doesn't shift layout. Sky-blue at full width (3px) reads
         // cleanly on dark and transparent backgrounds.
@@ -418,6 +426,12 @@ function BoxRenderer({
             textAlign: box.align,
             whiteSpace: "pre-wrap",
             wordBreak: "break-word",
+            letterSpacing: box.letterSpacing ? `${box.letterSpacing}em` : undefined,
+            textTransform: box.uppercase ? "uppercase" : undefined,
+            textDecoration: box.underline ? "underline" : undefined,
+            textShadow: box.shadow
+              ? "0 2px 8px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.7)"
+              : undefined,
           }}
         >
           {renderSlotValue(value)}

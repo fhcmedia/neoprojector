@@ -52,7 +52,7 @@ export function EditorCanvas({
   useLayoutEffect(() => {
     const el = wrapRef.current
     if (!el) return
-    const observer = new ResizeObserver(() => {
+    const update = () => {
       const { width, height } = el.getBoundingClientRect()
       if (width === 0 || height === 0) return
       setScale(
@@ -61,7 +61,9 @@ export function EditorCanvas({
           height / template.viewport_h
         )
       )
-    })
+    }
+    update() // synchronous before first paint
+    const observer = new ResizeObserver(update)
     observer.observe(el)
     return () => observer.disconnect()
   }, [template.viewport_w, template.viewport_h])

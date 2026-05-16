@@ -208,11 +208,12 @@ function ServiceRow({
   return (
     <motion.div
       ref={rowRef}
-      initial={false}
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height: "auto", opacity: 1 }}
       exit={{ height: 0, opacity: 0 }}
       transition={{
-        height: { duration: 0.14, ease: [0.32, 0.72, 0, 1] },
-        opacity: { duration: 0.09 },
+        height: { duration: 0.18, ease: [0.32, 0.72, 0, 1] },
+        opacity: { duration: 0.14 },
       }}
       className="overflow-hidden"
     >

@@ -1,7 +1,9 @@
 import { useEffect, useMemo } from "react"
+import { AnimatePresence, motion } from "motion/react"
 import { useQueryClient } from "@tanstack/react-query"
 import type {
   ListServiceItemsWithContentRow,
+  Medium,
   Template,
 } from "@/bindings/neoprojector/database"
 import {
@@ -10,6 +12,7 @@ import {
   type Slide,
 } from "@/features/live/slides"
 import { useLive } from "@/features/live/live-context"
+import { PlayIcon } from "lucide-react"
 import { useShowTemplate } from "@/features/show/use-show-template"
 import { ScaledTemplate } from "@/features/templates/renderer"
 import { songSectionType } from "@/features/songs/section-types"
@@ -153,45 +156,100 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
         Show
       </div>
       <div className="flex h-full flex-col pt-7">
-        {!item && !adHocBibleRef ? (
-          <Empty>{emptyPrompt}</Empty>
-        ) : isLoading ? (
-          <Empty muted>Loading…</Empty>
-        ) : slides.length === 0 ? (
-          <Empty>This item has no content yet</Empty>
-        ) : item && item.kind === "media" ? (
-          <div className="relative flex-1 bg-muted/30">
-            <div className="pointer-events-none absolute inset-0 grid place-items-center text-[10px] text-muted-foreground/40">
-              {slides[0].body}
-            </div>
-          </div>
-        ) : (
-          <div className="grid flex-1 auto-rows-max grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2 overflow-y-auto p-2">
-            {slides.map((slide, idx) => {
-              const active = isLive(slide.kind, sourceItemId, idx)
-              return (
-                <SlideTile
-                  key={idx}
-                  slide={slide}
-                  template={templateForSlide(slide)}
-                  active={active}
-                  onClick={() => {
-                    if (active) {
-                      setLive(null)
-                      return
-                    }
-                    setLive({
-                      kind: slide.kind,
-                      sourceItemId,
-                      slideIndex: idx,
-                      fill: slide.fill,
-                    })
-                  }}
-                />
-              )
-            })}
-          </div>
-        )}
+        <AnimatePresence mode="wait" initial={false}>
+          {!item && !adHocBibleRef ? (
+            <motion.div
+              key="empty"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="flex flex-1 items-center justify-center"
+            >
+              <Empty>{emptyPrompt}</Empty>
+            </motion.div>
+          ) : isLoading ? (
+            <motion.div
+              key="loading"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="flex flex-1 items-center justify-center"
+            >
+              <Empty muted>Loading…</Empty>
+            </motion.div>
+          ) : slides.length === 0 ? (
+            <motion.div
+              key="no-content"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="flex flex-1 items-center justify-center"
+            >
+              <Empty>This item has no content yet</Empty>
+            </motion.div>
+          ) : item && item.kind === "media" ? (
+            <motion.div
+              key={`media-${item.id}`}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
+              className="flex flex-1 flex-col"
+            >
+              <MediaPreview item={item} onSend={() => {
+                const slide = slides[0]
+                if (!slide) return
+                setLive({ kind: slide.kind as "media", sourceItemId: item.id, slideIndex: 0, fill: slide.fill })
+              }} />
+            </motion.div>
+          ) : (
+            <motion.div
+              key={`slides-${activeItemId ?? "adhoc"}`}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
+              className="grid flex-1 auto-rows-max grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2 overflow-y-auto p-2 content-start"
+            >
+              {slides.map((slide, idx) => {
+                const active = isLive(slide.kind, sourceItemId, idx)
+                return (
+                  <motion.div
+                    key={idx}
+                    initial={{ opacity: 0, scale: 0.97 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{
+                      duration: 0.18,
+                      ease: [0.32, 0.72, 0, 1],
+                      delay: Math.min(idx * 0.03, 0.18),
+                    }}
+                  >
+                    <SlideTile
+                      slide={slide}
+                      template={templateForSlide(slide)}
+                      active={active}
+                      onClick={() => {
+                        if (active) {
+                          setLive(null)
+                          return
+                        }
+                        setLive({
+                          kind: slide.kind,
+                          sourceItemId,
+                          slideIndex: idx,
+                          fill: slide.fill,
+                        })
+                      }}
+                    />
+                  </motion.div>
+                )
+              })}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   )
@@ -216,7 +274,7 @@ function SlideTile({
     <button
       type="button"
       onClick={onClick}
-      className="group relative block aspect-video w-full overflow-hidden bg-muted/30 transition-colors"
+      className="group relative block aspect-video w-full overflow-hidden rounded bg-muted/30 transition-all duration-150 hover:ring-1 hover:ring-border"
     >
       {template ? (
         <ScaledTemplate
@@ -241,25 +299,84 @@ function SlideTile({
       )}
       <div
         className={cn(
-          "pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between px-2 py-1 text-[10px] transition-opacity duration-150",
+          "pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/60 to-transparent px-2 py-1.5 text-[10px] transition-opacity duration-150",
           active ? "opacity-100" : "opacity-0 group-hover:opacity-100"
         )}
       >
         <span
           className={cn(
             "truncate uppercase tracking-wider",
-            active ? "text-emerald-500" : "text-foreground/80"
+            active ? "text-emerald-400" : "text-white/80"
           )}
         >
           {slide.caption}
         </span>
         {active && (
-          <span className="shrink-0 uppercase tracking-wider text-emerald-500">
+          <span className="shrink-0 uppercase tracking-wider text-emerald-400">
             Live
           </span>
         )}
       </div>
+      <AnimatePresence>
+        {active && (
+          <motion.div
+            key="active-ring"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="pointer-events-none absolute inset-0 rounded ring-2 ring-inset ring-emerald-500"
+          />
+        )}
+      </AnimatePresence>
     </button>
+  )
+}
+
+function MediaPreview({
+  item,
+  onSend,
+}: {
+  item: ListServiceItemsWithContentRow
+  onSend: () => void
+}) {
+  const mediaId = item.media_id
+  const qc = useQueryClient()
+  const medium = (qc.getQueryData<Medium[]>(["media", "list"]) ?? []).find(
+    (m) => m.id === mediaId
+  )
+  const isVideo = medium?.type === "video"
+  const isImage = medium?.type === "image"
+  return (
+    <div className="flex flex-1 flex-col gap-3 overflow-hidden p-3">
+      <div className="relative flex-1 overflow-hidden rounded-md bg-black">
+        {isImage && mediaId ? (
+          <img
+            src={`/media-asset/${mediaId}`}
+            alt={medium?.title || item.label || "Media"}
+            className="h-full w-full object-contain"
+          />
+        ) : isVideo && mediaId ? (
+          <video
+            src={`/media-asset/${mediaId}`}
+            controls
+            className="h-full w-full"
+          />
+        ) : (
+          <div className="grid h-full place-items-center text-xs text-muted-foreground/40">
+            {item.label || "Media"}
+          </div>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={onSend}
+        className="flex items-center justify-center gap-2 rounded-md bg-foreground/10 px-3 py-2 text-xs font-medium transition-colors hover:bg-foreground/15"
+      >
+        <PlayIcon className="size-3" />
+        Send to Live
+      </button>
+    </div>
   )
 }
 

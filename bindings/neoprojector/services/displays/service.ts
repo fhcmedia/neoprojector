@@ -41,6 +41,13 @@ export function DisplayByID(id: number): $CancellablePromise<database$0.Display>
 }
 
 /**
+ * GetBypassDisplayCheck reports the current bypass state.
+ */
+export function GetBypassDisplayCheck(): $CancellablePromise<boolean> {
+    return $Call.ByID(2882678679);
+}
+
+/**
  * IsLive reports whether output windows are currently open.
  */
 export function IsLive(): $CancellablePromise<boolean> {
@@ -98,6 +105,14 @@ export function SetBibleTemplate(id: number, templateID: number): $CancellablePr
     return $Call.ByID(1962970455, id, templateID).then(($result: any) => {
         return $$createType0($result);
     });
+}
+
+/**
+ * SetBypassDisplayCheck toggles whether StartLive requires at least
+ * one enabled display bound to a connected monitor.
+ */
+export function SetBypassDisplayCheck(bypass: boolean): $CancellablePromise<void> {
+    return $Call.ByID(3610583155, bypass);
 }
 
 export function SetDisplayEnabled(id: number, enabled: boolean): $CancellablePromise<database$0.Display> {

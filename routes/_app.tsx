@@ -1,16 +1,21 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { motion } from "motion/react"
 import {
   createFileRoute,
   Link,
   Outlet,
   useRouterState,
+  redirect,
+  useNavigate,
 } from "@tanstack/react-router"
 import {
   ArrowUpIcon,
   BellIcon,
   CircleUserIcon,
+  MonitorIcon,
   PanelsTopLeftIcon,
   SettingsIcon,
+  LogOutIcon,
 } from "lucide-react"
 import {
   AlertDialog,
@@ -23,21 +28,42 @@ import {
   AlertDialogTitle,
 } from "@/components/alert-dialog"
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/popover"
+import {
   useLiveOutput,
   useStartLive,
   useStopLive,
 } from "@/features/displays/api"
+import { useIsMutating } from "@tanstack/react-query"
 import { useLive } from "@/features/live/live-context"
 import { useKeybinds } from "@/hooks/use-keybinds"
+import { CommandPalette } from "@/features/command-palette/command-palette"
+import { useAuth } from "@/hooks/use-auth"
 import logo from "@/assets/logo.png"
 
 export const Route = createFileRoute("/_app")({
+  beforeLoad: () => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("neoprojector.auth")
+      if (!saved) {
+        throw redirect({
+          to: "/auth",
+          replace: true,
+        })
+      }
+    }
+  },
   component: AppShell,
 })
 
 function AppShell() {
   const path = useRouterState({ select: (s) => s.location.pathname })
   const inSettings = path.startsWith("/settings")
+  const inEditor =
+    path.startsWith("/templates/") || path.startsWith("/overlays/")
   // live mirrors the Go-side IsLive (polled). The local mutation
   // invalidates it on success, so the button reflects actual window
   // state — including external close (monitor unplug, user Cmd-Q on
@@ -47,12 +73,32 @@ function AppShell() {
   const stopMut = useStopLive()
   const { republish } = useLive()
   useKeybinds()
+  const isSaving = useIsMutating() > 0
   const [confirmOffline, setConfirmOffline] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
   const [hasUnread, setHasUnread] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault()
+        setPaletteOpen((v) => !v)
+      }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+  }, [])
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
 
   return (
-    <div className="flex h-screen flex-col bg-background text-foreground">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.8, ease: "easeOut" }}
+      className="flex h-screen flex-col bg-background text-foreground"
+    >
       <header className="flex h-12 shrink-0 items-stretch justify-between border-b border-border/50">
         <Link
           to="/"
@@ -67,13 +113,37 @@ function AppShell() {
           </span>
         </Link>
         <div className="flex items-stretch">
-          <button
-            type="button"
-            aria-label="Account"
-            className="grid w-12 place-items-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
-          >
-            <CircleUserIcon className="h-4 w-4" />
-          </button>
+          <Popover>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                aria-label="Account"
+                className="grid w-12 place-items-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+              >
+                <CircleUserIcon className="h-4 w-4" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-56 overflow-hidden rounded-xl border border-border/50 bg-background/95 p-0 shadow-lg backdrop-blur-md">
+              <div className="flex flex-col p-4">
+                <span className="text-sm font-semibold text-foreground">Welcome, {user?.username}</span>
+                <span className="text-xs text-muted-foreground">Pro License Active</span>
+              </div>
+              <div className="h-px bg-border/50" />
+              <div className="p-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    logout()
+                    navigate({ to: "/auth", replace: true })
+                  }}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-red-500 transition-colors hover:bg-red-500/10 focus-visible:bg-red-500/10 focus-visible:outline-none"
+                >
+                  <LogOutIcon className="h-4 w-4" />
+                  Sign Out
+                </button>
+              </div>
+            </PopoverContent>
+          </Popover>
           <button
             type="button"
             aria-label={
@@ -88,16 +158,32 @@ function AppShell() {
             )}
           </button>
           <Link
-            to={inSettings ? "/" : "/settings"}
-            aria-label={inSettings ? "Back to projector" : "Settings"}
+            to="/presenter"
+            aria-label="Presenter view"
+            className="grid w-10 place-items-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+          >
+            <MonitorIcon className="h-4 w-4" />
+          </Link>
+          <Link
+            to={inSettings || inEditor ? "/" : "/settings"}
+            aria-label={inSettings || inEditor ? "Back to projector" : "Settings"}
             className="grid w-12 place-items-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
           >
-            {inSettings ? (
+            {inSettings || inEditor ? (
               <PanelsTopLeftIcon className="h-4 w-4" />
             ) : (
               <SettingsIcon className="h-4 w-4" />
             )}
           </Link>
+          {isSaving && (
+            <span
+              title="Saving…"
+              className="flex items-center gap-1.5 px-2 text-[10px] text-muted-foreground/60"
+            >
+              <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+              Saving
+            </span>
+          )}
           <span className="w-px bg-border/60" />
           <button
             type="button"
@@ -165,7 +251,8 @@ function AppShell() {
             <AlertDialogTitle>Can't go live</AlertDialogTitle>
             <AlertDialogDescription>
               {startError ?? ""} Open Settings → Display to enable a display
-              and bind it to a connected monitor.
+              and bind it to a connected monitor. Or enable the bypass in
+              Settings → Output to go live without displays.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -175,9 +262,10 @@ function AppShell() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       <main className="flex-1 min-h-0">
         <Outlet />
       </main>
-    </div>
+    </motion.div>
   )
 }

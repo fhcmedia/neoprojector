@@ -9,7 +9,7 @@ import { useVimMode } from "@/hooks/use-vim-mode"
 // contentEditable so the schedule rename, search, song editor, etc.
 // keep their normal text-editing behaviour.
 export function useKeybinds() {
-  const { navigateNext, navigatePrev, clearLive } = useLive()
+  const { navigateNext, navigatePrev, clearLive, clearOverlays, activeOverlays } = useLive()
   const { enabled: vim } = useVimMode()
 
   useEffect(() => {
@@ -39,7 +39,14 @@ export function useKeybinds() {
           return
         case "Escape":
           e.preventDefault()
-          clearLive()
+          // Priority tree: clear overlays first, then slide.
+          // Each press peels back one layer so the operator always
+          // knows what Escape will do next.
+          if (activeOverlays.length > 0) {
+            clearOverlays()
+          } else {
+            clearLive()
+          }
           return
         case "/": {
           // Refocus the currently-mounted library search input AND
@@ -79,5 +86,5 @@ export function useKeybinds() {
     }
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
-  }, [navigateNext, navigatePrev, clearLive, vim])
+  }, [navigateNext, navigatePrev, clearLive, clearOverlays, activeOverlays, vim])
 }

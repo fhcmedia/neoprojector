@@ -148,8 +148,24 @@ export function MediaPicker({
                     variants={mediaTileVariants}
                     className="group flex flex-col gap-1 overflow-hidden rounded-md border border-border/50 bg-background/40 p-1.5 text-left transition-colors hover:border-border hover:bg-muted/40"
                   >
-                    <div className="flex aspect-video items-center justify-center rounded bg-foreground/5">
-                      <Icon className="size-5 text-muted-foreground/70" />
+                    <div className="relative flex aspect-video items-center justify-center overflow-hidden rounded bg-foreground/5">
+                      {m.type === "image" ? (
+                        <img
+                          src={`/media-asset/${m.id}`}
+                          alt={m.title}
+                          className="absolute inset-0 h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : m.type === "video" ? (
+                        <video
+                          src={`/media-asset/${m.id}`}
+                          className="absolute inset-0 h-full w-full object-cover"
+                          preload="metadata"
+                          muted
+                        />
+                      ) : (
+                        <Icon className="size-5 text-muted-foreground/70" />
+                      )}
                     </div>
                     <div className="truncate text-[11px]">{m.title}</div>
                     <div className="text-[9px] uppercase tracking-wider text-muted-foreground/60">

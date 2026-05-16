@@ -19,6 +19,10 @@ export type AnimKind =
   | "slide-right"
   | "scale"
   | "blur"
+  | "zoom-blur"
+  | "flip-up"
+  | "wipe-up"
+  | "rise"
 
 export const ANIM_KINDS: { kind: AnimKind; label: string }[] = [
   { kind: "fade", label: "Fade" },
@@ -28,6 +32,10 @@ export const ANIM_KINDS: { kind: AnimKind; label: string }[] = [
   { kind: "slide-right", label: "Slide right" },
   { kind: "scale", label: "Scale" },
   { kind: "blur", label: "Blur" },
+  { kind: "zoom-blur", label: "Zoom + blur" },
+  { kind: "flip-up", label: "Flip up" },
+  { kind: "wipe-up", label: "Wipe up" },
+  { kind: "rise", label: "Rise" },
   { kind: "none", label: "None (cut)" },
 ]
 
@@ -100,6 +108,34 @@ export const VARIANTS: Record<AnimKind, VariantSet> = {
       visible: { opacity: 1, filter: "blur(0px)" },
     },
     transition: { duration: 0.24, ease: [0.32, 0.72, 0, 1] },
+  },
+  "zoom-blur": {
+    variants: {
+      hidden: { opacity: 0, scale: 1.08, filter: "blur(12px)" },
+      visible: { opacity: 1, scale: 1, filter: "blur(0px)" },
+    },
+    transition: { duration: 0.3, ease: [0.32, 0.72, 0, 1] },
+  },
+  "flip-up": {
+    variants: {
+      hidden: { opacity: 0, rotateX: 12, y: SLIDE },
+      visible: { opacity: 1, rotateX: 0, y: 0 },
+    },
+    transition: { duration: 0.28, ease: [0.32, 0.72, 0, 1] },
+  },
+  "wipe-up": {
+    variants: {
+      hidden: { opacity: 0, clipPath: "inset(100% 0% 0% 0%)" },
+      visible: { opacity: 1, clipPath: "inset(0% 0% 0% 0%)" },
+    },
+    transition: { duration: 0.3, ease: [0.32, 0.72, 0, 1] },
+  },
+  rise: {
+    variants: {
+      hidden: { opacity: 0, y: "8%", scale: 0.98 },
+      visible: { opacity: 1, y: 0, scale: 1 },
+    },
+    transition: { duration: 0.26, ease: [0.32, 0.72, 0, 1] },
   },
 }
 

@@ -13,6 +13,10 @@ import {
   TOKEN_SPECS,
 } from "@/hooks/use-service-name-format"
 import { DisplaySettings } from "@/features/displays/display-pane"
+import {
+  useBypassDisplayCheck,
+  useSetBypassDisplayCheck,
+} from "@/features/displays/api"
 import { useQuery } from "@tanstack/react-query"
 import { Service as Bible } from "@/bindings/neoprojector/services/bible"
 import type { Bible as BibleTranslation } from "@/bindings/neoprojector/database"
@@ -200,6 +204,26 @@ function GeneralPanel() {
   )
 }
 
+function OutputPanel() {
+  const { data: bypass = false } = useBypassDisplayCheck()
+  const setMut = useSetBypassDisplayCheck()
+
+  return (
+    <div className="divide-y divide-border/40">
+      <Row
+        label="Bypass display check"
+        description="Allow Go Live even when no displays are enabled or bound to a monitor. Useful for testing on single-screen machines."
+      >
+        <Switch
+          checked={bypass}
+          onCheckedChange={(v) => setMut.mutate(v)}
+          aria-label="Bypass display requirement"
+        />
+      </Row>
+    </div>
+  )
+}
+
 function Placeholder({ label }: { label: string }) {
   return (
     <div className="py-3 text-[11px] text-muted-foreground">
@@ -365,6 +389,8 @@ function Settings() {
           />
           {active === "general" ? (
             <GeneralPanel />
+          ) : active === "output" ? (
+            <OutputPanel />
           ) : active === "display" ? (
             <DisplaySettings />
           ) : active === "bibles" ? (

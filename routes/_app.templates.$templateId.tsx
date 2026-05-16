@@ -13,12 +13,19 @@ import {
   AlignVerticalJustifyEndIcon,
   AlignVerticalJustifyStartIcon,
   ArrowLeftIcon,
+  CaseSensitiveIcon,
   CheckIcon,
   ChevronDownIcon,
   CopyIcon,
+  ImageIcon,
   ItalicIcon,
   LockIcon,
+  PlusIcon,
   SearchIcon,
+  Layers2Icon,
+  Trash2Icon,
+  TypeIcon,
+  UnderlineIcon,
 } from "lucide-react"
 import { Input } from "@/components/input"
 import { Button } from "@/components/button"
@@ -35,6 +42,7 @@ import { isDefaultTemplateId } from "@/features/templates/defaults"
 import {
   DEFAULT_TRANSITION,
   parseTemplateBody,
+  type Background,
   type Box,
   type SlotName,
   type TemplateBody,
@@ -149,6 +157,77 @@ function TemplateEditor() {
     })
   }
 
+  function addBox(slot: Box["slot"]) {
+    if (!template || !body) return
+    const isMedia = slot === "media"
+    const newBox: Box = {
+      slot,
+      x: isMedia ? 0 : Math.round(template.viewport_w * 0.1),
+      y: isMedia ? 0 : Math.round(template.viewport_h * 0.3),
+      w: isMedia ? template.viewport_w : Math.round(template.viewport_w * 0.8),
+      h: isMedia ? template.viewport_h : Math.round(template.viewport_h * 0.35),
+      font: "Inter",
+      fontSize: isMedia ? 40 : 80,
+      fontSizeMin: 20,
+      fitToBox: !isMedia,
+      color: "#ffffff",
+      weight: 700,
+      italic: false,
+      align: "center",
+      vAlign: "middle",
+      maxLines: 0,
+      lineHeight: 1.2,
+    }
+    const nextIndex = body.boxes.length
+    setBody((b) => (b ? { ...b, boxes: [...b.boxes, newBox] } : b))
+    setSelectedIndex(nextIndex)
+  }
+
+  function deleteBox(i: number) {
+    setBody((b) => {
+      if (!b) return b
+      return { ...b, boxes: b.boxes.filter((_, idx) => idx !== i) }
+    })
+    setSelectedIndex(-1)
+  }
+
+  function duplicateBox(i: number) {
+    setBody((b) => {
+      if (!b) return b
+      const src = b.boxes[i]
+      const copy: Box = { ...src, x: src.x + 20, y: src.y + 20 }
+      return { ...b, boxes: [...b.boxes, copy] }
+    })
+    setSelectedIndex(body ? body.boxes.length : 0)
+  }
+
+  // Keyboard shortcuts: Delete = remove selected box,
+  // Arrow keys = nudge 1px (10px with Shift), Ctrl+D = duplicate.
+  useEffect(() => {
+    if (isDefault) return
+    function onKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement)?.tagName
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+      if (selectedIndex < 0 || !body) return
+      if (e.key === "Escape") { setSelectedIndex(-1); return }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault(); deleteBox(selectedIndex); return
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "d") {
+        e.preventDefault(); duplicateBox(selectedIndex); return
+      }
+      const step = e.shiftKey ? 10 : 1
+      const box = body.boxes[selectedIndex]
+      if (e.key === "ArrowLeft")  { e.preventDefault(); updateBox(selectedIndex, { x: box.x - step }) }
+      if (e.key === "ArrowRight") { e.preventDefault(); updateBox(selectedIndex, { x: box.x + step }) }
+      if (e.key === "ArrowUp")    { e.preventDefault(); updateBox(selectedIndex, { y: box.y - step }) }
+      if (e.key === "ArrowDown")  { e.preventDefault(); updateBox(selectedIndex, { y: box.y + step }) }
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIndex, body, isDefault])
+
   if (isLoading || !template || !body) {
     return (
       <div className="grid h-full place-items-center text-xs text-muted-foreground/50">
@@ -199,6 +278,36 @@ function TemplateEditor() {
         <span className="rounded bg-muted/60 px-1.5 py-px text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           {template.kind}
         </span>
+        {!isDefault && (
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button size="xs" variant="outline">
+                  <PlusIcon />
+                  Add Box
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="end" sideOffset={6} className="w-44 p-1">
+                <button
+                  type="button"
+                  onClick={() => addBox("primary")}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+                >
+                  <TypeIcon className="size-3.5 text-muted-foreground" />
+                  Text Box
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addBox("media")}
+                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs hover:bg-muted"
+                >
+                  <ImageIcon className="size-3.5 text-muted-foreground" />
+                  Media Box
+                </button>
+              </PopoverContent>
+            </Popover>
+          </div>
+        )}
         {isDefault && (
           <div className="flex shrink-0 items-center gap-1">
             <Button
@@ -236,8 +345,11 @@ function TemplateEditor() {
           {selectedBox ? (
             <PropertyPanel
               box={selectedBox}
+              index={selectedIndex}
               readOnly={isDefault}
               onChange={(patch) => updateBox(selectedIndex, patch)}
+              onDelete={() => deleteBox(selectedIndex)}
+              onDuplicate={() => duplicateBox(selectedIndex)}
             />
           ) : (
             <TemplatePanel
@@ -256,152 +368,160 @@ function TemplateEditor() {
 
 function PropertyPanel({
   box,
+  index,
   readOnly,
   onChange,
+  onDelete,
+  onDuplicate,
 }: {
   box: Box
+  index: number
   readOnly: boolean
   onChange: (patch: Partial<Box>) => void
+  onDelete: () => void
+  onDuplicate: () => void
 }) {
-  // Media slots carry no text — typography section would be pure noise.
-  // The slot picker stays so the user can convert a box to/from media.
   const isMediaSlot = box.slot === "media"
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <Section title="Slot">
-        <SlotSelect
-          value={box.slot}
-          readOnly={readOnly}
-          onChange={(slot) => onChange({ slot })}
-        />
+      {/* Box header — label + actions */}
+      <div className="flex h-8 shrink-0 items-center gap-1 border-b border-border/40 px-2">
+        <span className="flex-1 truncate text-[11px] font-medium text-muted-foreground">
+          Box {index + 1} · {box.slot}
+        </span>
+        {!readOnly && (
+          <>
+            <button
+              type="button"
+              title="Duplicate box (Ctrl+D)"
+              onClick={onDuplicate}
+              className="grid size-6 place-items-center rounded text-muted-foreground/60 hover:bg-muted hover:text-foreground"
+            >
+              <CopyIcon className="size-3" />
+            </button>
+            <button
+              type="button"
+              title="Delete box (Del)"
+              onClick={onDelete}
+              className="grid size-6 place-items-center rounded text-muted-foreground/60 hover:bg-destructive/15 hover:text-destructive"
+            >
+              <Trash2Icon className="size-3" />
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Position & Size */}
+      <Section title="Position & Size">
+        <Grid2>
+          <NumberField label="X" value={box.x} readOnly={readOnly} onChange={(v) => onChange({ x: v })} />
+          <NumberField label="Y" value={box.y} readOnly={readOnly} onChange={(v) => onChange({ y: v })} />
+          <NumberField label="W" value={box.w} min={10} readOnly={readOnly} onChange={(v) => onChange({ w: v })} />
+          <NumberField label="H" value={box.h} min={10} readOnly={readOnly} onChange={(v) => onChange({ h: v })} />
+        </Grid2>
       </Section>
+
+      {/* Slot */}
+      <Section title="Slot">
+        <SlotSelect value={box.slot} readOnly={readOnly} onChange={(slot) => onChange({ slot })} />
+      </Section>
+
       {!isMediaSlot && (
         <>
+          {/* Typography */}
           <Section title="Text">
-            <FontPicker
-              value={box.font}
-              readOnly={readOnly}
-              onChange={(v) => onChange({ font: v })}
-            />
-            <WeightChoice
-              value={box.weight}
-              readOnly={readOnly}
-              onChange={(v) => onChange({ weight: v })}
-            />
-            <ColorField
-              value={box.color}
-              readOnly={readOnly}
-              onChange={(v) => onChange({ color: v })}
-            />
-            <div className="flex items-center gap-1">
-              <ToggleButton
-                aria-label="Italic"
-                pressed={box.italic}
-                readOnly={readOnly}
-                onPressedChange={(v) => onChange({ italic: v })}
-              >
+            <FontPicker value={box.font} readOnly={readOnly} onChange={(v) => onChange({ font: v })} />
+            <WeightChoice value={box.weight} readOnly={readOnly} onChange={(v) => onChange({ weight: v })} />
+            <ColorField value={box.color} readOnly={readOnly} onChange={(v) => onChange({ color: v })} />
+            <div className="flex flex-wrap items-center gap-1">
+              <ToggleButton aria-label="Italic" pressed={box.italic ?? false} readOnly={readOnly} onPressedChange={(v) => onChange({ italic: v })}>
                 <ItalicIcon className="size-3.5" />
               </ToggleButton>
+              <ToggleButton aria-label="Underline" pressed={box.underline ?? false} readOnly={readOnly} onPressedChange={(v) => onChange({ underline: v })}>
+                <UnderlineIcon className="size-3.5" />
+              </ToggleButton>
+              <ToggleButton aria-label="Uppercase" pressed={box.uppercase ?? false} readOnly={readOnly} onPressedChange={(v) => onChange({ uppercase: v })}>
+                <CaseSensitiveIcon className="size-3.5" />
+              </ToggleButton>
+              <ToggleButton aria-label="Text shadow" pressed={box.shadow ?? false} readOnly={readOnly} onPressedChange={(v) => onChange({ shadow: v })}>
+                <Layers2Icon className="size-3.5" />
+              </ToggleButton>
             </div>
+            <NumberField
+              label="Letter spacing (em)"
+              value={box.letterSpacing ?? 0}
+              step={0.01}
+              readOnly={readOnly}
+              onChange={(v) => onChange({ letterSpacing: v })}
+            />
           </Section>
+
+          {/* Size & fit */}
           <Section title="Size">
             <Grid2>
-              <NumberField
-                label="Size"
-                value={box.fontSize}
-                min={1}
-                readOnly={readOnly}
-                onChange={(v) => onChange({ fontSize: v })}
-              />
-              <NumberField
-                label="Min size"
-                value={box.fontSizeMin}
-                min={1}
-                readOnly={readOnly}
-                onChange={(v) => onChange({ fontSizeMin: v })}
-              />
+              <NumberField label="Font size" value={box.fontSize} min={1} readOnly={readOnly} onChange={(v) => onChange({ fontSize: v })} />
+              <NumberField label="Min size" value={box.fontSizeMin} min={1} readOnly={readOnly} onChange={(v) => onChange({ fontSizeMin: v })} />
             </Grid2>
-            <NumberField
-              label="Line height"
-              value={box.lineHeight}
-              step={0.05}
-              min={1}
-              readOnly={readOnly}
-              onChange={(v) => onChange({ lineHeight: v })}
-            />
-            <CheckboxField
-              label="Auto-shrink to fit"
-              value={box.fitToBox}
-              readOnly={readOnly}
-              onChange={(v) => onChange({ fitToBox: v })}
-            />
+            <Grid2>
+              <NumberField label="Line height" value={box.lineHeight} step={0.05} min={0.5} readOnly={readOnly} onChange={(v) => onChange({ lineHeight: v })} />
+              <NumberField label="Max lines (0=∞)" value={box.maxLines} min={0} readOnly={readOnly} onChange={(v) => onChange({ maxLines: v })} />
+            </Grid2>
+            <CheckboxField label="Auto-shrink to fit" value={box.fitToBox} readOnly={readOnly} onChange={(v) => onChange({ fitToBox: v })} />
           </Section>
+
+          {/* Alignment */}
           <Section title="Alignment">
             <IconChoice
               value={box.align}
               readOnly={readOnly}
-              onChange={(v) =>
-                onChange({ align: v as Box["align"] })
-              }
+              onChange={(v) => onChange({ align: v as Box["align"] })}
               options={[
-                {
-                  value: "left",
-                  icon: <AlignLeftIcon className="size-3.5" />,
-                  ariaLabel: "Align left",
-                },
-                {
-                  value: "center",
-                  icon: <AlignCenterIcon className="size-3.5" />,
-                  ariaLabel: "Align center",
-                },
-                {
-                  value: "right",
-                  icon: <AlignRightIcon className="size-3.5" />,
-                  ariaLabel: "Align right",
-                },
+                { value: "left",   icon: <AlignLeftIcon className="size-3.5" />,   ariaLabel: "Left" },
+                { value: "center", icon: <AlignCenterIcon className="size-3.5" />, ariaLabel: "Center" },
+                { value: "right",  icon: <AlignRightIcon className="size-3.5" />,  ariaLabel: "Right" },
               ]}
             />
             <IconChoice
               value={box.vAlign}
               readOnly={readOnly}
-              onChange={(v) =>
-                onChange({ vAlign: v as Box["vAlign"] })
-              }
+              onChange={(v) => onChange({ vAlign: v as Box["vAlign"] })}
               options={[
-                {
-                  value: "top",
-                  icon: (
-                    <AlignVerticalJustifyStartIcon className="size-3.5" />
-                  ),
-                  ariaLabel: "Align top",
-                },
-                {
-                  value: "middle",
-                  icon: (
-                    <AlignVerticalJustifyCenterIcon className="size-3.5" />
-                  ),
-                  ariaLabel: "Align middle",
-                },
-                {
-                  value: "bottom",
-                  icon: (
-                    <AlignVerticalJustifyEndIcon className="size-3.5" />
-                  ),
-                  ariaLabel: "Align bottom",
-                },
+                { value: "top",    icon: <AlignVerticalJustifyStartIcon className="size-3.5" />,  ariaLabel: "Top" },
+                { value: "middle", icon: <AlignVerticalJustifyCenterIcon className="size-3.5" />, ariaLabel: "Middle" },
+                { value: "bottom", icon: <AlignVerticalJustifyEndIcon className="size-3.5" />,    ariaLabel: "Bottom" },
               ]}
             />
           </Section>
         </>
       )}
+
+      {/* Appearance (all slots) */}
+      <Section title="Appearance">
+        <NumberField
+          label="Opacity (0–1)"
+          value={box.opacity ?? 1}
+          step={0.05}
+          min={0}
+          readOnly={readOnly}
+          onChange={(v) => onChange({ opacity: Math.min(1, Math.max(0, v)) })}
+        />
+        <ColorField
+          label="Box background"
+          value={box.bgColor ?? "transparent"}
+          readOnly={readOnly}
+          onChange={(v) => onChange({ bgColor: v === "transparent" ? undefined : v })}
+        />
+        <Grid2>
+          <NumberField label="Padding X" value={box.paddingX ?? 0} min={0} readOnly={readOnly} onChange={(v) => onChange({ paddingX: v })} />
+          <NumberField label="Padding Y" value={box.paddingY ?? 0} min={0} readOnly={readOnly} onChange={(v) => onChange({ paddingY: v })} />
+        </Grid2>
+      </Section>
     </div>
   )
 }
 
-// TemplatePanel: template-level (not box-level) settings. Shown when
-// no box is selected; lets the operator set the slide transition the
-// template plays when its live fill changes on the audience output.
+// TemplatePanel: template-level settings. Shown when no box is selected.
 function TemplatePanel({
   body,
   readOnly,
@@ -412,8 +532,45 @@ function TemplatePanel({
   onChange: (patch: Partial<TemplateBody>) => void
 }) {
   const transition = body.transition ?? DEFAULT_TRANSITION
+  const bg = body.background
+  const bgType = bg.type
+
   return (
     <div className="flex h-full flex-col overflow-y-auto">
+      {/* Background */}
+      <Section title="Background">
+        <FieldLabel>Type</FieldLabel>
+        <select
+          value={bgType}
+          disabled={readOnly}
+          onChange={(e) => {
+            const t = e.target.value as Background["type"]
+            if (t === "color")
+              onChange({ background: { type: "color", value: bg.type === "color" ? bg.value : "#000000" } })
+            else if (t === "transparent")
+              onChange({ background: { type: "transparent" } })
+          }}
+          className="h-7 rounded border border-border/50 bg-background px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+        >
+          <option value="color">Solid color</option>
+          <option value="transparent">Transparent</option>
+        </select>
+        {bgType === "color" && (
+          <ColorField
+            label="Color"
+            value={(bg as { type: "color"; value: string }).value}
+            readOnly={readOnly}
+            onChange={(v) => onChange({ background: { type: "color", value: v } })}
+          />
+        )}
+        {bgType === "transparent" && (
+          <div className="text-[10px] text-muted-foreground/60">
+            The canvas background shows through. Useful for lower-thirds overlaid on video.
+          </div>
+        )}
+      </Section>
+
+      {/* Transition */}
       <Section title="Transition">
         <div className="text-[10px] text-muted-foreground/70">
           Played when the live slide changes on a display bound to this template.
@@ -424,18 +581,13 @@ function TemplatePanel({
           disabled={readOnly}
           onChange={(e) =>
             onChange({
-              transition: {
-                ...transition,
-                kind: e.target.value as TransitionKind,
-              },
+              transition: { ...transition, kind: e.target.value as TransitionKind },
             })
           }
           className="h-7 rounded border border-border/50 bg-background px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
         >
           {ANIM_KINDS.map((a) => (
-            <option key={a.kind} value={a.kind}>
-              {a.label}
-            </option>
+            <option key={a.kind} value={a.kind}>{a.label}</option>
           ))}
         </select>
         <NumberField
@@ -445,11 +597,25 @@ function TemplatePanel({
           step={10}
           readOnly={readOnly}
           onChange={(v) =>
-            onChange({
-              transition: { ...transition, duration_ms: Math.max(0, v) },
-            })
+            onChange({ transition: { ...transition, duration_ms: Math.max(0, v) } })
           }
         />
+      </Section>
+
+      {/* Canvas info */}
+      <Section title="Canvas">
+        <div className="grid grid-cols-2 gap-1 text-[11px] text-muted-foreground">
+          <span className="text-muted-foreground/60">Width</span>
+          <span className="text-right font-mono">{body.boxes.length > 0 ? "–" : "–"}</span>
+        </div>
+        <div className="text-[10px] text-muted-foreground/50">
+          {body.boxes.length === 0
+            ? "No boxes yet — click Add Box in the header."
+            : `${body.boxes.length} box${body.boxes.length !== 1 ? "es" : ""}. Click a box to inspect it.`}
+        </div>
+        <div className="text-[10px] text-muted-foreground/40">
+          Shortcuts: ← → ↑ ↓ nudge · Shift+arrow ×10 · Del delete · Ctrl+D duplicate
+        </div>
       </Section>
     </div>
   )
@@ -534,10 +700,12 @@ function NumberField({
 const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
 
 function ColorField({
+  label = "Color",
   value,
   readOnly,
   onChange,
 }: {
+  label?: string
   value: string
   readOnly: boolean
   onChange: (v: string) => void
@@ -547,7 +715,7 @@ function ColorField({
   const pickerStart = isHex ? value : "#ffffff"
   return (
     <div className="flex flex-col gap-0.5">
-      <FieldLabel>Color</FieldLabel>
+      <FieldLabel>{label}</FieldLabel>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
@@ -733,21 +901,40 @@ function WeightChoice({
   )
 }
 
-// Fonts that are actually available without any per-template asset
-// loading. Inter ships via the @import in App.css with full weight
-// range; the rest are present on every macOS / Windows install we
-// target, so picking any of them produces a real visual change.
+// Fonts available without per-template asset loading.
+// Inter: @imported in App.css. The rest are system fonts present on
+// every macOS + Windows install we target.
 const AVAILABLE_FONTS = [
+  // App
   "Inter",
+  // Sans-serif
   "Arial",
+  "Arial Black",
+  "Arial Narrow",
+  "Calibri",
+  "Candara",
+  "Century Gothic",
+  "Franklin Gothic Medium",
   "Helvetica",
   "Helvetica Neue",
-  "Times New Roman",
-  "Georgia",
-  "Courier New",
-  "Verdana",
+  "Lucida Sans Unicode",
+  "Microsoft Sans Serif",
+  "Segoe UI",
   "Tahoma",
   "Trebuchet MS",
+  "Verdana",
+  // Serif
+  "Book Antiqua",
+  "Cambria",
+  "Garamond",
+  "Georgia",
+  "Palatino Linotype",
+  "Times New Roman",
+  // Monospace
+  "Consolas",
+  "Courier New",
+  "Lucida Console",
+  // Display / Decorative
   "Impact",
   "Comic Sans MS",
 ]

@@ -95,8 +95,26 @@ export function MediaTab({
                       : "border-border/50 hover:border-border"
                   )}
                 >
-                  <div className="grid aspect-video w-full place-items-center bg-muted/40 text-muted-foreground/60">
-                    <Icon className="size-6 opacity-70" />
+                  <div className="relative aspect-video w-full overflow-hidden bg-muted/40">
+                    {m.type === "image" ? (
+                      <img
+                        src={`/media-asset/${m.id}`}
+                        alt={m.title}
+                        className="absolute inset-0 h-full w-full object-cover"
+                        loading="lazy"
+                      />
+                    ) : m.type === "video" ? (
+                      <video
+                        src={`/media-asset/${m.id}`}
+                        className="absolute inset-0 h-full w-full object-cover"
+                        preload="metadata"
+                        muted
+                      />
+                    ) : (
+                      <div className="grid h-full place-items-center text-muted-foreground/60">
+                        <Icon className="size-6 opacity-70" />
+                      </div>
+                    )}
                   </div>
                   <div
                     className={cn(

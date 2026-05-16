@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react"
-import { MusicIcon } from "lucide-react"
+import { MusicIcon, PlayIcon, RadioIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDebounce } from "@/hooks/use-debounce"
 import { useSessionState } from "@/hooks/use-session-state"
@@ -9,6 +9,8 @@ import {
   pickerRowVariants,
 } from "@/features/schedule/picker-anim"
 import { useLibrarySongs, useLibrarySong } from "@/features/library/api"
+import { useLive } from "@/features/live/live-context"
+import type { SongFull } from "@/bindings/neoprojector/services/songs"
 
 export function SongsTab({ search }: { search: string }) {
   const { data: songs, isLoading } = useLibrarySongs()
@@ -85,6 +87,7 @@ export function SongsTab({ search }: { search: string }) {
 
 function SongPreview({ songId }: { songId: number | null }) {
   const { data, isLoading } = useLibrarySong(songId)
+  const { setLive, live, clearLive } = useLive()
 
   if (!songId) {
     return (
@@ -101,31 +104,82 @@ function SongPreview({ songId }: { songId: number | null }) {
     )
   }
 
+  const isSongLive = live?.kind === "song" && live?.sourceItemId === null
+
+  function sendSection(sec: SongFull["sections"][number], idx: number) {
+    const lines = sec.lines
+      .filter((l) => l.text !== "")
+      .map((l) => l.text)
+      .join("\n")
+    setLive({
+      kind: "song",
+      sourceItemId: null,
+      slideIndex: idx,
+      fill: { primary: lines, caption: data!.song.title },
+    })
+  }
+
   return (
     <div className="flex h-full flex-1 flex-col">
+      {isSongLive && (
+        <div className="flex items-center gap-2 border-b border-border/40 bg-emerald-500/10 px-3 py-1.5">
+          <RadioIcon className="size-3 text-emerald-500" />
+          <span className="flex-1 truncate text-[11px] text-emerald-600 dark:text-emerald-400">
+            Live — {data.song.title}
+          </span>
+          <button
+            type="button"
+            onClick={clearLive}
+            className="text-[11px] text-muted-foreground underline hover:text-foreground"
+          >
+            Clear
+          </button>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto">
         <motion.div
           key={songId}
-          className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))]"
+          className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))]"
           variants={sectionsGridVariants}
           initial="hidden"
           animate="visible"
         >
-          {data.sections.map((sec) => {
+          {data.sections.map((sec, idx) => {
             const t = songSectionType(sec.section.type)
+            const liveHere =
+              isSongLive && live?.slideIndex === idx
             return (
               <motion.div
                 key={sec.section.id}
                 variants={sectionTileVariants}
                 className={cn(
-                  "flex flex-col border-b border-l-2 border-r border-b-border/40 border-r-border/40",
-                  t.border
+                  "group relative flex flex-col border-b border-l-2 border-r border-b-border/40 border-r-border/40",
+                  t.border,
+                  liveHere && "bg-emerald-500/5"
                 )}
               >
-                <div className="pl-2.5 pr-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-                  {t.label}
+                <div className="flex items-center justify-between pl-2.5 pr-1.5 py-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                    {t.label}
+                  </span>
+                  {liveHere ? (
+                    <span className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-emerald-500">
+                      <RadioIcon className="size-2.5" />
+                      Live
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => sendSection(sec, idx)}
+                      className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-0 transition-all hover:bg-foreground/10 hover:text-foreground group-hover:opacity-100"
+                      aria-label="Send to live"
+                    >
+                      <PlayIcon className="size-2.5" />
+                      Send
+                    </button>
+                  )}
                 </div>
-                <div className="flex-1 px-3 py-2">
+                <div className="flex-1 px-3 pb-2">
                   {sec.lines.map((line) => (
                     <div
                       key={line.id}

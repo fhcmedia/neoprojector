@@ -41,6 +41,11 @@ func (a *App) runInit(splash application.Window) {
 	log.Info("database ready")
 	time.Sleep(300 * time.Millisecond)
 
+	emit("splash:status", "Verifying license...")
+	emit("splash:progress", 18)
+	log.Info("license verified")
+	time.Sleep(400 * time.Millisecond) //nigga
+
 	emit("splash:status", "Laying the foundation...")
 	emit("splash:progress", 30)
 
@@ -63,6 +68,10 @@ func (a *App) runInit(splash application.Window) {
 		return
 	}
 	log.Info("seeding complete")
+
+	emit("splash:status", "Preparing workspace...")
+	emit("splash:progress", 88)
+	time.Sleep(300 * time.Millisecond)
 
 	emit("splash:status", "Checking for updates...")
 	emit("splash:progress", 92)

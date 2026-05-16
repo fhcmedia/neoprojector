@@ -64,6 +64,8 @@ type Ctx = {
   // last template snaps to its "no fill" state (black for opaque
   // templates, audience-output canvas color for transparent ones).
   clearLive: () => void
+  // clearOverlays removes all active overlays without touching the slide.
+  clearOverlays: () => void
   // Active overlays toggle independently — multiple can be on at
   // once, layered over whatever slide is live.
   activeOverlays: ActiveOverlay[]
@@ -87,6 +89,7 @@ const LiveContext = createContext<Ctx>({
   setLive: () => {},
   isLive: () => false,
   clearLive: () => {},
+  clearOverlays: () => {},
   activeOverlays: [],
   toggleOverlay: () => {},
   isOverlayActive: () => false,
@@ -124,6 +127,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   )
 
   const clearLive = useCallback(() => setLive(null), [])
+  const clearOverlays = useCallback(() => setActiveOverlays([]), [])
 
   // Navigator handlers live in a ref so we don't trigger re-renders
   // of consumers when the show pane reinstalls them on slide-list
@@ -218,6 +222,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         setLive,
         isLive,
         clearLive,
+        clearOverlays,
         activeOverlays,
         toggleOverlay,
         isOverlayActive,

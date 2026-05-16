@@ -52,6 +52,26 @@ export function useStartLive() {
   })
 }
 
+export const bypassKeys = {
+  state: ["displays", "bypass"] as const,
+}
+
+export function useBypassDisplayCheck() {
+  return useQuery({
+    queryKey: bypassKeys.state,
+    queryFn: () => Displays.GetBypassDisplayCheck() as unknown as Promise<boolean>,
+  })
+}
+
+export function useSetBypassDisplayCheck() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (bypass: boolean) =>
+      Displays.SetBypassDisplayCheck(bypass) as unknown as Promise<void>,
+    onSuccess: () => qc.invalidateQueries({ queryKey: bypassKeys.state }),
+  })
+}
+
 export function useStopLive() {
   const qc = useQueryClient()
   return useMutation({

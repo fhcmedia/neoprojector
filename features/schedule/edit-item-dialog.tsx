@@ -1,4 +1,6 @@
-import { MusicIcon, BookOpenIcon } from "lucide-react"
+import { useMemo } from "react"
+import { useQueryClient } from "@tanstack/react-query"
+import { MusicIcon, BookOpenIcon, LayersIcon } from "lucide-react"
 import type { ListServiceItemsWithContentRow } from "@/bindings/neoprojector/database"
 import {
   Dialog,
@@ -8,60 +10,94 @@ import {
 } from "@/components/dialog"
 import { SongEditor } from "@/features/songs/song-editor"
 import { BiblePicker } from "@/features/schedule/pickers/bible-picker"
+import { OverlayItemEditor } from "@/features/schedule/overlay-item-editor"
 
 type Props = {
-  item: ListServiceItemsWithContentRow | null
+  itemId: number | undefined
   onClose: () => void
 }
 
-// EditItemDialog opens the appropriate editor for an existing schedule item.
-// Renders nothing while `item` is null; the parent controls open/close by
-// setting and clearing the item.
-export function EditItemDialog({ item, onClose }: Props) {
-  const open = item !== null
+const KIND_META: Record<string, { label: string; Icon: typeof MusicIcon }> = {
+  song:    { label: "Edit song",       Icon: MusicIcon },
+  bible:   { label: "Edit scripture",  Icon: BookOpenIcon },
+  overlay: { label: "Edit overlay",    Icon: LayersIcon },
+}
+
+// EditItemDialog: resolves the item from the React Query cache (always warm
+// because the user just clicked it), then opens the right full-screen editor.
+export function EditItemDialog({ itemId, onClose }: Props) {
+  const qc = useQueryClient()
+
+  const item = useMemo<ListServiceItemsWithContentRow | null>(() => {
+    if (itemId === undefined) return null
+    const all = qc.getQueriesData<ListServiceItemsWithContentRow[]>({
+      queryKey: ["schedule", "items"],
+    })
+    for (const [, data] of all) {
+      if (!data) continue
+      const found = data.find((i) => i.id === itemId)
+      if (found) return found
+    }
+    return null
+  }, [qc, itemId])
+
+  const open = itemId !== undefined
+  const meta = item ? (KIND_META[item.kind] ?? null) : null
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="w-[95vw] max-w-none gap-0 p-0 sm:max-w-none">
+      <DialogContent className="flex h-[90vh] max-h-[56rem] w-[95vw] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
         <DialogHeader className="sr-only">
-          <DialogTitle>Edit item</DialogTitle>
+          <DialogTitle>{meta?.label ?? "Edit item"}</DialogTitle>
         </DialogHeader>
-        <div className="flex h-[45rem] flex-col gap-2 border-b border-border/50 px-4 pb-4">
-          <div className="flex h-11 shrink-0 items-center gap-2 text-sm font-medium text-muted-foreground">
-            {item?.kind === "song" && (
-              <>
-                <MusicIcon className="size-3.5" /> Edit song
-              </>
-            )}
-            {item?.kind === "bible" && (
-              <>
-                <BookOpenIcon className="size-3.5" /> Edit scripture
-              </>
-            )}
-          </div>
-          <div className="flex-1 overflow-hidden">
-            {item?.kind === "song" && (
-              <SongEditor
-                mode="edit"
-                songId={item.song_id}
-                onSaved={onClose}
-                onCancel={onClose}
-              />
-            )}
-            {item?.kind === "bible" && (
-              <BiblePicker
-                mode="edit"
-                itemId={item.id}
-                initial={{
-                  book: item.book,
-                  chapter: item.chapter,
-                  from: item.verse_start,
-                  to: item.verse_end,
-                }}
-                onSaved={onClose}
-              />
-            )}
-          </div>
+
+        {/* Header bar */}
+        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/50 px-4 text-sm font-medium text-muted-foreground">
+          {meta && <meta.Icon className="size-3.5" />}
+          <span>{meta?.label ?? "Edit item"}</span>
+          {item && (
+            <span className="ml-2 truncate text-[11px] font-normal text-muted-foreground/60">
+              {item.label}
+            </span>
+          )}
+        </div>
+
+        {/* Editor body */}
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          {!item && (
+            <div className="grid flex-1 place-items-center text-xs text-muted-foreground/50">
+              Loading…
+            </div>
+          )}
+          {item?.kind === "song" && (
+            <SongEditor
+              mode="edit"
+              songId={item.song_id}
+              onSaved={onClose}
+              onCancel={onClose}
+            />
+          )}
+          {item?.kind === "bible" && (
+            <BiblePicker
+              mode="edit"
+              itemId={item.id}
+              initial={{
+                book: item.book,
+                chapter: item.chapter,
+                from: item.verse_start,
+                to: item.verse_end,
+              }}
+              onSaved={onClose}
+            />
+          )}
+          {item?.kind === "overlay" && (
+            <OverlayItemEditor item={item} onDone={onClose} />
+          )}
+          {item && !KIND_META[item.kind] && (
+            <div className="grid flex-1 place-items-center text-xs text-muted-foreground/50">
+              Editing this item type is not supported.
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

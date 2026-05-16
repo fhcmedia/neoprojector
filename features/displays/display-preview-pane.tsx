@@ -193,7 +193,7 @@ function PreviewTile({
         enabled ? "bg-muted/30" : "bg-muted/10"
       )}
     >
-      {template && live && enabled && !overlaysCoverSlide ? (
+      {template && live && !overlaysCoverSlide ? (
         <ScaledTemplate
           template={template}
           fill={live.fill}

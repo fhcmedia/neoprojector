@@ -553,16 +553,27 @@ function SectionRow({
         </div>
       </div>
 
-      {!collapsed && (
-        <ItemList
-          sectionId={section.id}
-          color={color}
-          activeItemId={activeItemId}
-          onSelectItem={onSelectItem}
-          onEditItem={onEditItem}
-          sectionPendingDelete={pendingDelete}
-        />
-      )}
+      <AnimatePresence initial={false}>
+        {!collapsed && (
+          <motion.div
+            key="items"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
+            style={{ overflow: "hidden" }}
+          >
+            <ItemList
+              sectionId={section.id}
+              color={color}
+              activeItemId={activeItemId}
+              onSelectItem={onSelectItem}
+              onEditItem={onEditItem}
+              sectionPendingDelete={pendingDelete}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

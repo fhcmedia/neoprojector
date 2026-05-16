@@ -58,6 +58,22 @@ export type Box = {
   vAlign: "top" | "middle" | "bottom"
   maxLines: number
   lineHeight: number
+  /** Box-level opacity, 0–1. Default 1 (fully opaque). */
+  opacity?: number
+  /** Letter spacing in em. 0 = normal. */
+  letterSpacing?: number
+  /** text-transform: uppercase */
+  uppercase?: boolean
+  /** text-decoration: underline */
+  underline?: boolean
+  /** Adds a strong drop-shadow so text pops on any background. */
+  shadow?: boolean
+  /** Background fill for the box. CSS color string, default transparent. */
+  bgColor?: string
+  /** Horizontal inner padding in native viewport px. */
+  paddingX?: number
+  /** Vertical inner padding in native viewport px. */
+  paddingY?: number
   /**
    * Slot-level fallback fill — used when the live content doesn't provide
    * a value for this slot. Lets a template ship with e.g. its own

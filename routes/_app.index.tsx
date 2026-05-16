@@ -14,7 +14,8 @@ import {
 import { ServiceList } from "@/features/schedule/service-list"
 import { ScheduleView } from "@/features/schedule/schedule-view"
 import { EditorPanel } from "@/features/schedule/editor-panel"
-import { AddFlow, EditFlow } from "@/features/schedule/editor-flow"
+import { AddFlow } from "@/features/schedule/editor-flow"
+import { EditItemDialog } from "@/features/schedule/edit-item-dialog"
 import { LibraryView } from "@/features/library/library-view"
 import { DisplayPreviewPane } from "@/features/displays/display-preview-pane"
 import { ShowPane, type AdHocBibleRef } from "@/features/show/show-pane"
@@ -202,12 +203,8 @@ function Projector() {
       replace: true,
     })
 
-  const editorOpen = addSectionId !== undefined || editItemId !== undefined
-  const editorTitle = addSectionId
-    ? "Add item"
-    : editItemId
-      ? "Edit item"
-      : ""
+  const editorOpen = addSectionId !== undefined
+  const editorTitle = addSectionId ? "Add item" : ""
 
   useEffect(() => {
     if (editorOpen) setEditorExitMode("slide")
@@ -274,15 +271,12 @@ function Projector() {
                       onDone={() => closeEditor("fade")}
                     />
                   )}
-                  {editItemId !== undefined && (
-                    <EditFlow
-                      key={`edit-${editItemId}`}
-                      itemId={editItemId}
-                      onDone={() => closeEditor("fade")}
-                    />
-                  )}
                 </AnimatePresence>
               </EditorPanel>
+              <EditItemDialog
+                itemId={editItemId}
+                onClose={() => closeEditor("fade")}
+              />
             </div>
           </ResizablePanel>
           <ResizableHandle />

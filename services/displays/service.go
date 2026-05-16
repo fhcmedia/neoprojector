@@ -22,6 +22,11 @@ type Service struct {
 	mu       sync.Mutex
 	live     map[int64]*application.WebviewWindow
 	lastSlot LivePayload // cached so output windows can fetch current state on mount
+
+	// bypassDisplayCheck allows StartLive to succeed even when no
+	// displays are enabled or bound to a monitor. Useful for testing
+	// and development on single-screen machines.
+	bypassDisplayCheck bool
 }
 
 // LivePayload mirrors the LiveSlide that the main window's
@@ -231,6 +236,21 @@ func (s *Service) DeleteDisplay(ctx context.Context, id int64) error {
 
 // --- live broadcast ---
 
+// SetBypassDisplayCheck toggles whether StartLive requires at least
+// one enabled display bound to a connected monitor.
+func (s *Service) SetBypassDisplayCheck(_ context.Context, bypass bool) {
+	s.mu.Lock()
+	s.bypassDisplayCheck = bypass
+	s.mu.Unlock()
+}
+
+// GetBypassDisplayCheck reports the current bypass state.
+func (s *Service) GetBypassDisplayCheck(_ context.Context) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bypassDisplayCheck
+}
+
 // IsLive reports whether output windows are currently open.
 func (s *Service) IsLive(_ context.Context) bool {
 	s.mu.Lock()
@@ -340,9 +360,12 @@ func (s *Service) StartLive(ctx context.Context) error {
 		)
 		opened[d.ID] = win
 	}
-	if len(opened) == 0 {
+	if len(opened) == 0 && !s.bypassDisplayCheck {
 		return fmt.Errorf("no displays are enabled and bound to a connected monitor")
 	}
+	// Assign unconditionally so IsLive() (which checks s.live != nil)
+	// returns true even in bypass-mode with no external displays.
+	// An empty-but-non-nil map is the sentinel for bypass-only live.
 	s.live = opened
 	return nil
 }

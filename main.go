@@ -1,9 +1,13 @@
 package main
 
 import (
+	"database/sql"
 	"embed"
 	"log"
 	"log/slog"
+	"net/http"
+	"strconv"
+	"strings"
 
 	"neoprojector/database"
 	"neoprojector/services/bible"
@@ -19,6 +23,31 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
+
+// mediaAssetMiddleware intercepts GET /media-asset/{id} and serves the
+// corresponding media file from disk. This lets the frontend render real
+// thumbnails and play video/audio without any base64 encoding.
+func mediaAssetMiddleware(db *sql.DB, next http.Handler) http.Handler {
+	q := database.New(db)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/media-asset/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		idStr := strings.TrimPrefix(r.URL.Path, "/media-asset/")
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		m, err := q.MediaByID(r.Context(), id)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeFile(w, r, m.Path)
+	})
+}
 
 //go:embed all:dist
 var assets embed.FS
@@ -54,6 +83,9 @@ func main() {
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
+			Middleware: func(next http.Handler) http.Handler {
+				return mediaAssetMiddleware(db, next)
+			},
 		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
