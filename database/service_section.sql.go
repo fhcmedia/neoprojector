@@ -9,6 +9,17 @@ import (
 	"context"
 )
 
+const countServiceSections = `-- name: CountServiceSections :one
+SELECT COUNT(*) AS n FROM service_section WHERE service_id = ?
+`
+
+func (q *Queries) CountServiceSections(ctx context.Context, serviceID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countServiceSections, serviceID)
+	var n int64
+	err := row.Scan(&n)
+	return n, err
+}
+
 const createServiceSection = `-- name: CreateServiceSection :one
 INSERT INTO service_section (service_id, name, position)
 VALUES (?, ?, ?)
@@ -37,11 +48,12 @@ func (q *Queries) CreateServiceSection(ctx context.Context, arg CreateServiceSec
 }
 
 const createServiceSectionAppend = `-- name: CreateServiceSectionAppend :one
-INSERT INTO service_section (service_id, name, position)
+INSERT INTO service_section (service_id, name, position, color)
 VALUES (
   ?1,
   ?2,
-  COALESCE((SELECT MAX(position) + 1 FROM service_section WHERE service_section.service_id = ?1), 0)
+  COALESCE((SELECT MAX(position) + 1 FROM service_section WHERE service_section.service_id = ?1), 0),
+  ?3
 )
 RETURNING id, service_id, name, position, color, created_at, updated_at
 `
@@ -49,10 +61,11 @@ RETURNING id, service_id, name, position, color, created_at, updated_at
 type CreateServiceSectionAppendParams struct {
 	ServiceID int64  `json:"service_id"`
 	Name      string `json:"name"`
+	Palette   string `json:"palette"`
 }
 
 func (q *Queries) CreateServiceSectionAppend(ctx context.Context, arg CreateServiceSectionAppendParams) (ServiceSection, error) {
-	row := q.db.QueryRowContext(ctx, createServiceSectionAppend, arg.ServiceID, arg.Name)
+	row := q.db.QueryRowContext(ctx, createServiceSectionAppend, arg.ServiceID, arg.Name, arg.Palette)
 	var i ServiceSection
 	err := row.Scan(
 		&i.ID,

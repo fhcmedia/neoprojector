@@ -9,6 +9,8 @@ import {
   Trash2Icon,
   PencilIcon,
   GripVerticalIcon,
+  PaletteIcon,
+  XIcon,
 } from "lucide-react"
 import type {
   ListServiceItemsWithContentRow,
@@ -41,35 +43,20 @@ import {
   type DragEndEvent,
 } from "@/features/schedule/sortable"
 import { PlayedProvider } from "@/features/schedule/played-context"
-import { sectionColor, sectionColorList } from "@/features/schedule/section-colors"
-import { PaletteIcon, XIcon } from "lucide-react"
+import {
+  resolveSectionColor,
+  sectionBorderClass,
+  sectionSwatchClass,
+  PALETTE_COLORS,
+} from "@/features/schedule/section-palette"
 import { AddArea } from "@/components/add-area"
 
-type Props = {
-  serviceId: number
-  onBack: () => void
-  activeItemId: number | undefined
-  onSelectItem: (id: number | undefined) => void
-  onAddItem: (sectionId: number) => void
-  onEditItem: (itemId: number) => void
-  newItemId?: number
-  autoEditName?: boolean
-  onAutoEditConsumed?: () => void
-}
-
-// Palette dot animation: container drives the stagger, dots define their
-// own keyframes. staggerDirection flips on exit so the rightmost dot is
-// the first to leave.
+// Palette swap animations — when the user opens the color picker the
+// per-action icons fade up and the colored dots cascade in from below.
+// staggerDirection flips on close so the rightmost dot leaves first.
 const paletteContainerVariants = {
-  open: {
-    transition: { staggerChildren: 0.025, staggerDirection: 1 },
-  },
-  closed: {
-    transition: {
-      staggerChildren: 0.025,
-      staggerDirection: -1,
-    },
-  },
+  open: { transition: { staggerChildren: 0.025, staggerDirection: 1 } },
+  closed: { transition: { staggerChildren: 0.025, staggerDirection: -1 } },
 }
 
 const paletteDotVariants = {
@@ -87,9 +74,6 @@ const paletteDotVariants = {
   },
 }
 
-// Icons live "above" the visible row when hidden — pairing with dots
-// coming up from below creates a coordinated vertical swap on open;
-// closing reverses, so icons drop down from above while dots fall away.
 const actionsVariants = {
   hidden: { opacity: 0, y: -4, transition: { duration: 0.1 } },
   visible: {
@@ -99,6 +83,15 @@ const actionsVariants = {
   },
 }
 
+type Props = {
+  serviceId: number
+  onBack: () => void
+  activeItemId: number | undefined
+  onSelectItem: (id: number | undefined) => void
+  onAddItem: (sectionId: number) => void
+  onEditItem: (itemId: number) => void
+}
+
 export function ScheduleView({
   serviceId,
   onBack,
@@ -106,23 +99,11 @@ export function ScheduleView({
   onSelectItem,
   onAddItem,
   onEditItem,
-  newItemId,
-  autoEditName = false,
-  onAutoEditConsumed,
 }: Props) {
   const { data: services } = useServices()
   const service = services?.find((s) => s.id === serviceId)
   const renameServiceMut = useRenameService()
   const [editingName, setEditingName] = useState(false)
-
-  // When the user lands here by creating a new service, the parent passes
-  // autoEditName=true exactly once. Consume it so the rename input opens
-  // immediately — replaces the old inline-edit-in-the-list flash.
-  useEffect(() => {
-    if (!autoEditName) return
-    setEditingName(true)
-    onAutoEditConsumed?.()
-  }, [autoEditName, onAutoEditConsumed])
 
   const { data: sections, isLoading } = useSections(serviceId)
   const createSectionMut = useCreateSection(serviceId)
@@ -211,7 +192,24 @@ export function ScheduleView({
             position: target.position,
           })
         } else {
-          // Cross-section move at the over item's position.
+          // Cross-section: optimistically remove from source and insert
+          // into target so the row doesn't visually freeze waiting for the
+          // mutate + refetch roundtrip.
+          const newSource = [...source.items]
+          const [moved] = newSource.splice(source.position, 1)
+          const newTarget = [...target.items]
+          newTarget.splice(target.position, 0, {
+            ...moved,
+            section_id: target.sectionId,
+          })
+          qc.setQueryData(
+            scheduleKeys.items(source.sectionId),
+            newSource.map((it, idx) => ({ ...it, position: idx }))
+          )
+          qc.setQueryData(
+            scheduleKeys.items(target.sectionId),
+            newTarget.map((it, idx) => ({ ...it, position: idx }))
+          )
           moveItemMut.mutate({
             itemId,
             targetSectionId: target.sectionId,
@@ -231,6 +229,18 @@ export function ScheduleView({
           qc.getQueryData<ListServiceItemsWithContentRow[]>(
             scheduleKeys.items(targetSectionId)
           ) ?? []
+        // Optimistic: same as cross-section-on-item, but appending.
+        const newSource = [...source.items]
+        const [moved] = newSource.splice(source.position, 1)
+        const newTarget = [...targetItems, { ...moved, section_id: targetSectionId }]
+        qc.setQueryData(
+          scheduleKeys.items(source.sectionId),
+          newSource.map((it, idx) => ({ ...it, position: idx }))
+        )
+        qc.setQueryData(
+          scheduleKeys.items(targetSectionId),
+          newTarget.map((it, idx) => ({ ...it, position: idx }))
+        )
         moveItemMut.mutate({
           itemId,
           targetSectionId,
@@ -297,25 +307,18 @@ export function ScheduleView({
                 <VerticalSortable
                   ids={sections.map((s) => `section-${s.id}`)}
                 >
-                  {/* initial={false} suppresses enter animations for
-                     existing rows on AnimatePresence's first render —
-                     but new sections added later still animate in via
-                     their own `initial` prop. That's the behavior we
-                     want: instant on schedule load, subtle on add. */}
-                  <AnimatePresence initial={false}>
-                    {sections.map((section) => (
-                      <SectionRow
-                        key={section.id}
-                        section={section}
-                        serviceId={serviceId}
-                        activeItemId={activeItemId}
-                        onSelectItem={onSelectItem}
-                        onAddItem={onAddItem}
-                        onEditItem={onEditItem}
-                        newItemId={newItemId}
-                      />
-                    ))}
-                  </AnimatePresence>
+                  {sections.map((section, idx) => (
+                    <SectionRow
+                      key={section.id}
+                      section={section}
+                      colorIndex={idx}
+                      serviceId={serviceId}
+                      activeItemId={activeItemId}
+                      onSelectItem={onSelectItem}
+                      onAddItem={onAddItem}
+                      onEditItem={onEditItem}
+                    />
+                  ))}
                 </VerticalSortable>
               </DndContext>
             )}
@@ -335,20 +338,20 @@ export function ScheduleView({
 
 function SectionRow({
   section,
+  colorIndex,
   serviceId,
   activeItemId,
   onSelectItem,
   onAddItem,
   onEditItem,
-  newItemId,
 }: {
   section: ServiceSection
+  colorIndex: number
   serviceId: number
   activeItemId: number | undefined
   onSelectItem: (id: number | undefined) => void
   onAddItem: (sectionId: number) => void
   onEditItem: (itemId: number) => void
-  newItemId?: number
 }) {
   const renameMut = useRenameSection(serviceId)
   const deleteMut = useDeleteSection(serviceId)
@@ -363,14 +366,16 @@ function SectionRow({
     { type: "section" }
   )
 
+  const color = resolveSectionColor(section.color, colorIndex)
+
   const [collapsed, setCollapsed] = useState(false)
   const [editing, setEditing] = useState(false)
   const [pendingDelete, setPendingDelete] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const headerRef = useRef<HTMLDivElement>(null)
 
-  // Reset transient action states (pending delete, palette swatches) when
-  // the user clicks anywhere outside the section header.
+  // Reset transient state (pending-delete, open palette) when the user
+  // clicks anywhere outside the header.
   useEffect(() => {
     if (!pendingDelete && !paletteOpen) return
     function handler(e: MouseEvent) {
@@ -384,29 +389,16 @@ function SectionRow({
     return () => document.removeEventListener("mousedown", handler)
   }, [pendingDelete, paletteOpen])
 
-  const color = sectionColor(section.color)
-  const colored = color.key !== ""
-
   return (
-    <motion.div
-      ref={setNodeRef}
-      style={style}
-      initial={{ height: 0, opacity: 0 }}
-      animate={{ height: "auto", opacity: 1 }}
-      exit={{ height: 0, opacity: 0 }}
-      transition={{
-        height: { duration: 0.22, ease: [0.32, 0.72, 0, 1] },
-        opacity: { duration: 0.14, ease: "easeOut" },
-      }}
-      className="overflow-hidden border-b border-border/40"
-    >
+    <div ref={setNodeRef} style={style} className="border-b border-border/40">
       <div
         ref={headerRef}
         className={cn(
-          "group flex items-center gap-1.5 px-2 py-1.5 transition-colors duration-200",
+          "group flex items-center gap-1 border-l-2 pl-1.5 pr-1.5 py-1.5 transition-colors duration-200",
+          sectionBorderClass(color),
           pendingDelete
             ? "bg-destructive/25 text-foreground"
-            : cn(color.header, color.headerText)
+            : "text-muted-foreground/80"
         )}
       >
         <button
@@ -414,30 +406,10 @@ function SectionRow({
           {...attributes}
           {...listeners}
           aria-label="Drag section"
-          className={cn(
-            "cursor-grab touch-none px-0.5 opacity-0 transition-opacity group-hover:opacity-50 hover:opacity-90",
-            colored ? "text-foreground/80" : "text-muted-foreground"
-          )}
           onClick={(e) => e.stopPropagation()}
+          className="cursor-grab touch-none grid size-5 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-50 hover:opacity-90"
         >
           <GripVerticalIcon className="size-3" />
-        </button>
-        <button
-          type="button"
-          onClick={() => setCollapsed((v) => !v)}
-          className={cn(
-            "grid size-4 place-items-center rounded opacity-0 transition-opacity group-hover:opacity-70 hover:!opacity-100",
-            colored
-              ? "text-foreground/80 hover:text-foreground"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-          aria-label={collapsed ? "Expand" : "Collapse"}
-        >
-          {collapsed ? (
-            <ChevronRightIcon className="size-3" />
-          ) : (
-            <ChevronDownIcon className="size-3" />
-          )}
         </button>
         {editing ? (
           <Input
@@ -465,7 +437,7 @@ function SectionRow({
             {section.name}
           </button>
         )}
-        <div className="grid min-w-[7.25rem]">
+        <div className="grid">
           <AnimatePresence mode="popLayout" initial={false}>
             {paletteOpen ? (
               <motion.div
@@ -476,18 +448,17 @@ function SectionRow({
                 animate="open"
                 exit="closed"
               >
-                {sectionColorList.map((c) => {
-                  const active = c.key === section.color
+                {PALETTE_COLORS.map((c) => {
+                  const active = c === color
                   return (
                     <motion.button
-                      key={c.key}
+                      key={c}
                       type="button"
-                      aria-label={`Color ${c.label}`}
+                      aria-label={`Color ${c}`}
                       variants={paletteDotVariants}
                       onClick={(e) => {
                         e.stopPropagation()
-                        const next = active ? "" : c.key
-                        setColorMut.mutate({ id: section.id, color: next })
+                        setColorMut.mutate({ id: section.id, color: c })
                         setPaletteOpen(false)
                       }}
                       className="grid size-5 shrink-0 place-items-center rounded"
@@ -495,7 +466,7 @@ function SectionRow({
                       <span
                         className={cn(
                           "size-3 rounded-full transition-transform hover:scale-125",
-                          c.swatch,
+                          sectionSwatchClass(c),
                           active &&
                             "ring-2 ring-foreground/70 ring-offset-1 ring-offset-background"
                         )}
@@ -514,7 +485,6 @@ function SectionRow({
                 exit="hidden"
               >
                 <SectionAction
-                  colored={colored}
                   ariaLabel="Rename"
                   tone="yellow"
                   onClick={() => setEditing(true)}
@@ -522,7 +492,6 @@ function SectionRow({
                   <PencilIcon className="size-3" />
                 </SectionAction>
                 <SectionAction
-                  colored={colored}
                   ariaLabel="Color"
                   tone="purple"
                   onClick={() => setPaletteOpen(true)}
@@ -550,12 +519,7 @@ function SectionRow({
                     "grid size-5 shrink-0 place-items-center rounded transition-all",
                     pendingDelete
                       ? "bg-destructive text-destructive-foreground opacity-100"
-                      : cn(
-                          "opacity-0 group-hover:opacity-70 hover:!opacity-100",
-                          colored
-                            ? "text-foreground/80 hover:bg-destructive/20 hover:text-destructive"
-                            : "text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
-                        )
+                      : "text-muted-foreground opacity-0 hover:bg-destructive/15 hover:text-destructive group-hover:opacity-70 hover:!opacity-100"
                   )}
                 >
                   {pendingDelete ? (
@@ -565,45 +529,41 @@ function SectionRow({
                   )}
                 </button>
                 <SectionAction
-                  colored={colored}
                   ariaLabel="Add item"
                   tone="green"
                   onClick={() => onAddItem(section.id)}
                 >
                   <PlusIcon className="size-3" />
                 </SectionAction>
+                <button
+                  type="button"
+                  onClick={() => setCollapsed((v) => !v)}
+                  className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  aria-label={collapsed ? "Expand" : "Collapse"}
+                >
+                  {collapsed ? (
+                    <ChevronRightIcon className="size-3" />
+                  ) : (
+                    <ChevronDownIcon className="size-3" />
+                  )}
+                </button>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       </div>
 
-      <AnimatePresence initial={false}>
-        {!collapsed && (
-          <motion.div
-            key="section-content"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{
-              height: { duration: 0.16, ease: [0.32, 0.72, 0, 1] },
-              opacity: { duration: 0.1 },
-            }}
-            className="overflow-hidden"
-          >
-            <ItemList
-              sectionId={section.id}
-              activeItemId={activeItemId}
-              onSelectItem={onSelectItem}
-              onEditItem={onEditItem}
-              color={color}
-              sectionPendingDelete={pendingDelete}
-              newItemId={newItemId}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
+      {!collapsed && (
+        <ItemList
+          sectionId={section.id}
+          color={color}
+          activeItemId={activeItemId}
+          onSelectItem={onSelectItem}
+          onEditItem={onEditItem}
+          sectionPendingDelete={pendingDelete}
+        />
+      )}
+    </div>
   )
 }
 
@@ -612,18 +572,16 @@ type ActionTone = "default" | "green" | "yellow" | "purple"
 const toneHover: Record<ActionTone, string> = {
   default: "hover:bg-muted hover:text-foreground",
   green: "hover:bg-emerald-500/15 hover:text-emerald-500",
-  yellow: "hover:bg-amber-500/15 hover:text-amber-500",
   purple: "hover:bg-violet-500/15 hover:text-violet-500",
+  yellow: "hover:bg-amber-500/15 hover:text-amber-500",
 }
 
 function SectionAction({
-  colored,
   ariaLabel,
   tone = "default",
   onClick,
   children,
 }: {
-  colored: boolean
   ariaLabel: string
   tone?: ActionTone
   onClick: () => void
@@ -638,8 +596,7 @@ function SectionAction({
         onClick()
       }}
       className={cn(
-        "grid size-5 shrink-0 place-items-center rounded opacity-0 transition-opacity group-hover:opacity-70 hover:!opacity-100",
-        colored ? "text-foreground/80" : "text-muted-foreground",
+        "grid size-5 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-70 hover:!opacity-100",
         toneHover[tone]
       )}
     >
@@ -647,3 +604,4 @@ function SectionAction({
     </button>
   )
 }
+

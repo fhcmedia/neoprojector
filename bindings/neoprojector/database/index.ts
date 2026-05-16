@@ -4,8 +4,10 @@
 export {
     Bible,
     BibleBook,
+    Display,
     ListServiceItemsWithContentRow,
     Medium,
+    Overlay,
     Service,
     ServiceItem,
     ServiceSection,

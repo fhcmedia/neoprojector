@@ -4,6 +4,10 @@
 
 package database
 
+import (
+	"database/sql"
+)
+
 type Bible struct {
 	Translation string `json:"translation"`
 	Name        string `json:"name"`
@@ -36,6 +40,18 @@ type BibleVerse struct {
 	Text        string `json:"text"`
 }
 
+type Display struct {
+	ID              int64          `json:"id"`
+	Name            string         `json:"name"`
+	Enabled         int64          `json:"enabled"`
+	Position        int64          `json:"position"`
+	BibleTemplateID sql.NullInt64  `json:"bible_template_id"`
+	SongTemplateID  sql.NullInt64  `json:"song_template_id"`
+	ScreenID        sql.NullString `json:"screen_id"`
+	CreatedAt       string         `json:"created_at"`
+	UpdatedAt       string         `json:"updated_at"`
+}
+
 type Medium struct {
 	ID               int64  `json:"id"`
 	Type             string `json:"type"`
@@ -44,6 +60,18 @@ type Medium struct {
 	OriginalFilename string `json:"original_filename"`
 	CreatedAt        string `json:"created_at"`
 	UpdatedAt        string `json:"updated_at"`
+}
+
+type Overlay struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Kind        string `json:"kind"`
+	ConfigJson  string `json:"config_json"`
+	LayoutsJson string `json:"layouts_json"`
+	RulesJson   string `json:"rules_json"`
+	Position    int64  `json:"position"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
 }
 
 type Service struct {
@@ -76,6 +104,17 @@ type ServiceItemMedium struct {
 	MediaID   int64  `json:"media_id"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
+}
+
+type ServiceItemOverlay struct {
+	ItemID      int64  `json:"item_id"`
+	OverlayKind string `json:"overlay_kind"`
+	OverlayName string `json:"overlay_name"`
+	ConfigJson  string `json:"config_json"`
+	LayoutsJson string `json:"layouts_json"`
+	RulesJson   string `json:"rules_json"`
+	CreatedAt   string `json:"created_at"`
+	UpdatedAt   string `json:"updated_at"`
 }
 
 type ServiceItemSong struct {
@@ -127,7 +166,6 @@ type Template struct {
 	ViewportW int64  `json:"viewport_w"`
 	ViewportH int64  `json:"viewport_h"`
 	DataJson  string `json:"data_json"`
-	IsDefault int64  `json:"is_default"`
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 }

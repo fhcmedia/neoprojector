@@ -7,5 +7,6 @@ export {
 };
 
 export {
-    BibleRef
+    BibleRef,
+    OverlayItemSpec
 } from "./models.js";

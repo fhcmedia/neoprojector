@@ -10,9 +10,9 @@ import (
 )
 
 const createTemplate = `-- name: CreateTemplate :one
-INSERT INTO template (name, kind, viewport_w, viewport_h, data_json, is_default)
-VALUES (?, ?, ?, ?, ?, ?)
-RETURNING id, name, kind, viewport_w, viewport_h, data_json, is_default, created_at, updated_at
+INSERT INTO template (name, kind, viewport_w, viewport_h, data_json)
+VALUES (?, ?, ?, ?, ?)
+RETURNING id, name, kind, viewport_w, viewport_h, data_json, created_at, updated_at
 `
 
 type CreateTemplateParams struct {
@@ -21,7 +21,6 @@ type CreateTemplateParams struct {
 	ViewportW int64  `json:"viewport_w"`
 	ViewportH int64  `json:"viewport_h"`
 	DataJson  string `json:"data_json"`
-	IsDefault int64  `json:"is_default"`
 }
 
 func (q *Queries) CreateTemplate(ctx context.Context, arg CreateTemplateParams) (Template, error) {
@@ -31,7 +30,6 @@ func (q *Queries) CreateTemplate(ctx context.Context, arg CreateTemplateParams) 
 		arg.ViewportW,
 		arg.ViewportH,
 		arg.DataJson,
-		arg.IsDefault,
 	)
 	var i Template
 	err := row.Scan(
@@ -41,7 +39,6 @@ func (q *Queries) CreateTemplate(ctx context.Context, arg CreateTemplateParams) 
 		&i.ViewportW,
 		&i.ViewportH,
 		&i.DataJson,
-		&i.IsDefault,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -49,7 +46,7 @@ func (q *Queries) CreateTemplate(ctx context.Context, arg CreateTemplateParams) 
 }
 
 const deleteTemplate = `-- name: DeleteTemplate :exec
-DELETE FROM template WHERE id = ? AND is_default = 0
+DELETE FROM template WHERE id = ?
 `
 
 func (q *Queries) DeleteTemplate(ctx context.Context, id int64) error {
@@ -58,20 +55,21 @@ func (q *Queries) DeleteTemplate(ctx context.Context, id int64) error {
 }
 
 const duplicateTemplate = `-- name: DuplicateTemplate :one
-INSERT INTO template (name, kind, viewport_w, viewport_h, data_json, is_default)
-SELECT ?, kind, viewport_w, viewport_h, data_json, 0
+INSERT INTO template (name, kind, viewport_w, viewport_h, data_json)
+SELECT ?, kind, viewport_w, viewport_h, data_json
 FROM template
-WHERE id = ?
-RETURNING id, name, kind, viewport_w, viewport_h, data_json, is_default, created_at, updated_at
+WHERE template.id = ?
+RETURNING id, name, kind, viewport_w, viewport_h, data_json, created_at, updated_at
 `
 
 type DuplicateTemplateParams struct {
-	NewName string `json:"new_name"`
-	ID      int64  `json:"id"`
+	Name string `json:"name"`
+	ID   int64  `json:"id"`
 }
 
+// Creates a copy of an existing user template, with a fresh name.
 func (q *Queries) DuplicateTemplate(ctx context.Context, arg DuplicateTemplateParams) (Template, error) {
-	row := q.db.QueryRowContext(ctx, duplicateTemplate, arg.NewName, arg.ID)
+	row := q.db.QueryRowContext(ctx, duplicateTemplate, arg.Name, arg.ID)
 	var i Template
 	err := row.Scan(
 		&i.ID,
@@ -80,7 +78,6 @@ func (q *Queries) DuplicateTemplate(ctx context.Context, arg DuplicateTemplatePa
 		&i.ViewportW,
 		&i.ViewportH,
 		&i.DataJson,
-		&i.IsDefault,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -88,7 +85,7 @@ func (q *Queries) DuplicateTemplate(ctx context.Context, arg DuplicateTemplatePa
 }
 
 const listTemplates = `-- name: ListTemplates :many
-SELECT id, name, kind, viewport_w, viewport_h, data_json, is_default, created_at, updated_at FROM template ORDER BY is_default DESC, name COLLATE NOCASE ASC
+SELECT id, name, kind, viewport_w, viewport_h, data_json, created_at, updated_at FROM template ORDER BY name COLLATE NOCASE ASC
 `
 
 func (q *Queries) ListTemplates(ctx context.Context) ([]Template, error) {
@@ -107,7 +104,6 @@ func (q *Queries) ListTemplates(ctx context.Context) ([]Template, error) {
 			&i.ViewportW,
 			&i.ViewportH,
 			&i.DataJson,
-			&i.IsDefault,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -125,7 +121,7 @@ func (q *Queries) ListTemplates(ctx context.Context) ([]Template, error) {
 }
 
 const templateByID = `-- name: TemplateByID :one
-SELECT id, name, kind, viewport_w, viewport_h, data_json, is_default, created_at, updated_at FROM template WHERE id = ?
+SELECT id, name, kind, viewport_w, viewport_h, data_json, created_at, updated_at FROM template WHERE id = ?
 `
 
 func (q *Queries) TemplateByID(ctx context.Context, id int64) (Template, error) {
@@ -138,7 +134,6 @@ func (q *Queries) TemplateByID(ctx context.Context, id int64) (Template, error) 
 		&i.ViewportW,
 		&i.ViewportH,
 		&i.DataJson,
-		&i.IsDefault,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -146,7 +141,7 @@ func (q *Queries) TemplateByID(ctx context.Context, id int64) (Template, error) 
 }
 
 const templateByName = `-- name: TemplateByName :one
-SELECT id, name, kind, viewport_w, viewport_h, data_json, is_default, created_at, updated_at FROM template WHERE name = ? COLLATE NOCASE
+SELECT id, name, kind, viewport_w, viewport_h, data_json, created_at, updated_at FROM template WHERE name = ? COLLATE NOCASE
 `
 
 func (q *Queries) TemplateByName(ctx context.Context, name string) (Template, error) {
@@ -159,7 +154,6 @@ func (q *Queries) TemplateByName(ctx context.Context, name string) (Template, er
 		&i.ViewportW,
 		&i.ViewportH,
 		&i.DataJson,
-		&i.IsDefault,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -174,8 +168,8 @@ SET name = ?,
     viewport_h = ?,
     data_json = ?,
     updated_at = CURRENT_TIMESTAMP
-WHERE id = ? AND is_default = 0
-RETURNING id, name, kind, viewport_w, viewport_h, data_json, is_default, created_at, updated_at
+WHERE id = ?
+RETURNING id, name, kind, viewport_w, viewport_h, data_json, created_at, updated_at
 `
 
 type UpdateTemplateParams struct {
@@ -204,7 +198,6 @@ func (q *Queries) UpdateTemplate(ctx context.Context, arg UpdateTemplateParams) 
 		&i.ViewportW,
 		&i.ViewportH,
 		&i.DataJson,
-		&i.IsDefault,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

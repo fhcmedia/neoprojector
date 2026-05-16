@@ -5,6 +5,7 @@ import {
   useNavigate,
 } from "@tanstack/react-router"
 import { AnimatePresence, motion } from "motion/react"
+import { useSessionState } from "@/hooks/use-session-state"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -15,6 +16,9 @@ import { ScheduleView } from "@/features/schedule/schedule-view"
 import { EditorPanel } from "@/features/schedule/editor-panel"
 import { AddFlow, EditFlow } from "@/features/schedule/editor-flow"
 import { LibraryView } from "@/features/library/library-view"
+import { DisplayPreviewPane } from "@/features/displays/display-preview-pane"
+import { ShowPane, type AdHocBibleRef } from "@/features/show/show-pane"
+import { useAppendPreviousVerse } from "@/features/schedule/api"
 
 type Search = {
   service?: number
@@ -94,13 +98,44 @@ function Projector() {
     add: addSectionId,
     edit: editItemId,
   } = Route.useSearch()
-  const [activeItemId, setActiveItemId] = useState<number | undefined>()
-  // newItemId is set after the add-drawer finishes sliding away. It cues
-  // the matching ItemRow to play a brief squeeze-in so the user can see
-  // what they just created. Cleared shortly after.
-  const [newItemId, setNewItemId] = useState<number | undefined>()
-  const pendingNewItemRef = useRef<number | undefined>(undefined)
-  const newItemTimerRef = useRef<number | undefined>(undefined)
+  // activeItemId persisted to sessionStorage so leaving for the
+  // template editor (or any other route) and coming back lands the
+  // user on the same item they were on. Cleared explicitly on
+  // back-out via setActiveService(0).
+  const [activeItemId, setActiveItemIdState] = useSessionState<number | undefined>(
+    "neoprojector.activeItemId",
+    undefined
+  )
+  // Ad-hoc bible source from the library Enter flow. Lives only for
+  // the session — closing/reopening the app drops it.
+  const [adHocBibleRef, setAdHocBibleRef] = useState<AdHocBibleRef | undefined>(
+    undefined
+  )
+
+  // Selecting a schedule item drops any ad-hoc bible source (they're
+  // mutually exclusive as the Show pane's input).
+  const setActiveItemId = (id: number | undefined) => {
+    setActiveItemIdState(id)
+    if (id !== undefined) setAdHocBibleRef(undefined)
+  }
+
+  // Auto-append the broadcast reference to the active service's
+  // "Previous verses" section so the operator can re-pick it from
+  // the schedule later without retyping. Dedupes on identical refs.
+  const appendPreviousVerse = useAppendPreviousVerse(activeServiceId)
+
+  // Library Enter sets the ad-hoc ref AND clears active item so the
+  // show pane swaps over cleanly.
+  const submitAdHocBibleRef = (ref: AdHocBibleRef) => {
+    setActiveItemIdState(undefined)
+    setAdHocBibleRef(ref)
+    void appendPreviousVerse({
+      book: ref.book,
+      chapter: ref.chapter,
+      verse_start: ref.verseStart,
+      verse_end: ref.verseEnd,
+    })
+  }
 
   // Persisted "last opened" service id. Survives back-out so the service
   // list can mark the most recently used row — handy after a reload or
@@ -114,18 +149,12 @@ function Projector() {
     return n || undefined
   })
 
-  // Set when a brand-new service is opened — ScheduleView consumes it to
-  // auto-focus its name input, replacing the old "edit row in the list"
-  // pattern that flashed during the slide-in.
-  const [pendingNameEdit, setPendingNameEdit] = useState(false)
-
-  const setActiveService = (id: number, opts?: { editName?: boolean }) => {
+  const setActiveService = (id: number) => {
     setActiveItemId(undefined)
     if (id) {
       window.sessionStorage.setItem(AUTO_RESUME_KEY, String(id))
       window.sessionStorage.setItem(LAST_ACTIVE_KEY, String(id))
       setLastActiveServiceId(id)
-      if (opts?.editName) setPendingNameEdit(true)
     } else {
       // Back-out: clear the auto-resume so the user actually sees the
       // service list. The breadcrumb (LAST_ACTIVE_KEY) is kept so the row
@@ -145,39 +174,13 @@ function Projector() {
     "slide"
   )
 
-  const closeEditor = (
-    mode: "slide" | "fade" = "slide",
-    addedItemId?: number
-  ) => {
+  const closeEditor = (mode: "slide" | "fade" = "slide") => {
     setEditorExitMode(mode)
-    pendingNewItemRef.current = addedItemId
     navigate({
       search: (prev) => ({ ...prev, add: undefined, edit: undefined }),
       replace: true,
     })
   }
-
-  // Fires once the editor panel finishes closing — that's the cue to
-  // emphasise the newly added item.
-  const handleEditorClosed = () => {
-    const id = pendingNewItemRef.current
-    pendingNewItemRef.current = undefined
-    if (!id) return
-    setNewItemId(id)
-    if (newItemTimerRef.current)
-      window.clearTimeout(newItemTimerRef.current)
-    newItemTimerRef.current = window.setTimeout(
-      () => setNewItemId(undefined),
-      600
-    )
-  }
-
-  useEffect(() => {
-    return () => {
-      if (newItemTimerRef.current)
-        window.clearTimeout(newItemTimerRef.current)
-    }
-  }, [])
 
   const openAdd = (sectionId: number) =>
     navigate({
@@ -238,9 +241,6 @@ function Projector() {
                       onSelectItem={setActiveItemId}
                       onAddItem={openAdd}
                       onEditItem={openEdit}
-                      newItemId={newItemId}
-                      autoEditName={pendingNameEdit}
-                      onAutoEditConsumed={() => setPendingNameEdit(false)}
                     />
                   </motion.div>
                 ) : (
@@ -265,14 +265,13 @@ function Projector() {
                 title={editorTitle}
                 exitMode={editorExitMode}
                 onBack={() => closeEditor("slide")}
-                onClosed={handleEditorClosed}
               >
                 <AnimatePresence mode="wait" initial={false}>
                   {addSectionId !== undefined && (
                     <AddFlow
                       key={`add-${addSectionId}`}
                       sectionId={addSectionId}
-                      onDone={(id) => closeEditor("fade", id)}
+                      onDone={() => closeEditor("fade")}
                     />
                   )}
                   {editItemId !== undefined && (
@@ -288,17 +287,20 @@ function Projector() {
           </ResizablePanel>
           <ResizableHandle />
           <ResizablePanel defaultSize="60%" minSize="30%">
-            <Pane label="Show" />
+            <ShowPane
+              activeItemId={activeItemId}
+              adHocBibleRef={adHocBibleRef}
+            />
           </ResizablePanel>
           <ResizableHandle />
           <ResizablePanel defaultSize="20%" minSize="10%" maxSize="40%">
-            <Pane label="Preview" />
+            <DisplayPreviewPane />
           </ResizablePanel>
         </ResizablePanelGroup>
       </ResizablePanel>
       <ResizableHandle />
       <ResizablePanel defaultSize="30%" minSize="10%" maxSize="60%">
-        <LibraryView />
+        <LibraryView onAdHocBibleRef={submitAdHocBibleRef} />
       </ResizablePanel>
     </ResizablePanelGroup>
   )

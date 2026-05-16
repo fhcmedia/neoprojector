@@ -22,6 +22,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/alert-dialog"
+import {
+  useLiveOutput,
+  useStartLive,
+  useStopLive,
+} from "@/features/displays/api"
+import { useLive } from "@/features/live/live-context"
+import { useKeybinds } from "@/hooks/use-keybinds"
 import logo from "@/assets/logo.png"
 
 export const Route = createFileRoute("/_app")({
@@ -31,8 +38,17 @@ export const Route = createFileRoute("/_app")({
 function AppShell() {
   const path = useRouterState({ select: (s) => s.location.pathname })
   const inSettings = path.startsWith("/settings")
-  const [live, setLive] = useState(false)
+  // live mirrors the Go-side IsLive (polled). The local mutation
+  // invalidates it on success, so the button reflects actual window
+  // state — including external close (monitor unplug, user Cmd-Q on
+  // the output window).
+  const { data: live = false } = useLiveOutput()
+  const startMut = useStartLive()
+  const stopMut = useStopLive()
+  const { republish } = useLive()
+  useKeybinds()
   const [confirmOffline, setConfirmOffline] = useState(false)
+  const [startError, setStartError] = useState<string | null>(null)
   const [hasUnread, setHasUnread] = useState(false)
 
   return (
@@ -86,12 +102,29 @@ function AppShell() {
           <button
             type="button"
             aria-label={live ? "Stop live" : "Go live"}
+            disabled={startMut.isPending || stopMut.isPending}
             onClick={() => {
               if (live) setConfirmOffline(true)
-              else setLive(true)
+              else
+                startMut.mutate(undefined, {
+                  onError: (e) =>
+                    setStartError(
+                      e instanceof Error ? e.message : String(e)
+                    ),
+                  onSuccess: () => {
+                    // Re-push the current LiveProvider snapshot so
+                    // the just-opened output windows pick up
+                    // whatever was last live. Two pushes (immediate
+                    // for the CurrentLive fetch race, delayed for
+                    // the event subscription race) cover both code
+                    // paths without further plumbing.
+                    republish()
+                    window.setTimeout(republish, 400)
+                  },
+                })
             }}
             className={
-              "grid w-12 place-items-center transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset " +
+              "grid w-12 place-items-center transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset disabled:opacity-50 " +
               (live
                 ? "bg-red-600 text-white hover:bg-red-500"
                 : "text-muted-foreground hover:bg-muted hover:text-foreground")
@@ -114,11 +147,30 @@ function AppShell() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                setLive(false)
+                stopMut.mutate()
                 setConfirmOffline(false)
               }}
             >
               Go offline
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={!!startError}
+        onOpenChange={(o) => !o && setStartError(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Can't go live</AlertDialogTitle>
+            <AlertDialogDescription>
+              {startError ?? ""} Open Settings → Display to enable a display
+              and bind it to a connected monitor.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setStartError(null)}>
+              OK
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -4,13 +4,17 @@ VALUES (?, ?, ?)
 RETURNING *;
 
 -- name: CreateServiceSectionAppend :one
-INSERT INTO service_section (service_id, name, position)
+INSERT INTO service_section (service_id, name, position, color)
 VALUES (
   sqlc.arg(service_id),
   sqlc.arg(name),
-  COALESCE((SELECT MAX(position) + 1 FROM service_section WHERE service_section.service_id = sqlc.arg(service_id)), 0)
+  COALESCE((SELECT MAX(position) + 1 FROM service_section WHERE service_section.service_id = sqlc.arg(service_id)), 0),
+  sqlc.arg(palette)
 )
 RETURNING *;
+
+-- name: CountServiceSections :one
+SELECT COUNT(*) AS n FROM service_section WHERE service_id = ?;
 
 -- name: RenameServiceSection :one
 UPDATE service_section

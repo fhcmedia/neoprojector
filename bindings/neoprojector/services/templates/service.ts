@@ -9,10 +9,6 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // @ts-ignore: Unused imports
 import * as database$0 from "../../database/models.js";
 
-/**
- * CreateTemplate creates a new user-owned template. Always written with
- * is_default = 0; the seed package is the only writer of default rows.
- */
 export function CreateTemplate(name: string, kind: string, viewportW: number, viewportH: number, dataJSON: string): $CancellablePromise<database$0.Template> {
     return $Call.ByID(1325450795, name, kind, viewportW, viewportH, dataJSON).then(($result: any) => {
         return $$createType0($result);
@@ -23,10 +19,6 @@ export function DeleteTemplate(id: number): $CancellablePromise<void> {
     return $Call.ByID(2820145892, id);
 }
 
-/**
- * DuplicateTemplate creates an editable copy of any template (default or
- * user-owned). The copy gets a "<name> copy" name, suffixed until unique.
- */
 export function DuplicateTemplate(id: number): $CancellablePromise<database$0.Template> {
     return $Call.ByID(2162193280, id).then(($result: any) => {
         return $$createType0($result);
@@ -45,10 +37,6 @@ export function TemplateByID(id: number): $CancellablePromise<database$0.Templat
     });
 }
 
-/**
- * UpdateTemplate patches a user template. Refuses on defaults — caller
- * should Duplicate first and edit the copy.
- */
 export function UpdateTemplate(id: number, name: string, kind: string, viewportW: number, viewportH: number, dataJSON: string): $CancellablePromise<database$0.Template> {
     return $Call.ByID(3801650118, id, name, kind, viewportW, viewportH, dataJSON).then(($result: any) => {
         return $$createType0($result);

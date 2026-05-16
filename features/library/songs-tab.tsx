@@ -1,8 +1,8 @@
-import { useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import { MusicIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDebounce } from "@/hooks/use-debounce"
+import { useSessionState } from "@/hooks/use-session-state"
 import { songSectionType } from "@/features/songs/section-types"
 import {
   pickerContainerVariants,
@@ -12,7 +12,10 @@ import { useLibrarySongs, useLibrarySong } from "@/features/library/api"
 
 export function SongsTab({ search }: { search: string }) {
   const { data: songs, isLoading } = useLibrarySongs()
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [selectedId, setSelectedId] = useSessionState<number | null>(
+    "neoprojector.songSelectedId",
+    null
+  )
 
   const debounced = useDebounce(search, 200)
 
@@ -114,18 +117,15 @@ function SongPreview({ songId }: { songId: number | null }) {
               <motion.div
                 key={sec.section.id}
                 variants={sectionTileVariants}
-                className="flex flex-col border-b border-r border-border/40"
+                className={cn(
+                  "flex flex-col border-b border-l-2 border-r border-b-border/40 border-r-border/40",
+                  t.border
+                )}
               >
-                <div
-                  className={cn(
-                    "px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider",
-                    t.chip,
-                    t.text
-                  )}
-                >
+                <div className="pl-2.5 pr-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
                   {t.label}
                 </div>
-                <div className={cn("flex-1 px-4 py-2", t.body)}>
+                <div className="flex-1 px-3 py-2">
                   {sec.lines.map((line) => (
                     <div
                       key={line.id}

@@ -37,3 +37,47 @@ export class BibleRef {
         return new BibleRef($$parsedSource as Partial<BibleRef>);
     }
 }
+
+/**
+ * OverlayItemSpec carries the snapshot the frontend builds from a
+ * library overlay (or a fresh registry default) when the operator
+ * adds the overlay to a service section. config_json/layouts_json/
+ * rules_json are opaque to Go — the frontend's widget registry +
+ * rule module are the only things that interpret them.
+ */
+export class OverlayItemSpec {
+    "kind": string;
+    "name": string;
+    "config_json": string;
+    "layouts_json": string;
+    "rules_json": string;
+
+    /** Creates a new OverlayItemSpec instance. */
+    constructor($$source: Partial<OverlayItemSpec> = {}) {
+        if (!("kind" in $$source)) {
+            this["kind"] = "";
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("config_json" in $$source)) {
+            this["config_json"] = "";
+        }
+        if (!("layouts_json" in $$source)) {
+            this["layouts_json"] = "";
+        }
+        if (!("rules_json" in $$source)) {
+            this["rules_json"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OverlayItemSpec instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OverlayItemSpec {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new OverlayItemSpec($$parsedSource as Partial<OverlayItemSpec>);
+    }
+}

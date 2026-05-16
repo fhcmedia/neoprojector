@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { motion } from "motion/react"
 import { ChevronLeftIcon, SearchIcon } from "lucide-react"
@@ -13,6 +13,10 @@ import { cn } from "@/lib/utils"
 import { useAddBibleItem, useUpdateBibleItem } from "@/features/schedule/api"
 import { parseBibleRef } from "@/features/schedule/bible-ref"
 import {
+  bibleCategoryBorderClass,
+  formatBibleRef,
+} from "@/features/bible/categories"
+import {
   pickerContainerVariants,
   pickerRowVariants,
 } from "@/features/schedule/picker-anim"
@@ -23,68 +27,6 @@ type Step = "books" | "chapters" | "verses"
 type Props =
   | { mode: "add"; sectionId: number; onSaved: (newItemId?: number) => void }
   | { mode: "edit"; itemId: number; initial: Sel; onSaved: () => void }
-
-// Stable color per book category. Mirrors the section accent palette so
-// the picker feels cohesive with the rest of the schedule — chart-1..5 from
-// shadcn's theme tokens, cycled across the eight categories. Rest / hover /
-// active mirror the section-color tinting levels (12 / 22 / 35) so the row
-// reads as a tinted shadcn item rather than a flat highlight.
-type CategoryStyle = {
-  rest: string
-  hover: string
-  active: string
-}
-
-const categoryStyles: Record<string, CategoryStyle> = {
-  law: {
-    rest: "bg-chart-1/12 text-foreground/80",
-    hover: "hover:bg-chart-1/22",
-    active: "bg-chart-1/35 text-foreground",
-  },
-  history: {
-    rest: "bg-chart-2/12 text-foreground/80",
-    hover: "hover:bg-chart-2/22",
-    active: "bg-chart-2/35 text-foreground",
-  },
-  poetry: {
-    rest: "bg-chart-3/12 text-foreground/80",
-    hover: "hover:bg-chart-3/22",
-    active: "bg-chart-3/35 text-foreground",
-  },
-  major_prophets: {
-    rest: "bg-chart-4/12 text-foreground/80",
-    hover: "hover:bg-chart-4/22",
-    active: "bg-chart-4/35 text-foreground",
-  },
-  minor_prophets: {
-    rest: "bg-chart-5/12 text-foreground/80",
-    hover: "hover:bg-chart-5/22",
-    active: "bg-chart-5/35 text-foreground",
-  },
-  // NT cycles back through the palette so the books still read as a
-  // continuous shadcn-tinted list.
-  gospels: {
-    rest: "bg-chart-1/12 text-foreground/80",
-    hover: "hover:bg-chart-1/22",
-    active: "bg-chart-1/35 text-foreground",
-  },
-  letters: {
-    rest: "bg-chart-2/12 text-foreground/80",
-    hover: "hover:bg-chart-2/22",
-    active: "bg-chart-2/35 text-foreground",
-  },
-  prophecy: {
-    rest: "bg-chart-3/12 text-foreground/80",
-    hover: "hover:bg-chart-3/22",
-    active: "bg-chart-3/35 text-foreground",
-  },
-}
-
-const fallbackCategoryStyle: CategoryStyle = {
-  rest: "bg-muted/40 text-muted-foreground",
-  hover: "hover:bg-muted",
-  active: "bg-muted text-foreground",
-}
 
 // Narrow-column drill-down: search at top, three views (books → chapters →
 // verses) sliding horizontally as the user drills in. Each step takes the
@@ -140,6 +82,21 @@ export function BiblePicker(props: Props) {
     return next
   }
 
+  // Pane navigation reacts on every keystroke — chapter and verse jump
+  // immediately so the user sees the highlight as they type.
+  useEffect(() => {
+    if (!books || !search.trim()) return
+    const parsed = parseBibleRef(search, books)
+    if (!parsed) return
+    applyParse(search, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, books])
+
+  // Autocomplete is the only thing that stays debounced — rewriting the
+  // typed prefix to a canonical book name shouldn't fire mid-typing
+  // since unambiguous prefixes can flip identity (e.g. "j" → still
+  // ambiguous, "joh" → John). The level tracker guards against the
+  // rewrite rebounding right after a segmented backspace.
   useEffect(() => {
     if (!books) return
     if (!debounced.trim()) {
@@ -147,30 +104,21 @@ export function BiblePicker(props: Props) {
       lastBookRef.current = ""
       return
     }
-
     const parsed = parseBibleRef(debounced, books)
     if (!parsed) {
       lastLevelRef.current = 0
       return
     }
-
-    applyParse(debounced, true)
-
-    // Auto-complete the search bar. Build canonical form and replace the
-    // typed text — but only when the parse advances (new book, or new
-    // chapter/verse on the same book). This lets the user backspace past
-    // an autocompleted name without it springing back.
     const level = parsed.verseStart ? 3 : parsed.chapter ? 2 : 1
     const advanced =
       parsed.book !== lastBookRef.current || level > lastLevelRef.current
     lastBookRef.current = parsed.book
     lastLevelRef.current = level
-
     if (!advanced) return
 
     const bookLabel =
       books.find((b) => b.name === parsed.book)?.name_kjv ?? parsed.book
-    const canonical = formatRef(
+    const canonical = formatBibleRef(
       bookLabel,
       parsed.chapter,
       parsed.verseStart,
@@ -263,7 +211,39 @@ export function BiblePicker(props: Props) {
                 ? applyParse(search, true)
                 : null
               submit(forced ?? sel)
+              return
             }
+            if (e.key !== "Backspace") return
+            if (!books) return
+            const input = e.currentTarget
+            if (
+              input.selectionStart !== input.value.length ||
+              input.selectionEnd !== input.value.length
+            )
+              return
+            const parsed = parseBibleRef(input.value.trim(), books)
+            if (!parsed) return
+            e.preventDefault()
+            const bookLabel =
+              books.find((b) => b.name === parsed.book)?.name_kjv ??
+              parsed.book
+            let next: string
+            let nextLevel: number
+            if (parsed.verseStart !== undefined) {
+              next = `${bookLabel} ${parsed.chapter}`
+              nextLevel = 2
+            } else if (parsed.chapter !== undefined) {
+              next = `${bookLabel} `
+              nextLevel = 1
+            } else {
+              next = ""
+              nextLevel = 0
+            }
+            // Sync the autocomplete tracker so the next debounce pass
+            // doesn't count this shorter form as a fresh advance.
+            lastBookRef.current = parsed.book
+            lastLevelRef.current = nextLevel
+            setSearch(next)
           }}
           placeholder={placeholder}
           className="h-8 pl-8 text-xs placeholder:text-muted-foreground/40"
@@ -425,8 +405,7 @@ function BooksView({
   return (
     <div ref={scrollRef} className="h-full overflow-y-auto py-1">
       {books.map((b) => {
-        const style =
-          categoryStyles[b.category] ?? fallbackCategoryStyle
+        const border = bibleCategoryBorderClass(b.category)
         const isActive = activeBook === b.name
         return (
           <button
@@ -435,8 +414,11 @@ function BooksView({
             data-book={b.name}
             onClick={() => onPick(b.name)}
             className={cn(
-              "flex w-full items-center gap-2 py-1 pl-3 pr-2 text-left text-sm transition-colors",
-              isActive ? style.active : cn(style.rest, style.hover)
+              "flex w-full items-center gap-2 border-l-2 py-1 pl-2.5 pr-2 text-left text-sm transition-colors",
+              border,
+              isActive
+                ? "bg-muted text-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
             )}
           >
             {b.name_kjv}
@@ -588,24 +570,3 @@ function useAutoScrollTo(
   }, [containerRef, dep, selector])
 }
 
-// formatRef renders the canonical display form for a parsed reference. Used
-// by the search-bar autocomplete to replace what the user typed with the
-// resolved reference (e.g. "gen 3:16" → "Genesis 3:16").
-function formatRef(
-  book: string,
-  chapter?: number,
-  verseStart?: number,
-  verseEnd?: number
-): string {
-  let s = book
-  if (chapter) s += ` ${chapter}`
-  if (verseStart) {
-    s += `:${verseStart}`
-    if (verseEnd && verseEnd !== verseStart) s += `-${verseEnd}`
-  }
-  return s
-}
-
-// Defensive use of useMemo to avoid a TS-only "unused import" complaint when
-// reordering helpers. Tree-shaken in build.
-void useMemo

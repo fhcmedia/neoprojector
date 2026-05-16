@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { AnimatePresence, motion } from "motion/react"
-import { ChevronDownIcon, PlusIcon, XIcon } from "lucide-react"
+import {
+  ChevronDownIcon,
+  CopyIcon,
+  GripVerticalIcon,
+  PlusIcon,
+  XIcon,
+} from "lucide-react"
+import { arrayMove } from "@dnd-kit/sortable"
 
 import { Service as Songs } from "@/bindings/neoprojector/services/songs"
 import { SongSpec } from "@/bindings/neoprojector/services/songs"
@@ -9,7 +16,6 @@ import type { SongFull } from "@/bindings/neoprojector/services/songs"
 import type { Song } from "@/bindings/neoprojector/database"
 import { Input } from "@/components/input"
 import { Textarea } from "@/components/textarea"
-import { Button } from "@/components/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,6 +28,16 @@ import {
   pickerContainerVariants,
   pickerRowVariants,
 } from "@/features/schedule/picker-anim"
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  VerticalSortable,
+  useSortableRow,
+  type DragEndEvent,
+} from "@/features/schedule/sortable"
 
 type LocalSection = {
   localId: number
@@ -42,16 +58,23 @@ type Props =
       onCancel?: () => void
     }
 
-// SongEditor is the canonical CRUD form for a song. It has no knowledge of
-// schedules or any other consumer — after a create, the parent decides what
-// to do with the new song id.
+// SongEditor live-saves on every change. In create mode it persists the
+// row the moment a section has any text — the user never has to "save."
+// Once persisted, subsequent edits flow through Update silently. After the
+// first create, onSaved fires exactly once so a parent (e.g. the schedule
+// add flow) can attach the new song id to its own structure.
 export function SongEditor(props: Props) {
   const isEdit = props.mode === "edit"
   const editingSongId = props.mode === "edit" ? props.songId : undefined
+  const qc = useQueryClient()
 
   const [title, setTitle] = useState("")
   const [sections, setSections] = useState<LocalSection[]>([])
-  const [busy, setBusy] = useState(false)
+  // localSongId tracks the row this editor is bound to. Starts as the
+  // edit-mode id, gets set after a create-mode auto-save completes.
+  const [localSongId, setLocalSongId] = useState<number | undefined>(
+    editingSongId
+  )
   const nextId = useRef(1)
 
   const { data: existing, isLoading } = useQuery({
@@ -74,7 +97,16 @@ export function SongEditor(props: Props) {
     setSections(localSections)
   }, [existing, isEdit])
 
+  // Dirty becomes true the first time the user changes anything. Without
+  // it the sync effect would fire on initial mount (or right after edit-
+  // mode population) and re-persist unchanged content.
+  const dirtyRef = useRef(false)
+  const markDirty = () => {
+    dirtyRef.current = true
+  }
+
   function handleAddSection(type: string) {
+    markDirty()
     setSections((prev) => [
       ...prev,
       { localId: nextId.current++, type, text: "" },
@@ -82,47 +114,125 @@ export function SongEditor(props: Props) {
   }
 
   function handleChangeType(localId: number, type: string) {
+    markDirty()
     setSections((prev) =>
       prev.map((s) => (s.localId === localId ? { ...s, type } : s))
     )
   }
 
   function handleChangeText(localId: number, text: string) {
+    markDirty()
     setSections((prev) =>
       prev.map((s) => (s.localId === localId ? { ...s, text } : s))
     )
   }
 
   function handleDeleteSection(localId: number) {
+    markDirty()
     setSections((prev) => prev.filter((s) => s.localId !== localId))
   }
 
-  async function handleSubmit() {
-    if (busy) return
-    setBusy(true)
-    try {
-      const spec = new SongSpec({
-        title: title.trim(),
-        sections: sections.map((s) => ({ type: s.type, text: s.text })),
-      })
-
-      if (props.mode === "edit") {
-        await Songs.UpdateSongFromSpec(props.songId, spec)
-        setBusy(false)
-        props.onSaved()
-        return
+  function handleDuplicateSection(localId: number) {
+    markDirty()
+    setSections((prev) => {
+      const idx = prev.findIndex((s) => s.localId === localId)
+      if (idx < 0) return prev
+      const source = prev[idx]
+      const copy: LocalSection = {
+        localId: nextId.current++,
+        type: source.type,
+        text: source.text,
       }
+      return [...prev.slice(0, idx + 1), copy, ...prev.slice(idx + 1)]
+    })
+  }
 
-      const created = (await Songs.CreateSongFromSpec(
-        spec
-      )) as unknown as Song
-      setBusy(false)
-      props.onSaved(created.id)
-    } catch (err) {
-      console.error(err)
-      setBusy(false)
+  function handleReorderSections(fromId: number, toId: number) {
+    if (fromId === toId) return
+    markDirty()
+    setSections((prev) => {
+      const oldIdx = prev.findIndex((s) => s.localId === fromId)
+      const newIdx = prev.findIndex((s) => s.localId === toId)
+      if (oldIdx < 0 || newIdx < 0) return prev
+      return arrayMove(prev, oldIdx, newIdx)
+    })
+  }
+
+  function handleChangeTitle(value: string) {
+    markDirty()
+    setTitle(value)
+  }
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
+  )
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over) return
+    const activeId = Number(String(active.id).replace(/^song-section-/, ""))
+    const overId = Number(String(over.id).replace(/^song-section-/, ""))
+    handleReorderSections(activeId, overId)
+  }
+
+  // Single-snapshot write queue: at most one in-flight save; the latest
+  // snapshot always wins. No debounce — the user wanted every change to
+  // land, and the queue prevents stale writes from racing each other.
+  const pendingRef = useRef<{ title: string; sections: LocalSection[] } | null>(
+    null
+  )
+  const inFlightRef = useRef(false)
+  const onSavedFiredRef = useRef(false)
+
+  async function flush() {
+    if (inFlightRef.current) return
+    while (pendingRef.current) {
+      const snapshot = pendingRef.current
+      pendingRef.current = null
+      inFlightRef.current = true
+      try {
+        const spec = new SongSpec({
+          title: snapshot.title.trim() || "Untitled",
+          sections: snapshot.sections.map((s) => ({
+            type: s.type,
+            text: s.text,
+          })),
+        })
+
+        if (localSongId !== undefined) {
+          await Songs.UpdateSongFromSpec(localSongId, spec)
+        } else {
+          // Create mode: hold the write until at least one section has
+          // text. Title alone (or empty editor) is not enough — that
+          // would litter the library with empty rows on any stray click.
+          const hasContent = snapshot.sections.some((s) => s.text.trim())
+          if (!hasContent) {
+            inFlightRef.current = false
+            continue
+          }
+          const created = (await Songs.CreateSongFromSpec(
+            spec
+          )) as unknown as Song
+          setLocalSongId(created.id)
+          if (!onSavedFiredRef.current && props.mode === "create") {
+            onSavedFiredRef.current = true
+            props.onSaved(created.id)
+          }
+        }
+        qc.invalidateQueries({ queryKey: ["songs", "list"] })
+      } catch (err) {
+        console.error(err)
+      }
+      inFlightRef.current = false
     }
   }
+
+  useEffect(() => {
+    if (!dirtyRef.current) return
+    pendingRef.current = { title, sections }
+    void flush()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, sections])
 
   // Pull the library for live duplicate-title detection. Shares the cache
   // key with consumers so no extra fetch occurs.
@@ -131,41 +241,14 @@ export function SongEditor(props: Props) {
     queryFn: () => Songs.ListSongs() as unknown as Promise<Song[]>,
   })
 
-  const validation = useMemo<{ ok: boolean; reason: string }>(() => {
-    const trimmedTitle = title.trim()
-    if (!trimmedTitle) return { ok: false, reason: "Title is required." }
-
-    if (librarySongs) {
-      const lower = trimmedTitle.toLowerCase()
-      const clash = librarySongs.find(
-        (s) => s.title.toLowerCase() === lower && s.id !== editingSongId
-      )
-      if (clash) {
-        return {
-          ok: false,
-          reason: "A song with this title already exists.",
-        }
-      }
-    }
-
-    if (sections.length === 0) {
-      return { ok: false, reason: "Add at least one section." }
-    }
-
-    const emptySection = sections.find((s) => !s.text.trim())
-    if (emptySection) {
-      return { ok: false, reason: "Every section needs lyrics." }
-    }
-
-    return { ok: true, reason: "" }
-  }, [title, sections, librarySongs, editingSongId])
-
-  const submitLabel = isEdit ? "Save" : "Create"
-
-  // The submit area only matters once the user has started: a blank
-  // song can't be saved, so showing a disabled Create + a validation
-  // notice on first render is just clutter.
-  const hasContent = title.trim().length > 0 || sections.length > 0
+  const titleConflict = useMemo(() => {
+    const trimmed = title.trim()
+    if (!trimmed || !librarySongs) return false
+    const lower = trimmed.toLowerCase()
+    return librarySongs.some(
+      (s) => s.title.toLowerCase() === lower && s.id !== localSongId
+    )
+  }, [title, librarySongs, localSongId])
 
   if (isEdit && isLoading) {
     return (
@@ -187,9 +270,13 @@ export function SongEditor(props: Props) {
         <Input
           autoFocus={!isEdit}
           value={title}
-          onChange={(e) => setTitle(e.target.value)}
+          onChange={(e) => handleChangeTitle(e.target.value)}
           placeholder="Song title"
-          className="h-7 rounded-none border-0 border-b border-border/50 bg-transparent px-3 text-xs font-medium tracking-tight shadow-none focus-visible:ring-0"
+          title={titleConflict ? "Another song already uses this title" : undefined}
+          className={cn(
+            "h-7 rounded-none border-0 border-b border-border/50 bg-transparent px-3 text-xs font-medium tracking-tight shadow-none focus-visible:ring-0",
+            titleConflict && "border-b-destructive text-destructive"
+          )}
         />
       </motion.div>
 
@@ -197,50 +284,42 @@ export function SongEditor(props: Props) {
         variants={pickerRowVariants}
         className="flex flex-1 flex-col overflow-y-auto"
       >
-        <AnimatePresence initial={false} mode="popLayout">
-          {sections.map((sec) => (
-            <motion.div
-              key={sec.localId}
-              layout
-              variants={pickerRowVariants}
-              initial="hidden"
-              animate="visible"
-              exit="hidden"
-            >
-              <SectionBlock
-                section={sec}
-                empty={!sec.text.trim()}
-                onChangeType={(t) => handleChangeType(sec.localId, t)}
-                onChangeText={(t) => handleChangeText(sec.localId, t)}
-                onDelete={() => handleDeleteSection(sec.localId)}
-              />
-            </motion.div>
-          ))}
-        </AnimatePresence>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <VerticalSortable
+            ids={sections.map((s) => `song-section-${s.localId}`)}
+          >
+            {sections.map((sec, i) => {
+              // 1-indexed count of preceding sections of the same type,
+              // including the current one. Drives "Verse 1", "Verse 2", …
+              // labels so the user never types numbers themselves.
+              let number = 0
+              for (let j = 0; j <= i; j++) {
+                if (sections[j].type === sec.type) number++
+              }
+              return (
+                <SectionBlock
+                  key={sec.localId}
+                  section={sec}
+                  number={number}
+                  empty={!sec.text.trim()}
+                  onChangeType={(t) => handleChangeType(sec.localId, t)}
+                  onChangeText={(t) => handleChangeText(sec.localId, t)}
+                  onDelete={() => handleDeleteSection(sec.localId)}
+                  onDuplicate={() => handleDuplicateSection(sec.localId)}
+                />
+              )
+            })}
+          </VerticalSortable>
+        </DndContext>
         <InsertSection
           empty={sections.length === 0}
           onPick={handleAddSection}
         />
       </motion.div>
-
-      {hasContent && (
-        <motion.div variants={pickerRowVariants}>
-          {!validation.ok && (
-            <div className="border-t border-border/40 px-3 py-1 text-[11px] text-muted-foreground/70">
-              {validation.reason}
-            </div>
-          )}
-          <Button
-            type="button"
-            size="sm"
-            onClick={handleSubmit}
-            disabled={busy || !validation.ok}
-            className="w-full rounded-none"
-          >
-            {submitLabel}
-          </Button>
-        </motion.div>
-      )}
     </motion.div>
   )
 }
@@ -299,8 +378,8 @@ function InsertSection({
               onClick={() => pick(t.key)}
               variants={chooserRowVariants}
               className={cn(
-                "flex flex-1 items-center gap-1.5 border-b border-border/40 px-3 text-left text-[11px] font-semibold uppercase tracking-wider text-foreground/90 transition-[filter] hover:brightness-110",
-                t.chip
+                "flex flex-1 items-center gap-1.5 border-b border-l-2 border-b-border/40 pl-2.5 pr-3 text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                t.border
               )}
               style={{ minHeight: "2.25rem" }}
             >
@@ -356,70 +435,100 @@ function InsertSection({
 
 function SectionBlock({
   section,
+  number,
   empty,
   onChangeType,
   onChangeText,
   onDelete,
+  onDuplicate,
 }: {
   section: LocalSection
+  number: number
   empty: boolean
   onChangeType: (type: string) => void
   onChangeText: (text: string) => void
   onDelete: () => void
+  onDuplicate: () => void
 }) {
   const type = songSectionType(section.type)
+  const { attributes, listeners, setNodeRef, style } = useSortableRow(
+    `song-section-${section.localId}`,
+    { type: "song-section" }
+  )
 
   return (
-    <div className="group/section flex flex-col border-b border-border/40">
+    <div ref={setNodeRef} style={style}>
       <div
         className={cn(
-          "flex items-center justify-between gap-1.5 px-3 py-1.5",
-          type.chip,
-          type.text
+          "group/section flex flex-col border-b border-l-2 border-b-border/40",
+          type.border
         )}
       >
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        <div className="flex items-center gap-1 pl-1.5 pr-1.5 py-1.5 text-muted-foreground/80">
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            aria-label="Drag section"
+            onClick={(e) => e.stopPropagation()}
+            className="cursor-grab touch-none grid size-5 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition-opacity group-hover/section:opacity-50 hover:opacity-90"
+          >
+            <GripVerticalIcon className="size-3" />
+          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="flex flex-1 items-center gap-1.5 rounded px-1 py-0.5 text-[11px] font-semibold uppercase tracking-wider transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none"
+              >
+                {type.label} {number}
+                <ChevronDownIcon className="size-3 opacity-70" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" sideOffset={6}>
+              {songSectionTypes.map((t) => (
+                <DropdownMenuItem
+                  key={t.key}
+                  onSelect={() => onChangeType(t.key)}
+                >
+                  <span className={cn("size-2.5 rounded-full", t.swatch)} />
+                  {t.label}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <div className="flex items-center gap-1">
             <button
               type="button"
-              className="flex items-center gap-1.5 rounded px-1 py-0.5 text-[11px] font-semibold uppercase tracking-wider transition-colors hover:bg-foreground/10 focus-visible:outline-none"
+              onClick={onDuplicate}
+              aria-label="Duplicate section"
+              className="grid size-5 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-sky-500/15 hover:text-sky-500 group-hover/section:opacity-70 hover:!opacity-100"
             >
-              {type.label}
-              <ChevronDownIcon className="size-3 opacity-70" />
+              <CopyIcon className="size-3" />
             </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" sideOffset={6}>
-            {songSectionTypes.map((t) => (
-              <DropdownMenuItem
-                key={t.key}
-                onSelect={() => onChangeType(t.key)}
-              >
-                <span className={cn("size-2.5 rounded-full", t.swatch)} />
-                {t.label}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <button
-          type="button"
-          onClick={onDelete}
-          aria-label="Delete section"
-          className="grid size-5 place-items-center rounded text-foreground/70 opacity-0 transition-opacity hover:bg-foreground/10 hover:text-foreground group-hover/section:opacity-100"
-        >
-          <XIcon className="size-3" />
-        </button>
-      </div>
-      <div className={cn("flex-1", type.body)}>
-        <Textarea
-          value={section.text}
-          onChange={(e) => onChangeText(e.target.value)}
-          placeholder="One line per line…"
-          className={cn(
-            "h-full w-full resize-none rounded-none border-0 bg-transparent px-4 py-2 text-xs leading-relaxed text-foreground/90 shadow-none focus-visible:ring-0 dark:bg-transparent",
-            empty ? "min-h-16" : "min-h-12"
-          )}
-        />
+            <button
+              type="button"
+              onClick={onDelete}
+              aria-label="Delete section"
+              className="grid size-5 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive group-hover/section:opacity-70 hover:!opacity-100"
+            >
+              <XIcon className="size-3" />
+            </button>
+          </div>
+        </div>
+        <div className="flex-1 pl-2">
+          <Textarea
+            value={section.text}
+            onChange={(e) => onChangeText(e.target.value)}
+            placeholder="One line per line…"
+            className={cn(
+              "h-full w-full resize-none rounded-none border-0 bg-transparent px-3 py-2 text-xs leading-relaxed text-foreground/90 shadow-none focus-visible:ring-0 dark:bg-transparent",
+              empty ? "min-h-16" : "min-h-12"
+            )}
+          />
+        </div>
       </div>
     </div>
   )
 }
+

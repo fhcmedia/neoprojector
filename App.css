@@ -1,4 +1,8 @@
 @import "tailwindcss";
+/* Inter ships with multiple weights so the template font-weight
+   picker actually has different glyphs to render. All other fonts
+   surfaced in the picker are universal system fonts. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap");
 
 @theme inline {
   --color-background: var(--background);
@@ -119,6 +123,17 @@
 
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* Hide scrollbars across the entire app while keeping elements
+     scrollable. Wheel, touch, and programmatic scrolling all still
+     work; only the visible scrollbar chrome disappears. */
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  *::-webkit-scrollbar {
+    display: none;
   }
 
   /* Every interactive control gets the hand cursor by default — Tailwind v4

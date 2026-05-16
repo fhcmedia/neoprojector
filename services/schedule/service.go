@@ -69,9 +69,18 @@ func (s *Service) CreateSection(ctx context.Context, serviceID int64, name strin
 	if name == "" {
 		name = "Untitled section"
 	}
+	// Auto-assign a stable palette color based on the current section
+	// count. Colors persist with the row so deleting a section in the
+	// middle never reshuffles siblings.
+	count, err := s.q.CountServiceSections(ctx, serviceID)
+	if err != nil {
+		return database.ServiceSection{}, err
+	}
+	color := fmt.Sprintf("chart-%d", (count%5)+1)
 	return s.q.CreateServiceSectionAppend(ctx, database.CreateServiceSectionAppendParams{
 		ServiceID: serviceID,
 		Name:      name,
+		Palette:   color,
 	})
 }
 
@@ -190,6 +199,58 @@ func (s *Service) AddMediaItem(ctx context.Context, sectionID, mediaID int64) (d
 		return nil
 	})
 	return out, err
+}
+
+// OverlayItemSpec carries the snapshot the frontend builds from a
+// library overlay (or a fresh registry default) when the operator
+// adds the overlay to a service section. config_json/layouts_json/
+// rules_json are opaque to Go — the frontend's widget registry +
+// rule module are the only things that interpret them.
+type OverlayItemSpec struct {
+	Kind        string `json:"kind"`
+	Name        string `json:"name"`
+	ConfigJSON  string `json:"config_json"`
+	LayoutsJSON string `json:"layouts_json"`
+	RulesJSON   string `json:"rules_json"`
+}
+
+func (s *Service) AddOverlayItem(ctx context.Context, sectionID int64, spec OverlayItemSpec) (database.ServiceItem, error) {
+	var out database.ServiceItem
+	err := s.inTx(ctx, func(q *database.Queries) error {
+		item, err := q.CreateServiceItemAppend(ctx, sectionID)
+		if err != nil {
+			return err
+		}
+		rules := spec.RulesJSON
+		if rules == "" {
+			rules = "{}"
+		}
+		if _, err := q.CreateServiceItemOverlay(ctx, database.CreateServiceItemOverlayParams{
+			ItemID:      item.ID,
+			OverlayKind: spec.Kind,
+			OverlayName: spec.Name,
+			ConfigJson:  spec.ConfigJSON,
+			LayoutsJson: spec.LayoutsJSON,
+			RulesJson:   rules,
+		}); err != nil {
+			return err
+		}
+		out = item
+		return nil
+	})
+	return out, err
+}
+
+// UpdateOverlayItemConfig replaces just the function-config portion
+// of an overlay schedule item (e.g. operator tweaks the countdown
+// duration or the name card text in-place). Layouts stay snapshotted
+// from add time.
+func (s *Service) UpdateOverlayItemConfig(ctx context.Context, itemID int64, configJSON string) error {
+	_, err := s.q.UpdateServiceItemOverlayConfig(ctx, database.UpdateServiceItemOverlayConfigParams{
+		ItemID:     itemID,
+		ConfigJson: configJSON,
+	})
+	return err
 }
 
 func (s *Service) DeleteItem(ctx context.Context, id int64) error {

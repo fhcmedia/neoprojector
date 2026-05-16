@@ -9,12 +9,14 @@ import {
 import { cn } from "@/lib/utils"
 import { useDebounce } from "@/hooks/use-debounce"
 import {
-  useTemplates,
-  useDuplicateTemplate,
+  useCreateTemplate,
   useDeleteTemplate,
+  useDuplicateTemplate,
+  useTemplates,
 } from "@/features/library/templates-api"
 import { ScaledTemplate } from "@/features/templates/renderer"
 import { sampleFor } from "@/features/templates/samples"
+import { isDefaultTemplateId } from "@/features/templates/defaults"
 import type { Template } from "@/bindings/neoprojector/database"
 
 type Props = {
@@ -25,6 +27,7 @@ type Props = {
 export function TemplatesTab({ search, onOpen }: Props) {
   const { data: templates, isLoading } = useTemplates()
   const dupMut = useDuplicateTemplate()
+  const createMut = useCreateTemplate()
   const delMut = useDeleteTemplate()
 
   const debounced = useDebounce(search, 200)
@@ -62,9 +65,24 @@ export function TemplatesTab({ search, onOpen }: Props) {
               template={t}
               onOpen={() => onOpen(t)}
               onDuplicate={() => {
-                dupMut.mutate(t.id, {
-                  onSuccess: (copy) => onOpen(copy),
-                })
+                // Defaults aren't in the DB — duplicating one means
+                // posting its body as a fresh user template.
+                if (isDefaultTemplateId(t.id)) {
+                  createMut.mutate(
+                    {
+                      name: `${t.name} copy`,
+                      kind: t.kind,
+                      viewportW: t.viewport_w,
+                      viewportH: t.viewport_h,
+                      dataJSON: t.data_json,
+                    },
+                    { onSuccess: (copy) => onOpen(copy) }
+                  )
+                } else {
+                  dupMut.mutate(t.id, {
+                    onSuccess: (copy) => onOpen(copy),
+                  })
+                }
               }}
               onDelete={() => delMut.mutate(t.id)}
             />
@@ -86,13 +104,11 @@ function TemplateTile({
   onDuplicate: () => void
   onDelete: () => void
 }) {
-  const isDefault = template.is_default !== 0
+  const isDefault = isDefaultTemplateId(template.id)
   const [pendingDelete, setPendingDelete] = useState(false)
   const sample = sampleFor(template.kind)
   const tileRef = useRef<HTMLDivElement | null>(null)
 
-  // Cancel pending-delete on any click outside the tile — matches the
-  // same affordance everywhere else (sections, items, services).
   useEffect(() => {
     if (!pendingDelete) return
     function handler(e: MouseEvent) {
@@ -118,18 +134,10 @@ function TemplateTile({
       <button
         type="button"
         onClick={onOpen}
-        className="relative block aspect-video w-full bg-black/40 text-left"
+        className="relative block aspect-video w-full bg-muted/40 text-left"
       >
         <ScaledTemplate
-          template={{
-            id: template.id,
-            name: template.name,
-            kind: template.kind,
-            viewport_w: template.viewport_w,
-            viewport_h: template.viewport_h,
-            data_json: template.data_json,
-            is_default: template.is_default,
-          }}
+          template={template}
           fill={sample}
           measure
           style={{ width: "100%", height: "100%" }}
@@ -143,10 +151,6 @@ function TemplateTile({
             <LockIcon className="size-3" />
           </span>
         )}
-        {/* Action overlay on the thumbnail itself, not in the footer.
-           Hover reveals them with a clean spacing free of any title
-           contention. Buttons live on a translucent backdrop so they
-           stay legible over any template background. */}
         <div className="absolute right-1.5 top-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           <span
             role="button"

@@ -20,10 +20,12 @@ func New(db *sql.DB) *Service {
 
 func (*Service) ServiceName() string { return "templates" }
 
-// ErrDefaultImmutable is returned when the caller tries to edit or delete
-// a default (read-only) template. The frontend should react by offering
-// to duplicate the template into an editable copy.
-var ErrDefaultImmutable = errors.New("default templates are read-only — duplicate to edit")
+// All templates returned by this service are user-owned. Default
+// reference templates live in the frontend constants
+// (features/templates/defaults.ts) and never touch the DB — opening
+// one in the editor reads from those constants, and "Duplicate to
+// edit" calls CreateTemplate with the default's body to materialize a
+// real editable row.
 
 func (s *Service) ListTemplates(ctx context.Context) ([]database.Template, error) {
 	return s.q.ListTemplates(ctx)
@@ -33,8 +35,6 @@ func (s *Service) TemplateByID(ctx context.Context, id int64) (database.Template
 	return s.q.TemplateByID(ctx, id)
 }
 
-// CreateTemplate creates a new user-owned template. Always written with
-// is_default = 0; the seed package is the only writer of default rows.
 func (s *Service) CreateTemplate(ctx context.Context, name, kind string, viewportW, viewportH int64, dataJSON string) (database.Template, error) {
 	if name == "" {
 		name = "Untitled template"
@@ -45,19 +45,13 @@ func (s *Service) CreateTemplate(ctx context.Context, name, kind string, viewpor
 		ViewportW: viewportOrDefault(viewportW, 1920),
 		ViewportH: viewportOrDefault(viewportH, 1080),
 		DataJson:  jsonOrEmpty(dataJSON),
-		IsDefault: 0,
 	})
 }
 
-// UpdateTemplate patches a user template. Refuses on defaults — caller
-// should Duplicate first and edit the copy.
 func (s *Service) UpdateTemplate(ctx context.Context, id int64, name, kind string, viewportW, viewportH int64, dataJSON string) (database.Template, error) {
 	existing, err := s.q.TemplateByID(ctx, id)
 	if err != nil {
 		return database.Template{}, err
-	}
-	if existing.IsDefault != 0 {
-		return database.Template{}, ErrDefaultImmutable
 	}
 	if name == "" {
 		name = existing.Name
@@ -73,18 +67,9 @@ func (s *Service) UpdateTemplate(ctx context.Context, id int64, name, kind strin
 }
 
 func (s *Service) DeleteTemplate(ctx context.Context, id int64) error {
-	existing, err := s.q.TemplateByID(ctx, id)
-	if err != nil {
-		return err
-	}
-	if existing.IsDefault != 0 {
-		return ErrDefaultImmutable
-	}
 	return s.q.DeleteTemplate(ctx, id)
 }
 
-// DuplicateTemplate creates an editable copy of any template (default or
-// user-owned). The copy gets a "<name> copy" name, suffixed until unique.
 func (s *Service) DuplicateTemplate(ctx context.Context, id int64) (database.Template, error) {
 	existing, err := s.q.TemplateByID(ctx, id)
 	if err != nil {
@@ -93,8 +78,8 @@ func (s *Service) DuplicateTemplate(ctx context.Context, id int64) (database.Tem
 	base := strings.TrimSuffix(existing.Name, " copy")
 	name := uniqueName(ctx, s.q, base+" copy")
 	return s.q.DuplicateTemplate(ctx, database.DuplicateTemplateParams{
-		NewName: name,
-		ID:      id,
+		Name: name,
+		ID:   id,
 	})
 }
 

@@ -1,11 +1,13 @@
 import { type ReactNode } from "react"
 import {
   DndContext,
+  DragOverlay,
   PointerSensor,
   closestCenter,
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core"
 import {
   SortableContext,
@@ -74,8 +76,15 @@ export function VerticalSortable({
   )
 }
 
-export { closestCenter, DndContext, PointerSensor, useSensor, useSensors }
-export type { DragEndEvent }
+export {
+  closestCenter,
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+}
+export type { DragEndEvent, DragStartEvent }
 
 export function useSortableRow(
   id: string | number,
@@ -93,7 +102,6 @@ export function useSortableRow(
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
-    opacity: isDragging ? 0.4 : 1,
   }
 
   return { attributes, listeners, setNodeRef, style, isDragging }

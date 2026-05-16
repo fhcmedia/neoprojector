@@ -62,20 +62,6 @@ func (a *App) runInit(splash application.Window) {
 		emit("splash:error", err.Error())
 		return
 	}
-	emit("splash:status", "Creating templates...")
-	emit("splash:progress", 88)
-
-	// Template defaults seed every boot — INSERT OR IGNORE on name, so
-	// adding new defaults in a later release picks them up without
-	// disturbing the user's data.
-	if err := seed.SeedTemplates(a.db); err != nil {
-		log.Error("seeding templates", "err", err)
-		emit("splash:error", err.Error())
-		return
-	}
-	log.Info("seeded templates")
-	time.Sleep(300 * time.Millisecond)
-
 	log.Info("seeding complete")
 
 	emit("splash:status", "Checking for updates...")

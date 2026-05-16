@@ -43,6 +43,17 @@ export function ListVerses(book: string, chapter: number): $CancellablePromise<$
     });
 }
 
+/**
+ * ListVersesIn returns all verses in a chapter for the given
+ * translation. Used by the live slot resolver to fill secondary /
+ * tertiary slots in multi-translation bible templates.
+ */
+export function ListVersesIn(book: string, chapter: number, translation: string): $CancellablePromise<$models.ChapterVerse[]> {
+    return $Call.ByID(4052356119, book, chapter, translation).then(($result: any) => {
+        return $$createType6($result);
+    });
+}
+
 // Private type creation functions
 const $$createType0 = database$0.Bible.createFrom;
 const $$createType1 = $Create.Array($$createType0);

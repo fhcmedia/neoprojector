@@ -31,6 +31,7 @@ SELECT
     WHEN sis.item_id IS NOT NULL THEN 'song'
     WHEN sib.item_id IS NOT NULL THEN 'bible'
     WHEN sim.item_id IS NOT NULL THEN 'media'
+    WHEN sio.item_id IS NOT NULL THEN 'overlay'
     ELSE ''
   END AS kind,
   CAST(COALESCE(sis.song_id, 0) AS INTEGER) AS song_id,
@@ -39,12 +40,17 @@ SELECT
   CAST(COALESCE(sib.verse_start, 0) AS INTEGER) AS verse_start,
   CAST(COALESCE(sib.verse_end, 0) AS INTEGER) AS verse_end,
   CAST(COALESCE(sim.media_id, 0) AS INTEGER) AS media_id,
-  CAST(COALESCE(s.title, m.title, '') AS TEXT) AS label,
-  CAST(COALESCE(bb.name_kjv, '') AS TEXT) AS book_kjv
+  CAST(COALESCE(s.title, m.title, sio.overlay_name, '') AS TEXT) AS label,
+  CAST(COALESCE(bb.name_kjv, '') AS TEXT) AS book_kjv,
+  CAST(COALESCE(sio.overlay_kind, '') AS TEXT) AS overlay_kind,
+  CAST(COALESCE(sio.config_json, '') AS TEXT) AS overlay_config_json,
+  CAST(COALESCE(sio.layouts_json, '') AS TEXT) AS overlay_layouts_json,
+  CAST(COALESCE(sio.rules_json, '') AS TEXT) AS overlay_rules_json
 FROM service_item si
 LEFT JOIN service_item_song sis ON sis.item_id = si.id
 LEFT JOIN service_item_bible sib ON sib.item_id = si.id
 LEFT JOIN service_item_media sim ON sim.item_id = si.id
+LEFT JOIN service_item_overlay sio ON sio.item_id = si.id
 LEFT JOIN song s ON s.id = sis.song_id
 LEFT JOIN media m ON m.id = sim.media_id
 LEFT JOIN bible_book bb ON bb.name = sib.book

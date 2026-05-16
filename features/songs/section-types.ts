@@ -1,59 +1,22 @@
-// Predefined song section types and their visual identity. The `key` is the
-// canonical string persisted in song_section.type. Colors are reused
-// elsewhere — section chip background, future presentation labels, etc.
-//
-// Chips use the chart palette (shadcn tokens) so they theme cleanly.
+// Predefined song section types and their visual identity. The `key` is
+// the canonical string persisted in song_section.type. Coloration follows
+// the same philosophy as the schedule: a single left-border accent, no
+// fills. `swatch` stays as a solid color so menus/legends can still show
+// a dot when picking a section type.
 
 export type SongSectionType = {
   key: string
   label: string
-  chip: string // chip background in the editor (header bar)
-  body: string // body tint (rendered block)
+  border: string // left-border accent class
   swatch: string // solid color for menus/legends
-  text: string // chip text color
 }
 
 export const songSectionTypes: SongSectionType[] = [
-  {
-    key: "verse",
-    label: "Verse",
-    chip: "bg-chart-1/35",
-    body: "bg-chart-1/12",
-    swatch: "bg-chart-1",
-    text: "text-foreground",
-  },
-  {
-    key: "chorus",
-    label: "Chorus",
-    chip: "bg-chart-2/35",
-    body: "bg-chart-2/12",
-    swatch: "bg-chart-2",
-    text: "text-foreground",
-  },
-  {
-    key: "pre_chorus",
-    label: "Pre-Chorus",
-    chip: "bg-chart-3/35",
-    body: "bg-chart-3/12",
-    swatch: "bg-chart-3",
-    text: "text-foreground",
-  },
-  {
-    key: "bridge",
-    label: "Bridge",
-    chip: "bg-chart-4/35",
-    body: "bg-chart-4/12",
-    swatch: "bg-chart-4",
-    text: "text-foreground",
-  },
-  {
-    key: "tag",
-    label: "Tag",
-    chip: "bg-chart-5/35",
-    body: "bg-chart-5/12",
-    swatch: "bg-chart-5",
-    text: "text-foreground",
-  },
+  { key: "verse", label: "Verse", border: "border-l-chart-1", swatch: "bg-chart-1" },
+  { key: "chorus", label: "Chorus", border: "border-l-chart-2", swatch: "bg-chart-2" },
+  { key: "pre_chorus", label: "Pre-Chorus", border: "border-l-chart-3", swatch: "bg-chart-3" },
+  { key: "bridge", label: "Bridge", border: "border-l-chart-4", swatch: "bg-chart-4" },
+  { key: "tag", label: "Tag", border: "border-l-chart-5", swatch: "bg-chart-5" },
 ]
 
 const byKey: Record<string, SongSectionType> = Object.fromEntries(

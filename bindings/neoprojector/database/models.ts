@@ -5,6 +5,10 @@
 // @ts-ignore: Unused imports
 import { Create as $Create } from "@wailsio/runtime";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as sql$0 from "../../database/sql/models.js";
+
 export class Bible {
     "translation": string;
     "name": string;
@@ -71,6 +75,71 @@ export class BibleBook {
     }
 }
 
+export class Display {
+    "id": number;
+    "name": string;
+    "enabled": number;
+    "position": number;
+    "bible_template_id": sql$0.NullInt64;
+    "song_template_id": sql$0.NullInt64;
+    "screen_id": sql$0.NullString;
+    "created_at": string;
+    "updated_at": string;
+
+    /** Creates a new Display instance. */
+    constructor($$source: Partial<Display> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = 0;
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("enabled" in $$source)) {
+            this["enabled"] = 0;
+        }
+        if (!("position" in $$source)) {
+            this["position"] = 0;
+        }
+        if (!("bible_template_id" in $$source)) {
+            this["bible_template_id"] = (new sql$0.NullInt64());
+        }
+        if (!("song_template_id" in $$source)) {
+            this["song_template_id"] = (new sql$0.NullInt64());
+        }
+        if (!("screen_id" in $$source)) {
+            this["screen_id"] = (new sql$0.NullString());
+        }
+        if (!("created_at" in $$source)) {
+            this["created_at"] = "";
+        }
+        if (!("updated_at" in $$source)) {
+            this["updated_at"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Display instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Display {
+        const $$createField4_0 = $$createType0;
+        const $$createField5_0 = $$createType0;
+        const $$createField6_0 = $$createType1;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("bible_template_id" in $$parsedSource) {
+            $$parsedSource["bible_template_id"] = $$createField4_0($$parsedSource["bible_template_id"]);
+        }
+        if ("song_template_id" in $$parsedSource) {
+            $$parsedSource["song_template_id"] = $$createField5_0($$parsedSource["song_template_id"]);
+        }
+        if ("screen_id" in $$parsedSource) {
+            $$parsedSource["screen_id"] = $$createField6_0($$parsedSource["screen_id"]);
+        }
+        return new Display($$parsedSource as Partial<Display>);
+    }
+}
+
 export class ListServiceItemsWithContentRow {
     "id": number;
     "section_id": number;
@@ -84,6 +153,10 @@ export class ListServiceItemsWithContentRow {
     "media_id": number;
     "label": string;
     "book_kjv": string;
+    "overlay_kind": string;
+    "overlay_config_json": string;
+    "overlay_layouts_json": string;
+    "overlay_rules_json": string;
 
     /** Creates a new ListServiceItemsWithContentRow instance. */
     constructor($$source: Partial<ListServiceItemsWithContentRow> = {}) {
@@ -122,6 +195,18 @@ export class ListServiceItemsWithContentRow {
         }
         if (!("book_kjv" in $$source)) {
             this["book_kjv"] = "";
+        }
+        if (!("overlay_kind" in $$source)) {
+            this["overlay_kind"] = "";
+        }
+        if (!("overlay_config_json" in $$source)) {
+            this["overlay_config_json"] = "";
+        }
+        if (!("overlay_layouts_json" in $$source)) {
+            this["overlay_layouts_json"] = "";
+        }
+        if (!("overlay_rules_json" in $$source)) {
+            this["overlay_rules_json"] = "";
         }
 
         Object.assign(this, $$source);
@@ -178,6 +263,59 @@ export class Medium {
     static createFrom($$source: any = {}): Medium {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new Medium($$parsedSource as Partial<Medium>);
+    }
+}
+
+export class Overlay {
+    "id": number;
+    "name": string;
+    "kind": string;
+    "config_json": string;
+    "layouts_json": string;
+    "rules_json": string;
+    "position": number;
+    "created_at": string;
+    "updated_at": string;
+
+    /** Creates a new Overlay instance. */
+    constructor($$source: Partial<Overlay> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = 0;
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("kind" in $$source)) {
+            this["kind"] = "";
+        }
+        if (!("config_json" in $$source)) {
+            this["config_json"] = "";
+        }
+        if (!("layouts_json" in $$source)) {
+            this["layouts_json"] = "";
+        }
+        if (!("rules_json" in $$source)) {
+            this["rules_json"] = "";
+        }
+        if (!("position" in $$source)) {
+            this["position"] = 0;
+        }
+        if (!("created_at" in $$source)) {
+            this["created_at"] = "";
+        }
+        if (!("updated_at" in $$source)) {
+            this["updated_at"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Overlay instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Overlay {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new Overlay($$parsedSource as Partial<Overlay>);
     }
 }
 
@@ -418,7 +556,6 @@ export class Template {
     "viewport_w": number;
     "viewport_h": number;
     "data_json": string;
-    "is_default": number;
     "created_at": string;
     "updated_at": string;
 
@@ -442,9 +579,6 @@ export class Template {
         if (!("data_json" in $$source)) {
             this["data_json"] = "";
         }
-        if (!("is_default" in $$source)) {
-            this["is_default"] = 0;
-        }
         if (!("created_at" in $$source)) {
             this["created_at"] = "";
         }
@@ -463,3 +597,7 @@ export class Template {
         return new Template($$parsedSource as Partial<Template>);
     }
 }
+
+// Private type creation functions
+const $$createType0 = sql$0.NullInt64.createFrom;
+const $$createType1 = sql$0.NullString.createFrom;

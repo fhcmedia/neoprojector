@@ -5,7 +5,29 @@
 export type TemplateBody = {
   background: Background
   boxes: Box[]
+  // transition is the motion played when the live slide swaps from
+  // one fill to another using this template. Stored here so the same
+  // template behaves identically across every display it's bound to.
+  // Falls back to fade if absent — keeps existing templates working
+  // without a migration.
+  transition?: TemplateTransition
 }
+
+export type TemplateTransition = {
+  kind: TransitionKind
+  // milliseconds. 0 = instant cut regardless of `kind`.
+  duration_ms: number
+}
+
+export type TransitionKind =
+  | "none"
+  | "fade"
+  | "slide-up"
+  | "slide-down"
+  | "slide-left"
+  | "slide-right"
+  | "scale"
+  | "blur"
 
 export type Background =
   | { type: "color"; value: string }
@@ -79,6 +101,14 @@ export type MediaRef = {
 export const EMPTY_BODY: TemplateBody = {
   background: { type: "color", value: "#000000" },
   boxes: [],
+  transition: { kind: "fade", duration_ms: 180 },
+}
+
+// Default transition used when a template's body parses without one
+// (older templates that pre-date this field).
+export const DEFAULT_TRANSITION: TemplateTransition = {
+  kind: "fade",
+  duration_ms: 180,
 }
 
 export function parseTemplateBody(json: string): TemplateBody {
@@ -87,6 +117,7 @@ export function parseTemplateBody(json: string): TemplateBody {
     return {
       background: parsed.background ?? EMPTY_BODY.background,
       boxes: Array.isArray(parsed.boxes) ? parsed.boxes : [],
+      transition: parsed.transition ?? DEFAULT_TRANSITION,
     }
   } catch {
     return EMPTY_BODY

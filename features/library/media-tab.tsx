@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { useSessionState } from "@/hooks/use-session-state"
 import {
   ImageIcon,
   FilmIcon,
@@ -35,7 +36,10 @@ export function MediaTab({
     queryKey: ["media", "list"],
     queryFn: () => Media.ListMedia() as unknown as Promise<Medium[]>,
   })
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [selectedId, setSelectedId] = useSessionState<number | null>(
+    "neoprojector.mediaSelectedId",
+    null
+  )
 
   const debounced = useDebounce(search, 200)
 

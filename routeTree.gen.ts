@@ -12,7 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SplashRouteImport } from './routes/splash'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
+import { Route as OutputDisplayIdRouteImport } from './routes/output.$displayId'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
+import { Route as AppTemplatesTemplateIdRouteImport } from './routes/_app.templates.$templateId'
+import { Route as AppOverlaysOverlayIdRouteImport } from './routes/_app.overlays.$overlayId'
 
 const SplashRoute = SplashRouteImport.update({
   id: '/splash',
@@ -28,9 +31,24 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRoute,
 } as any)
+const OutputDisplayIdRoute = OutputDisplayIdRouteImport.update({
+  id: '/output/$displayId',
+  path: '/output/$displayId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppSettingsRoute = AppSettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTemplatesTemplateIdRoute = AppTemplatesTemplateIdRouteImport.update({
+  id: '/templates/$templateId',
+  path: '/templates/$templateId',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppOverlaysOverlayIdRoute = AppOverlaysOverlayIdRouteImport.update({
+  id: '/overlays/$overlayId',
+  path: '/overlays/$overlayId',
   getParentRoute: () => AppRoute,
 } as any)
 
@@ -38,30 +56,60 @@ export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/splash': typeof SplashRoute
   '/settings': typeof AppSettingsRoute
+  '/output/$displayId': typeof OutputDisplayIdRoute
+  '/overlays/$overlayId': typeof AppOverlaysOverlayIdRoute
+  '/templates/$templateId': typeof AppTemplatesTemplateIdRoute
 }
 export interface FileRoutesByTo {
   '/splash': typeof SplashRoute
   '/settings': typeof AppSettingsRoute
+  '/output/$displayId': typeof OutputDisplayIdRoute
   '/': typeof AppIndexRoute
+  '/overlays/$overlayId': typeof AppOverlaysOverlayIdRoute
+  '/templates/$templateId': typeof AppTemplatesTemplateIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/splash': typeof SplashRoute
   '/_app/settings': typeof AppSettingsRoute
+  '/output/$displayId': typeof OutputDisplayIdRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/overlays/$overlayId': typeof AppOverlaysOverlayIdRoute
+  '/_app/templates/$templateId': typeof AppTemplatesTemplateIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/splash' | '/settings'
+  fullPaths:
+    | '/'
+    | '/splash'
+    | '/settings'
+    | '/output/$displayId'
+    | '/overlays/$overlayId'
+    | '/templates/$templateId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/splash' | '/settings' | '/'
-  id: '__root__' | '/_app' | '/splash' | '/_app/settings' | '/_app/'
+  to:
+    | '/splash'
+    | '/settings'
+    | '/output/$displayId'
+    | '/'
+    | '/overlays/$overlayId'
+    | '/templates/$templateId'
+  id:
+    | '__root__'
+    | '/_app'
+    | '/splash'
+    | '/_app/settings'
+    | '/output/$displayId'
+    | '/_app/'
+    | '/_app/overlays/$overlayId'
+    | '/_app/templates/$templateId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   SplashRoute: typeof SplashRoute
+  OutputDisplayIdRoute: typeof OutputDisplayIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -87,11 +135,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/output/$displayId': {
+      id: '/output/$displayId'
+      path: '/output/$displayId'
+      fullPath: '/output/$displayId'
+      preLoaderRoute: typeof OutputDisplayIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/settings': {
       id: '/_app/settings'
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof AppSettingsRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/templates/$templateId': {
+      id: '/_app/templates/$templateId'
+      path: '/templates/$templateId'
+      fullPath: '/templates/$templateId'
+      preLoaderRoute: typeof AppTemplatesTemplateIdRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/overlays/$overlayId': {
+      id: '/_app/overlays/$overlayId'
+      path: '/overlays/$overlayId'
+      fullPath: '/overlays/$overlayId'
+      preLoaderRoute: typeof AppOverlaysOverlayIdRouteImport
       parentRoute: typeof AppRoute
     }
   }
@@ -100,11 +169,15 @@ declare module '@tanstack/react-router' {
 interface AppRouteChildren {
   AppSettingsRoute: typeof AppSettingsRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppOverlaysOverlayIdRoute: typeof AppOverlaysOverlayIdRoute
+  AppTemplatesTemplateIdRoute: typeof AppTemplatesTemplateIdRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppSettingsRoute: AppSettingsRoute,
   AppIndexRoute: AppIndexRoute,
+  AppOverlaysOverlayIdRoute: AppOverlaysOverlayIdRoute,
+  AppTemplatesTemplateIdRoute: AppTemplatesTemplateIdRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
@@ -112,6 +185,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   SplashRoute: SplashRoute,
+  OutputDisplayIdRoute: OutputDisplayIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

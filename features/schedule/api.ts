@@ -1,6 +1,7 @@
+import { useCallback } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Service as Schedule } from "@/bindings/neoprojector/services/schedule"
-import { BibleRef } from "@/bindings/neoprojector/services/schedule"
+import { BibleRef, OverlayItemSpec } from "@/bindings/neoprojector/services/schedule"
 import type {
   Service,
   ServiceSection,
@@ -101,6 +102,8 @@ export function useSetSectionColor(serviceId: number) {
   return useMutation({
     mutationFn: ({ id, color }: { id: number; color: string }) =>
       Schedule.SetSectionColor(id, color) as unknown as Promise<ServiceSection>,
+    // Optimistic: patch the cache so the swatch + borders flip the moment
+    // the user picks a color, before the IPC round-trip returns.
     onMutate: async ({ id, color }) => {
       const key = scheduleKeys.sections(serviceId)
       await qc.cancelQueries({ queryKey: key })
@@ -205,6 +208,30 @@ export function useAddMediaItem(sectionId: number) {
   })
 }
 
+// Add an overlay schedule item. spec is the snapshot the picker
+// built from a library overlay (kind, name, config + layouts).
+export function useAddOverlayItem(sectionId: number) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (spec: OverlayItemSpec) =>
+      Schedule.AddOverlayItem(sectionId, spec),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: scheduleKeys.items(sectionId) }),
+  })
+}
+
+// Update the function-config of an overlay schedule item in place
+// (countdown duration, name card text, …). Layouts stay snapshotted.
+export function useUpdateOverlayItemConfig() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ itemId, configJSON }: { itemId: number; configJSON: string }) =>
+      Schedule.UpdateOverlayItemConfig(itemId, configJSON),
+    onSettled: () =>
+      qc.invalidateQueries({ queryKey: ["schedule", "items"] }),
+  })
+}
+
 export function useDeleteItem(sectionId: number) {
   const qc = useQueryClient()
   return useMutation({
@@ -236,6 +263,62 @@ export function useMoveItem() {
       void vars
     },
   })
+}
+
+// Section name used by the ad-hoc bible flow. Auto-created in the
+// active service when the operator broadcasts a verse from the
+// library so they can re-pick it later without re-typing.
+export const PREVIOUS_VERSES_SECTION = "Previous verses"
+
+// useAppendPreviousVerse: idempotently appends an ad-hoc bible
+// reference to the active service's "Previous verses" section.
+// Creates the section on first use, dedupes against existing rows so
+// re-broadcasting the same reference doesn't pile up duplicates.
+export function useAppendPreviousVerse(serviceId: number | undefined) {
+  const qc = useQueryClient()
+  return useCallback(
+    async (ref: BibleRef) => {
+      if (!serviceId) return
+      const sections = (await qc.fetchQuery({
+        queryKey: scheduleKeys.sections(serviceId),
+        queryFn: () =>
+          Schedule.ListSections(serviceId) as unknown as Promise<
+            ServiceSection[]
+          >,
+      })) as ServiceSection[]
+      let section = sections.find(
+        (s) => s.name === PREVIOUS_VERSES_SECTION
+      )
+      if (!section) {
+        section = (await Schedule.CreateSection(
+          serviceId,
+          PREVIOUS_VERSES_SECTION
+        )) as unknown as ServiceSection
+        qc.invalidateQueries({
+          queryKey: scheduleKeys.sections(serviceId),
+        })
+      }
+      const items = (await qc.fetchQuery({
+        queryKey: scheduleKeys.items(section.id),
+        queryFn: () =>
+          Schedule.ListItems(section!.id) as unknown as Promise<
+            ListServiceItemsWithContentRow[]
+          >,
+      })) as ListServiceItemsWithContentRow[]
+      const duplicate = items.some(
+        (i) =>
+          i.kind === "bible" &&
+          i.book === ref.book &&
+          i.chapter === ref.chapter &&
+          i.verse_start === ref.verse_start &&
+          i.verse_end === ref.verse_end
+      )
+      if (duplicate) return
+      await Schedule.AddBibleItem(section.id, ref)
+      qc.invalidateQueries({ queryKey: scheduleKeys.items(section.id) })
+    },
+    [qc, serviceId]
+  )
 }
 
 export function useReorderItems(sectionId: number) {

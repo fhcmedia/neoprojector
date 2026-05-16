@@ -112,6 +112,17 @@ CREATE TABLE IF NOT EXISTS service_item_song (
   updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS service_item_overlay (
+  item_id        INTEGER PRIMARY KEY REFERENCES service_item(id) ON DELETE CASCADE,
+  overlay_kind   TEXT NOT NULL,
+  overlay_name   TEXT NOT NULL DEFAULT '',
+  config_json    TEXT NOT NULL DEFAULT '{}',
+  layouts_json   TEXT NOT NULL DEFAULT '{}',
+  rules_json     TEXT NOT NULL DEFAULT '{}',
+  created_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE IF NOT EXISTS service_item_media (
   item_id     INTEGER PRIMARY KEY REFERENCES service_item(id) ON DELETE CASCADE,
   media_id    INTEGER NOT NULL REFERENCES media(id),
@@ -126,10 +137,33 @@ CREATE TABLE IF NOT EXISTS template (
   viewport_w  INTEGER NOT NULL DEFAULT 1920,
   viewport_h  INTEGER NOT NULL DEFAULT 1080,
   data_json   TEXT NOT NULL DEFAULT '{}',
-  is_default  INTEGER NOT NULL DEFAULT 0,
   created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS template_name_unique
   ON template(name COLLATE NOCASE);
+
+CREATE TABLE IF NOT EXISTS overlay (
+  id            INTEGER PRIMARY KEY,
+  name          TEXT NOT NULL,
+  kind          TEXT NOT NULL DEFAULT '',
+  config_json   TEXT NOT NULL DEFAULT '{}',
+  layouts_json  TEXT NOT NULL DEFAULT '{}',
+  rules_json    TEXT NOT NULL DEFAULT '{}',
+  position      INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS display (
+  id                 INTEGER PRIMARY KEY,
+  name               TEXT NOT NULL,
+  enabled            INTEGER NOT NULL DEFAULT 1,
+  position           INTEGER NOT NULL DEFAULT 0,
+  bible_template_id  INTEGER,
+  song_template_id   INTEGER,
+  screen_id          TEXT,
+  created_at         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

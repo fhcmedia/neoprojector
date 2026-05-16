@@ -225,15 +225,27 @@ func (s *Service) ReplaceSectionLines(ctx context.Context, sectionID int64, text
 	})
 }
 
+// splitLyrics splits a section's textarea content into one line per
+// row. Internal blank lines are preserved (as empty strings) — the
+// renderer uses them as slide-break markers, so a 4-line verse with a
+// blank in the middle becomes two slides that still share "Verse 1".
+// Leading/trailing blanks are trimmed so saved-then-reloaded text
+// doesn't grow whitespace.
 func splitLyrics(text string) []string {
 	raw := strings.Split(text, "\n")
 	out := make([]string, 0, len(raw))
 	for _, l := range raw {
 		l = strings.TrimRight(l, " \t\r")
 		if strings.TrimSpace(l) == "" {
-			continue
+			l = ""
 		}
 		out = append(out, l)
+	}
+	for len(out) > 0 && out[0] == "" {
+		out = out[1:]
+	}
+	for len(out) > 0 && out[len(out)-1] == "" {
+		out = out[:len(out)-1]
 	}
 	return out
 }

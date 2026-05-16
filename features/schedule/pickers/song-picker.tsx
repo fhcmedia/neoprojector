@@ -22,10 +22,11 @@ export function SongPicker({
     return (
       <SongEditor
         mode="create"
+        // Live-save attaches the freshly created song to the section but
+        // keeps the editor open — the user can keep typing. They back out
+        // via the panel's Back button when done.
         onSaved={(songId) => {
-          addMut.mutate(songId, {
-            onSuccess: (item) => onAdded(item?.id),
-          })
+          addMut.mutate(songId)
         }}
         onCancel={() => setMode("list")}
       />

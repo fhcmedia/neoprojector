@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react"
-import { AnimatePresence, motion } from "motion/react"
 import {
   MusicIcon,
   BookOpenIcon,
   ImageIcon,
   FileQuestionIcon,
+  LayersIcon,
   Trash2Icon,
   GripVerticalIcon,
   CheckCircle2Icon,
@@ -17,26 +17,28 @@ import { cn } from "@/lib/utils"
 import { useItems, useDeleteItem } from "@/features/schedule/api"
 import { VerticalSortable, useSortableRow } from "@/features/schedule/sortable"
 import { usePlayed } from "@/features/schedule/played-context"
-import type { SectionColor } from "@/features/schedule/section-colors"
+import { useLive } from "@/features/live/live-context"
+import {
+  sectionBorderClass,
+  type SectionColor,
+} from "@/features/schedule/section-palette"
 
 type Props = {
   sectionId: number
+  color: SectionColor
   activeItemId: number | undefined
   onSelectItem: (id: number | undefined) => void
   onEditItem: (itemId: number) => void
-  color: SectionColor
   sectionPendingDelete?: boolean
-  newItemId?: number
 }
 
 export function ItemList({
   sectionId,
+  color,
   activeItemId,
   onSelectItem,
   onEditItem,
-  color,
   sectionPendingDelete = false,
-  newItemId,
 }: Props) {
   const { data: items, isLoading } = useItems(sectionId)
   const deleteMut = useDeleteItem(sectionId)
@@ -55,25 +57,21 @@ export function ItemList({
   return (
     <VerticalSortable ids={items.map((i) => `item-${i.id}`)}>
       <div className="flex flex-col">
-        <AnimatePresence initial={false}>
-          {items.map((item, index) => (
-            <ItemRow
-              key={item.id}
-              item={item}
-              index={index}
-              isActive={item.id === activeItemId}
-              isNew={item.id === newItemId}
-              color={color}
-              sectionPendingDelete={sectionPendingDelete}
-              onSelect={() => onSelectItem(item.id)}
-              onEdit={() => onEditItem(item.id)}
-              onDelete={() => {
-                deleteMut.mutate(item.id)
-                if (activeItemId === item.id) onSelectItem(undefined)
-              }}
-            />
-          ))}
-        </AnimatePresence>
+        {items.map((item) => (
+          <ItemRow
+            key={item.id}
+            item={item}
+            color={color}
+            isActive={item.id === activeItemId}
+            sectionPendingDelete={sectionPendingDelete}
+            onSelect={() => onSelectItem(item.id)}
+            onEdit={() => onEditItem(item.id)}
+            onDelete={() => {
+              deleteMut.mutate(item.id)
+              if (activeItemId === item.id) onSelectItem(undefined)
+            }}
+          />
+        ))}
       </div>
     </VerticalSortable>
   )
@@ -81,20 +79,16 @@ export function ItemList({
 
 function ItemRow({
   item,
-  index,
-  isActive,
-  isNew,
   color,
+  isActive,
   sectionPendingDelete,
   onSelect,
   onEdit,
   onDelete,
 }: {
   item: ListServiceItemsWithContentRow
-  index: number
-  isActive: boolean
-  isNew: boolean
   color: SectionColor
+  isActive: boolean
   sectionPendingDelete: boolean
   onSelect: () => void
   onEdit: () => void
@@ -102,46 +96,22 @@ function ItemRow({
 }) {
   const { isPlayed, toggle } = usePlayed()
   const played = isPlayed(item.id)
+  const { toggleOverlay, isOverlayActive } = useLive()
   const { attributes, listeners, setNodeRef, style } = useSortableRow(
     `item-${item.id}`,
     { type: "item" }
   )
   const Icon = iconFor(item.kind)
   const label = labelFor(item)
-  const editable = item.kind === "song" || item.kind === "bible"
+  const editable =
+    item.kind === "song" ||
+    item.kind === "bible" ||
+    item.kind === "overlay"
+  const isOverlay = item.kind === "overlay"
+  const overlayActive = isOverlay && isOverlayActive(item.id)
 
   const [pendingDelete, setPendingDelete] = useState(false)
   const rowRef = useRef<HTMLDivElement | null>(null)
-
-  // Stagger the color transition after a section recolor OR a section
-  // pending-delete tint flip: the section header retints first, then each
-  // item below it in sequence. The delay must be applied in the SAME
-  // render as the bg-class change so the browser-level transition picks
-  // it up — setting it in an effect would fire after the transition has
-  // already started without delay.
-  const colorKey = color.key
-  const prevColorKeyRef = useRef(colorKey)
-  const prevSectionPendingRef = useRef(sectionPendingDelete)
-  const colorChanging = prevColorKeyRef.current !== colorKey
-  const tintChanging = prevSectionPendingRef.current !== sectionPendingDelete
-  const staggerDelay =
-    colorChanging || tintChanging ? (index + 1) * 28 : 0
-  useEffect(() => {
-    prevColorKeyRef.current = colorKey
-    prevSectionPendingRef.current = sectionPendingDelete
-  }, [colorKey, sectionPendingDelete])
-
-  // dnd-kit hands us `style.transition` set to a `transform`-only
-  // shorthand, which overrides Tailwind's `transition-colors` class on the
-  // same element. We have to compose them ourselves so background-color
-  // actually animates (and picks up our staggered delay).
-  const composedTransition = [
-    style.transition,
-    "color 120ms cubic-bezier(0.32, 0.72, 0, 1)",
-    `background-color 160ms cubic-bezier(0.32, 0.72, 0, 1) ${staggerDelay}ms`,
-  ]
-    .filter(Boolean)
-    .join(", ")
 
   useEffect(() => {
     if (!pendingDelete) return
@@ -158,137 +128,123 @@ function ItemRow({
   const tinted = pendingDelete || sectionPendingDelete
 
   return (
-    // Outer wrapper: hosts the dnd-kit sortable transform/transition and the
-    // exit-collapse for delete. NO bg/scale animations here — those live on
-    // the inner motion.div so we don't fight dnd-kit's transform style.
-    <motion.div
+    <div
       ref={(node) => {
         setNodeRef(node)
         rowRef.current = node
       }}
       style={style}
-      initial={false}
-      exit={{ height: 0, opacity: 0 }}
-      transition={{
-        height: { duration: 0.14, ease: [0.32, 0.72, 0, 1] },
-        opacity: { duration: 0.09 },
-      }}
-      className="overflow-hidden"
     >
-      <motion.div
-        // Inner: the visible row. Squeeze-in animates scale/opacity here so
-        // dnd-kit can keep ownership of the outer transform. Tight spring
-        // with no bounce — a snap, not a wobble.
-        initial={isNew ? { scale: 0.94, opacity: 0 } : false}
-        animate={isNew ? { scale: 1, opacity: 1 } : { scale: 1, opacity: 1 }}
-        transition={
-          isNew
-            ? { duration: 0.22, ease: [0.32, 0.72, 0, 1] }
-            : { duration: 0 }
-        }
-        style={{ transition: composedTransition }}
+      <div
         className={cn(
-          "group relative flex w-full items-center gap-1 pl-3 pr-2 text-left text-xs",
+          "group relative flex w-full items-center gap-1 border-l-2 pl-5 pr-1.5 text-left text-xs transition-colors",
+          sectionBorderClass(color),
           tinted && "bg-destructive/15 text-foreground",
-          !tinted && !isActive && color.item,
-          !tinted && !isActive && color.itemHover,
-          !tinted && !isActive && "text-muted-foreground hover:text-foreground",
-          !tinted && isActive && cn(color.itemActive, "text-foreground")
+          !tinted && !isActive && "text-muted-foreground hover:bg-muted hover:text-foreground",
+          !tinted && isActive && "bg-muted text-foreground"
         )}
       >
-        {/* Played indicator: green gradient flooding the right ~30% of
-           the row. Sweeps in from outside the right edge with a brief
-           overshoot flash so the toggle reads clearly. */}
-        <AnimatePresence initial={false}>
-          {played && (
-            <motion.span
-              key="played-glow"
-              aria-hidden
-              className="pointer-events-none absolute inset-y-0 right-0 w-[32%] bg-gradient-to-l from-emerald-500/55 via-emerald-500/20 to-transparent"
-              initial={{ opacity: 0, x: "110%" }}
-              animate={{
-                opacity: [0, 1, 0.85],
-                x: ["110%", "-4%", "0%"],
-              }}
-              exit={{ opacity: 0, x: "60%" }}
-              transition={{
-                duration: 0.4,
-                ease: [0.32, 0.72, 0, 1],
-                times: [0, 0.7, 1],
-              }}
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            aria-label="Drag"
+            onClick={(e) => e.stopPropagation()}
+            className="cursor-grab touch-none grid size-5 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-50 hover:opacity-90"
+          >
+            <GripVerticalIcon className="size-3" />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              // Overlays don't preview in the Show pane — clicking
+              // one toggles its active state directly, since they
+              // layer on top of whatever slide is already live.
+              if (isOverlay) {
+                toggleOverlay({
+                  scheduleItemId: item.id,
+                  overlayKind: item.overlay_kind,
+                  name: item.label,
+                  configJSON: item.overlay_config_json,
+                  layoutsJSON: item.overlay_layouts_json,
+                  rulesJSON: item.overlay_rules_json,
+                })
+              } else {
+                onSelect()
+              }
+            }}
+            className="flex flex-1 items-center gap-2 py-1 text-left"
+          >
+            <Icon
+              className={cn(
+                "size-3.5 shrink-0 opacity-70",
+                overlayActive && "text-emerald-500 opacity-100"
+              )}
             />
+            <span
+              className={cn(
+                "truncate",
+                overlayActive && "text-emerald-500"
+              )}
+            >
+              {label}
+            </span>
+          </button>
+          {editable && (
+            <ItemAction ariaLabel="Edit" tone="yellow" onClick={onEdit}>
+              <PencilIcon className="size-3" />
+            </ItemAction>
           )}
-        </AnimatePresence>
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          aria-label="Drag"
-          className="cursor-grab touch-none px-1 opacity-0 group-hover:opacity-60 hover:opacity-100"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <GripVerticalIcon className="size-3" />
-        </button>
-        <button
-          type="button"
-          onClick={onSelect}
-          className="flex flex-1 items-center gap-2 py-1 text-left"
-        >
-          <Icon className="size-3.5 shrink-0 opacity-70" />
-          <span className="truncate">{label}</span>
-        </button>
-        {editable && (
-          <ItemAction ariaLabel="Edit" tone="yellow" onClick={onEdit}>
-            <PencilIcon className="size-3" />
-          </ItemAction>
-        )}
-        <button
-          type="button"
-          aria-label={pendingDelete ? "Confirm remove" : "Remove"}
-          onClick={(e) => {
-            e.stopPropagation()
-            if (pendingDelete) {
-              onDelete()
-              setPendingDelete(false)
-            } else {
-              setPendingDelete(true)
-            }
-          }}
-          className={cn(
-            "grid size-5 shrink-0 place-items-center rounded transition-all",
-            pendingDelete
-              ? "bg-destructive text-destructive-foreground opacity-100"
-              : "text-muted-foreground opacity-0 hover:bg-destructive/15 hover:text-destructive group-hover:opacity-70 hover:!opacity-100"
-          )}
-        >
-          {pendingDelete ? (
-            <XIcon className="size-3" />
-          ) : (
-            <Trash2Icon className="size-3" />
-          )}
-        </button>
-        <button
-          type="button"
-          aria-label={played ? "Unmark played" : "Mark as played"}
-          onClick={(e) => {
-            e.stopPropagation()
-            toggle(item.id)
-          }}
-          className={cn(
-            "relative z-[1] grid size-5 shrink-0 place-items-center rounded transition-opacity hover:bg-sky-500/15 hover:text-sky-500",
-            played
-              ? "text-emerald-500/80 opacity-100"
-              : "text-muted-foreground opacity-0 group-hover:opacity-70 hover:!opacity-100"
-          )}
-        >
-          {played ? (
-            <CheckCircle2Icon className="size-3" />
-          ) : (
-            <CircleIcon className="size-3" />
-          )}
-        </button>
-      </motion.div>
-    </motion.div>
+          <button
+            type="button"
+            aria-label={pendingDelete ? "Confirm remove" : "Remove"}
+            onClick={(e) => {
+              e.stopPropagation()
+              if (pendingDelete) {
+                onDelete()
+                setPendingDelete(false)
+              } else {
+                setPendingDelete(true)
+              }
+            }}
+            className={cn(
+              "grid size-5 shrink-0 place-items-center rounded transition-all",
+              pendingDelete
+                ? "bg-destructive text-destructive-foreground opacity-100"
+                : "text-muted-foreground opacity-0 hover:bg-destructive/15 hover:text-destructive group-hover:opacity-70 hover:!opacity-100"
+            )}
+          >
+            {pendingDelete ? (
+              <XIcon className="size-3" />
+            ) : (
+              <Trash2Icon className="size-3" />
+            )}
+          </button>
+          <button
+            type="button"
+            aria-label={played ? "Unmark played" : "Mark as played"}
+            onClick={(e) => {
+              e.stopPropagation()
+              toggle(item.id)
+            }}
+            className={cn(
+              // Played = green icon (positive done-state, always visible).
+              // Unplayed = muted hover-only, green hover tint hints the
+              // affordance.
+              "relative z-[1] grid size-5 shrink-0 place-items-center rounded transition-opacity",
+              played
+                ? "text-emerald-500 opacity-100 hover:bg-emerald-500/15"
+                : "text-muted-foreground opacity-0 group-hover:opacity-70 hover:bg-emerald-500/15 hover:text-emerald-500 hover:!opacity-100"
+            )}
+          >
+            {played ? (
+              <CheckCircle2Icon className="size-3" />
+            ) : (
+              <CircleIcon className="size-3" />
+            )}
+          </button>
+      </div>
+    </div>
   )
 }
 
@@ -337,6 +293,8 @@ function iconFor(kind: string) {
       return BookOpenIcon
     case "media":
       return ImageIcon
+    case "overlay":
+      return LayersIcon
     default:
       return FileQuestionIcon
   }

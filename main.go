@@ -7,7 +7,9 @@ import (
 
 	"neoprojector/database"
 	"neoprojector/services/bible"
+	"neoprojector/services/displays"
 	"neoprojector/services/media"
+	"neoprojector/services/overlays"
 	"neoprojector/services/schedule"
 	"neoprojector/services/songs"
 	"neoprojector/services/templates"
@@ -47,6 +49,8 @@ func main() {
 			application.NewService(media.New(db)),
 			application.NewService(schedule.New(db)),
 			application.NewService(templates.New(db)),
+			application.NewService(displays.New(db)),
+			application.NewService(overlays.New(db)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),

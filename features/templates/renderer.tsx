@@ -28,7 +28,6 @@ export type RawTemplate = {
   viewport_w: number
   viewport_h: number
   data_json: string
-  is_default: number
 }
 
 type CanvasProps = {
@@ -40,18 +39,59 @@ type CanvasProps = {
    * pass per box. Default true.
    */
   measure?: boolean
+  /**
+   * Editor hooks. When `onSelectBox` is provided, each box becomes
+   * clickable and the box matching `selectedBoxIndex` shows a selection
+   * ring. Thumbnails leave both undefined for a pure render.
+   *
+   * `body` lets callers pass an already-parsed body (e.g. the editor's
+   * working copy held in state). When omitted we parse from
+   * template.data_json so consumers without local edits can keep
+   * passing a Template row straight through.
+   *
+   * `scale` is the screen-px-per-native-px ratio of the surrounding
+   * wrapper. When provided we use it to keep the transparent-checker
+   * tiles at a constant screen size regardless of zoom — so a tile
+   * thumbnail and a full-screen editor view both show the same
+   * recognisable checker grid, never the muddy-grey "zoomed out" look.
+   */
+  selectedBoxIndex?: number
+  onSelectBox?: (index: number) => void
+  body?: TemplateBody
+  scale?: number
+  /**
+   * When true, a transparent background renders as actual
+   * transparency (lets whatever is underneath show through) instead
+   * of the editor's checkerboard visualization. Set this on the
+   * live output route so the audience doesn't see the checker.
+   * Defaults to false so editor/library/preview keep the checker.
+   */
+  liveTransparency?: boolean
 }
 
 export function TemplateCanvas({
   template,
   fill = {},
   measure = true,
+  selectedBoxIndex,
+  onSelectBox,
+  body: bodyOverride,
+  scale = 1,
+  liveTransparency = false,
 }: CanvasProps) {
-  const body = parseTemplateBody(template.data_json)
+  const body = bodyOverride ?? parseTemplateBody(template.data_json)
+  const interactive = !!onSelectBox
+
+  function handleCanvasMouseDown(e: React.MouseEvent) {
+    // Clicking the canvas background (not a box) clears selection.
+    if (!interactive) return
+    if (e.target !== e.currentTarget) return
+    onSelectBox?.(-1)
+  }
+
   return (
     <div
-      // Native-resolution canvas. Positioning of boxes is relative to
-      // these dimensions; the consumer scales the whole thing.
+      onMouseDown={handleCanvasMouseDown}
       style={{
         position: "relative",
         width: template.viewport_w,
@@ -59,13 +99,21 @@ export function TemplateCanvas({
         overflow: "hidden",
       }}
     >
-      <BackgroundLayer background={body.background} fill={fill} />
+      <BackgroundLayer
+        background={body.background}
+        fill={fill}
+        scale={scale}
+        liveTransparency={liveTransparency}
+      />
       {body.boxes.map((box, i) => (
         <BoxRenderer
           key={i}
           box={box}
           value={resolveSlot(box, fill)}
           measure={measure}
+          selected={selectedBoxIndex === i}
+          interactive={interactive}
+          onSelect={interactive ? () => onSelectBox?.(i) : undefined}
         />
       ))}
     </div>
@@ -82,8 +130,12 @@ export function ScaledTemplate({
   template,
   fill,
   measure,
+  selectedBoxIndex,
+  onSelectBox,
+  body,
   className,
   style,
+  liveTransparency,
 }: CanvasProps & { className?: string; style?: React.CSSProperties }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
@@ -129,6 +181,11 @@ export function ScaledTemplate({
           template={template}
           fill={fill}
           measure={measure}
+          selectedBoxIndex={selectedBoxIndex}
+          onSelectBox={onSelectBox}
+          body={body}
+          scale={scale}
+          liveTransparency={liveTransparency}
         />
       </div>
     </div>
@@ -142,9 +199,13 @@ export function ScaledTemplate({
 function BackgroundLayer({
   background,
   fill,
+  scale,
+  liveTransparency,
 }: {
   background: Background
   fill: SlotFill
+  scale: number
+  liveTransparency?: boolean
 }) {
   // Slot-bound media for the `media` slot wins over the template's
   // declared background, when present and the template doesn't already
@@ -186,8 +247,8 @@ function BackgroundLayer({
         style={{
           position: "absolute",
           inset: 0,
-          background: "#222",
-          color: "#888",
+          background: "color-mix(in oklch, var(--foreground) 6%, var(--background))",
+          color: "var(--muted-foreground)",
           display: "grid",
           placeItems: "center",
           fontSize: 24,
@@ -198,21 +259,63 @@ function BackgroundLayer({
       </div>
     )
   }
-  // Transparent: leave a faint dashed border so the slot grid stays
-  // legible against the editor's dark UI. Hidden in production output
-  // by passing `production` (TODO when we wire outputs).
+  // Transparent on the live output: actually transparent — let the
+  // output window's black canvas (or whatever sits underneath in the
+  // editor preview chain) show through. The checker is an editor
+  // affordance only; the audience should never see it.
+  if (liveTransparency) {
+    return null
+  }
+  // Transparent in the editor / library / previews: subtle theme-
+  // aware checker pattern. The pattern size (one full repeat — two
+  // visual tiles in each axis) is picked so two constraints hold
+  // simultaneously:
+  //   (1) the pattern lands close to ~28px on screen at any zoom
+  //       (gives a visible ~14px-per-tile checker — never the muddy
+  //       grey of an over-shrunken pattern).
+  //   (2) the chosen native pattern size divides both viewport_w and
+  //       viewport_h evenly, so no partial half-tiles overflow the
+  //       canvas edges. We snap to the nearest divisor of
+  //       gcd(viewport_w, viewport_h).
+  const TARGET_PATTERN_SCREEN = 28
+  const patternSize = pickCleanPatternSize(TARGET_PATTERN_SCREEN, scale)
   return (
     <div
       style={{
         position: "absolute",
         inset: 0,
+        backgroundColor: "var(--background)",
         backgroundImage:
-          "repeating-conic-gradient(#1f1f1f 0% 25%, #161616 0% 50%)",
-        backgroundSize: "32px 32px",
-        opacity: 0.6,
+          "repeating-conic-gradient(" +
+          "color-mix(in oklch, var(--foreground) 7%, transparent) 0% 25%, " +
+          "transparent 0% 50%)",
+        backgroundSize: `${patternSize}px ${patternSize}px`,
       }}
     />
   )
+}
+
+function pickCleanPatternSize(targetScreen: number, scale: number): number {
+  // Divisors of gcd(1920, 1080) = 120, so every candidate produces
+  // an integer count of pattern cells in both axes — clean tiling on
+  // every edge of the canvas regardless of zoom. We pick the
+  // candidate whose post-scale screen size sits closest to the
+  // target, so visual density stays roughly constant.
+  const CLEAN: readonly number[] = [
+    8, 10, 12, 15, 20, 24, 30, 40, 60, 120,
+  ]
+  if (scale <= 0) return 60
+  const ideal = targetScreen / scale
+  let best = CLEAN[0]
+  let bestDist = Math.abs(CLEAN[0] - ideal)
+  for (const c of CLEAN) {
+    const d = Math.abs(c - ideal)
+    if (d < bestDist) {
+      best = c
+      bestDist = d
+    }
+  }
+  return best
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -228,10 +331,16 @@ function BoxRenderer({
   box,
   value,
   measure,
+  selected,
+  interactive,
+  onSelect,
 }: {
   box: Box
   value: SlotValue | undefined
   measure: boolean
+  selected?: boolean
+  interactive?: boolean
+  onSelect?: () => void
 }) {
   const innerRef = useRef<HTMLDivElement>(null)
   const [fontSize, setFontSize] = useState(box.fontSize)
@@ -258,8 +367,6 @@ function BoxRenderer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [box.fitToBox, box.fontSize, box.fontSizeMin, value, measure])
 
-  if (value === undefined || value === null) return null
-
   const justifyContent =
     box.vAlign === "top"
       ? "flex-start"
@@ -267,8 +374,18 @@ function BoxRenderer({
         ? "flex-end"
         : "center"
 
+  const isInteractive = interactive ?? !!onSelect
+
   return (
     <div
+      onMouseDown={
+        isInteractive
+          ? (e) => {
+              e.stopPropagation()
+              onSelect?.()
+            }
+          : undefined
+      }
       style={{
         position: "absolute",
         left: box.x,
@@ -280,24 +397,46 @@ function BoxRenderer({
         justifyContent,
         overflow: "hidden",
         textAlign: box.align,
+        cursor: isInteractive ? "pointer" : undefined,
+        // Selection ring sits inside the box bounds via outline so it
+        // doesn't shift layout. Sky-blue at full width (3px) reads
+        // cleanly on dark and transparent backgrounds.
+        outline: selected ? "3px solid rgb(56, 189, 248)" : undefined,
+        outlineOffset: selected ? "-3px" : undefined,
       }}
     >
-      <div
-        ref={innerRef}
-        style={{
-          fontFamily: box.font,
-          fontSize,
-          fontWeight: box.weight,
-          fontStyle: box.italic ? "italic" : "normal",
-          color: box.color,
-          lineHeight: box.lineHeight,
-          textAlign: box.align,
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-        }}
-      >
-        {renderSlotValue(value)}
-      </div>
+      {value !== undefined && value !== null ? (
+        <div
+          ref={innerRef}
+          style={{
+            fontFamily: box.font,
+            fontSize,
+            fontWeight: box.weight,
+            fontStyle: box.italic ? "italic" : "normal",
+            color: box.color,
+            lineHeight: box.lineHeight,
+            textAlign: box.align,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          }}
+        >
+          {renderSlotValue(value)}
+        </div>
+      ) : isInteractive ? (
+        // Editor affordance: empty boxes still show a faint slot
+        // hint so the user can click into them.
+        <div
+          style={{
+            margin: "auto",
+            fontFamily: "Inter",
+            fontSize: 22,
+            color: "rgba(255,255,255,0.35)",
+            fontStyle: "italic",
+          }}
+        >
+          {box.slot}
+        </div>
+      ) : null}
     </div>
   )
 }

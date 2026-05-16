@@ -17,11 +17,15 @@ import type {
   Service,
   ServiceSection,
 } from "@/bindings/neoprojector/database"
+import {
+  resolveServiceName,
+  useServiceNameFormat,
+} from "@/hooks/use-service-name-format"
 
 type Props = {
   activeServiceId: number | undefined
   lastActiveServiceId: number | undefined
-  onSelect: (id: number, opts?: { editName?: boolean }) => void
+  onSelect: (id: number) => void
 }
 
 export function ServiceList({
@@ -33,6 +37,7 @@ export function ServiceList({
   const createMut = useCreateService()
   const renameMut = useRenameService()
   const deleteMut = useDeleteService()
+  const { format } = useServiceNameFormat()
 
   const [editingId, setEditingId] = useState<number | null>(null)
   // Hide the freshly-created service from this list until the parent's
@@ -50,7 +55,8 @@ export function ServiceList({
   }, [])
 
   function handleCreate() {
-    createMut.mutate("", {
+    const name = resolveServiceName(format)
+    createMut.mutate(name, {
       onSuccess: (created) => {
         setHiddenServiceId(created.id)
         if (hiddenTimerRef.current !== null) {
@@ -60,10 +66,7 @@ export function ServiceList({
           setHiddenServiceId(null)
           hiddenTimerRef.current = null
         }, 350)
-        // Hand the user straight into the new service with the name field
-        // already focused. Editing inline here would flash mid-transition
-        // since ServiceList is still mounted during the slide-out.
-        onSelect(created.id, { editName: true })
+        onSelect(created.id)
       },
     })
   }
@@ -226,7 +229,6 @@ function ServiceRow({
         <button
           type="button"
           onClick={() => !isEditing && onSelect()}
-          onDoubleClick={onStartEdit}
           className="flex flex-1 items-center gap-2 text-left"
         >
           <FileTextIcon

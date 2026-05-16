@@ -45,8 +45,18 @@ type ChapterVerse struct {
 
 // ListVerses returns all verses in a chapter (default translation) for the picker preview.
 func (s *Service) ListVerses(ctx context.Context, book string, chapter int64) ([]ChapterVerse, error) {
+	return s.ListVersesIn(ctx, book, chapter, defaultTranslation)
+}
+
+// ListVersesIn returns all verses in a chapter for the given
+// translation. Used by the live slot resolver to fill secondary /
+// tertiary slots in multi-translation bible templates.
+func (s *Service) ListVersesIn(ctx context.Context, book string, chapter int64, translation string) ([]ChapterVerse, error) {
+	if translation == "" {
+		translation = defaultTranslation
+	}
 	rows, err := s.q.BibleChapterVerses(ctx, database.BibleChapterVersesParams{
-		Translation: defaultTranslation,
+		Translation: translation,
 		Book:        book,
 		Chapter:     chapter,
 	})

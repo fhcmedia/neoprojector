@@ -25,6 +25,12 @@ export function AddMediaItem(sectionID: number, mediaID: number): $CancellablePr
     });
 }
 
+export function AddOverlayItem(sectionID: number, spec: $models.OverlayItemSpec): $CancellablePromise<database$0.ServiceItem> {
+    return $Call.ByID(1416370055, sectionID, spec).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
 export function AddSongItem(sectionID: number, songID: number): $CancellablePromise<database$0.ServiceItem> {
     return $Call.ByID(670158314, sectionID, songID).then(($result: any) => {
         return $$createType0($result);
@@ -129,6 +135,16 @@ export function SetSectionColor(id: number, color: string): $CancellablePromise<
  */
 export function UpdateBibleItem(itemID: number, ref: $models.BibleRef): $CancellablePromise<void> {
     return $Call.ByID(742852777, itemID, ref);
+}
+
+/**
+ * UpdateOverlayItemConfig replaces just the function-config portion
+ * of an overlay schedule item (e.g. operator tweaks the countdown
+ * duration or the name card text in-place). Layouts stay snapshotted
+ * from add time.
+ */
+export function UpdateOverlayItemConfig(itemID: number, configJSON: string): $CancellablePromise<void> {
+    return $Call.ByID(3795082333, itemID, configJSON);
 }
 
 // Private type creation functions
