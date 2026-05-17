@@ -151,12 +151,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install GTK4 + WebKitGTK dev packages
+      - name: Install GTK + WebKitGTK dev packages
+        # GTK4 + WebKitGTK 6.0 are what our app links against (Wails v3
+        # alpha's GTK4 backend). The 3.x packages are also required —
+        # `go tool wails3` compiles the wails3 CLI on first use, and
+        # its internal/operatingsystem package pulls in gtk+-3.0 and
+        # webkit2gtk-4.1 via pkg-config regardless of the build target.
+        # Without them the bindings-generate step fails on Linux.
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libgtk-4-dev \
             libwebkitgtk-6.0-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
             pkg-config
       - uses: actions/setup-go@v5
         with:
