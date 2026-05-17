@@ -145,6 +145,13 @@ export function SetSongTemplate(id: number, templateID: number): $CancellablePro
  * and ones without a binding (or whose bound screen is disconnected)
  * are skipped silently — the user sees the result in the previews.
  * Idempotent: a second call while live is a no-op.
+ * 
+ * The mutex is intentionally released before opening native windows.
+ * `app.Window.NewWithOptions` calls into the OS window subsystem
+ * (NSWindow alloc on macOS takes 100–500ms per window) — holding `mu`
+ * across those calls blocks IsLive/CurrentLive/PushLive/StopLive on
+ * every other goroutine for the duration. We re-acquire only to
+ * flip the live flag and stash the opened set.
  */
 export function StartLive(): $CancellablePromise<void> {
     return $Call.ByID(2217229539);

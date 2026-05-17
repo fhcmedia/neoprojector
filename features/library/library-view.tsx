@@ -129,8 +129,7 @@ export function LibraryView({ onAdHocBibleRef }: LibraryViewProps = {}) {
       }
     )
     return () => {
-      Events.Off(MEDIA_DROP_EVENT)
-      void off
+      off?.()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

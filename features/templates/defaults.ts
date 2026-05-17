@@ -1,4 +1,6 @@
 import type { Template } from "@/bindings/neoprojector/database"
+import { TEMPLATE_DEFAULT_FONT } from "@/features/templates/fonts"
+import type { TemplateTransition } from "@/features/templates/types"
 
 // Frontend default reference templates. These never touch the DB — they
 // ship with the app, are pure read-only references in the Templates
@@ -50,8 +52,18 @@ type DefaultTemplate = {
   body: {
     background: { type: "color" | "transparent"; value?: string }
     boxes: DefaultBox[]
+    transition: TemplateTransition
+    // See TemplateBody.crossSlideUniform. Defaults to false in JSON
+    // when omitted; lower-thirds opts in explicitly.
+    crossSlideUniform?: boolean
   }
 }
+
+// All defaults ship with the same gentle fade so duplicates of a default
+// carry it forward — relying on parseTemplateBody's fallback would mean
+// the field is absent from data_json, and a save through the editor could
+// drop fade by writing whatever the editor's current transition state is.
+const DEFAULT_FADE: TemplateTransition = { kind: "fade", duration_ms: 500 }
 
 function bgThemed() {
   return { type: "color" as const, value: BG }
@@ -63,9 +75,9 @@ function bgTransparent() {
 
 function box(o: Partial<DefaultBox> & Pick<DefaultBox, "slot" | "x" | "y" | "w" | "h">): DefaultBox {
   return {
-    font: "Inter",
-    fontSize: 48,
-    fontSizeMin: 48,
+    font: TEMPLATE_DEFAULT_FONT,
+    fontSize: 56,
+    fontSizeMin: 56,
     fitToBox: false,
     color: FG,
     weight: 500,
@@ -90,17 +102,23 @@ const DEFAULTS: DefaultTemplate[] = [
     viewportH: VH,
     body: {
       background: bgThemed(),
+      transition: DEFAULT_FADE,
+      // Single translation: medium weight throughout. Caption is the
+      // only intentionally-lighter element (muted color + reg weight).
+      // fitToBox on so a too-long verse shrinks to fit its own slide,
+      // crossSlideUniform off so other verses keep their declared
+      // size — every slide auto-sizes independently.
       boxes: [
         box({
           slot: "primary",
           x: 120, y: 240, w: 1680, h: 560,
-          fontSize: 64, fontSizeMin: 36, fitToBox: true,
+          fontSize: 76, fontSizeMin: 40, fitToBox: true,
           weight: 500, maxLines: 8, lineHeight: 1.3,
         }),
         box({
           slot: "caption",
           x: 120, y: 880, w: 1680, h: 80,
-          fontSize: 32, fontSizeMin: 24,
+          fontSize: 36, fontSizeMin: 28,
           color: FG_MUTED, weight: 400,
           maxLines: 1, lineHeight: 1.0,
         }),
@@ -115,24 +133,31 @@ const DEFAULTS: DefaultTemplate[] = [
     viewportH: VH,
     body: {
       background: bgThemed(),
+      transition: DEFAULT_FADE,
+      // Two translations: identical weight + color across primary and
+      // secondary so neither reads as "the real one" and the other as
+      // a footnote. Visual parity matches the editorial intent.
+      // fitToBox on, crossSlideUniform off: within a slide, primary
+      // and secondary share one fontSize (shrunk together if either
+      // overflows); across slides, each verse auto-sizes its own.
       boxes: [
         box({
           slot: "primary",
           x: 120, y: 140, w: 1680, h: 340,
-          fontSize: 56, fontSizeMin: 32, fitToBox: true,
+          fontSize: 64, fontSizeMin: 36, fitToBox: true,
           weight: 500, maxLines: 6, lineHeight: 1.25,
         }),
         box({
           slot: "secondary",
           x: 120, y: 520, w: 1680, h: 340,
-          fontSize: 56, fontSizeMin: 32, fitToBox: true,
-          color: FG, weight: 400,
+          fontSize: 64, fontSizeMin: 36, fitToBox: true,
+          color: FG, weight: 500,
           maxLines: 6, lineHeight: 1.25,
         }),
         box({
           slot: "caption",
           x: 120, y: 900, w: 1680, h: 60,
-          fontSize: 28, fontSizeMin: 22,
+          fontSize: 32, fontSizeMin: 26,
           color: FG_MUTED, weight: 400,
           maxLines: 1, lineHeight: 1.0,
         }),
@@ -147,31 +172,36 @@ const DEFAULTS: DefaultTemplate[] = [
     viewportH: VH,
     body: {
       background: bgThemed(),
+      transition: DEFAULT_FADE,
+      // Three translations: same parity rule as 2-translation — equal
+      // weight, equal color across all three.
+      // fitToBox on, crossSlideUniform off: all three boxes share
+      // one fontSize within a slide; each slide auto-sizes its own.
       boxes: [
         box({
           slot: "primary",
           x: 120, y: 100, w: 1680, h: 240,
-          fontSize: 44, fontSizeMin: 28, fitToBox: true,
+          fontSize: 50, fontSizeMin: 32, fitToBox: true,
           weight: 500, maxLines: 5, lineHeight: 1.2,
         }),
         box({
           slot: "secondary",
           x: 120, y: 360, w: 1680, h: 240,
-          fontSize: 44, fontSizeMin: 28, fitToBox: true,
-          color: FG, weight: 400,
+          fontSize: 50, fontSizeMin: 32, fitToBox: true,
+          color: FG, weight: 500,
           maxLines: 5, lineHeight: 1.2,
         }),
         box({
           slot: "tertiary",
           x: 120, y: 620, w: 1680, h: 240,
-          fontSize: 44, fontSizeMin: 28, fitToBox: true,
-          color: FG, weight: 400,
+          fontSize: 50, fontSizeMin: 32, fitToBox: true,
+          color: FG, weight: 500,
           maxLines: 5, lineHeight: 1.2,
         }),
         box({
           slot: "caption",
           x: 120, y: 900, w: 1680, h: 60,
-          fontSize: 26, fontSizeMin: 20,
+          fontSize: 30, fontSizeMin: 24,
           color: FG_MUTED, weight: 400,
           maxLines: 1, lineHeight: 1.0,
         }),
@@ -186,18 +216,24 @@ const DEFAULTS: DefaultTemplate[] = [
     viewportH: VH,
     body: {
       background: bgTransparent(),
+      transition: DEFAULT_FADE,
+      // Cross-slide uniform fit: every verse renders at the SAME
+      // fontSize across the whole multi-verse range. Lower thirds
+      // sit over video and need rock-stable typography; a jumpy
+      // font as the operator advances would distract.
+      crossSlideUniform: true,
       boxes: [
         box({
           slot: "primary",
           x: 80, y: 800, w: 1760, h: 140,
-          fontSize: 42, fontSizeMin: 28, fitToBox: true,
+          fontSize: 50, fontSizeMin: 34, fitToBox: true,
           weight: 500, align: "left",
           maxLines: 3, lineHeight: 1.2,
         }),
         box({
           slot: "caption",
           x: 80, y: 960, w: 1760, h: 40,
-          fontSize: 22, fontSizeMin: 18,
+          fontSize: 26, fontSizeMin: 22,
           color: FG_MUTED, weight: 400,
           align: "left",
           maxLines: 1, lineHeight: 1.0,
@@ -213,11 +249,15 @@ const DEFAULTS: DefaultTemplate[] = [
     viewportH: VH,
     body: {
       background: bgThemed(),
+      transition: DEFAULT_FADE,
+      // One big centered block. Audience reads the current line and only
+      // the current line — no next-line preview here (that's a Stage
+      // template thing, where worship leaders need the cue).
       boxes: [
         box({
           slot: "primary",
           x: 120, y: 200, w: 1680, h: 680,
-          fontSize: 72, fontSizeMin: 40, fitToBox: true,
+          fontSize: 84, fontSizeMin: 44, fitToBox: true,
           weight: 600, maxLines: 8, lineHeight: 1.3,
         }),
       ],
@@ -231,17 +271,18 @@ const DEFAULTS: DefaultTemplate[] = [
     viewportH: VH,
     body: {
       background: bgThemed(),
+      transition: DEFAULT_FADE,
       boxes: [
         box({
           slot: "primary",
           x: 120, y: 280, w: 1680, h: 220,
-          fontSize: 64, fontSizeMin: 40, fitToBox: true,
+          fontSize: 72, fontSizeMin: 44, fitToBox: true,
           weight: 600, maxLines: 2, lineHeight: 1.3,
         }),
         box({
           slot: "secondary",
           x: 120, y: 540, w: 1680, h: 220,
-          fontSize: 64, fontSizeMin: 40, fitToBox: true,
+          fontSize: 72, fontSizeMin: 44, fitToBox: true,
           color: FG, weight: 500,
           maxLines: 2, lineHeight: 1.3,
         }),
@@ -256,11 +297,12 @@ const DEFAULTS: DefaultTemplate[] = [
     viewportH: VH,
     body: {
       background: bgTransparent(),
+      transition: DEFAULT_FADE,
       boxes: [
         box({
           slot: "primary",
           x: 80, y: 820, w: 1760, h: 160,
-          fontSize: 48, fontSizeMin: 30, fitToBox: true,
+          fontSize: 56, fontSizeMin: 36, fitToBox: true,
           weight: 500, maxLines: 2, lineHeight: 1.2,
         }),
       ],

@@ -10,7 +10,7 @@ import type {
 } from "@/bindings/neoprojector/services/displays"
 import type { Display } from "@/bindings/neoprojector/database"
 import { useTemplates } from "@/features/library/templates-api"
-import { ScaledTemplate } from "@/features/templates/renderer"
+import { LiveTemplateView } from "@/features/templates/renderer"
 import { widgetDef } from "@/features/overlays/widgets"
 import {
   parseConfig,
@@ -19,15 +19,9 @@ import {
   resolveLayout,
   type WidgetKind,
 } from "@/features/overlays/types"
-import {
-  DEFAULT_TRANSITION,
-  parseTemplateBody,
-  type SlotFill,
-} from "@/features/templates/types"
-import {
-  motionProps,
-  type AnimKind,
-} from "@/features/animations/variants"
+import { type SlotFill, type SlotName } from "@/features/templates/types"
+import { motionProps } from "@/features/animations/variants"
+import type { AnimKind } from "@/features/animations/variants"
 
 // /output/$displayId is rendered inside each fullscreen secondary
 // window opened by Displays.StartLive. It listens to the broadcast
@@ -57,13 +51,15 @@ function OutputWindow() {
   // refetching here lets template-binding swaps take effect mid-live
   // without the operator restarting Go Live.
   useEffect(() => {
+    // Events.Off(name) in Wails v3 nukes every listener for that name,
+    // including the one a second output window installed. Always call
+    // the returned canceller so we only unsubscribe our own handler.
     const off = Events.On("displays:changed", () => {
       qc.invalidateQueries({ queryKey: ["displays", "by-id", id] })
       qc.invalidateQueries({ queryKey: ["templates"] })
     })
     return () => {
-      Events.Off("displays:changed")
-      void off
+      off?.()
     }
   }, [qc, id])
 
@@ -116,6 +112,10 @@ function OutputWindow() {
           mode === "cover" || mode === "contain" || mode === "loop"
             ? mode
             : undefined,
+        playing: slot.fill.media.playing,
+        loop: slot.fill.media.loop,
+        muted: slot.fill.media.muted,
+        restartToken: slot.fill.media.restart_token,
       }
     }
     return f
@@ -123,16 +123,28 @@ function OutputWindow() {
 
   // slideKey identifies the current slide for AnimatePresence; when
   // it changes the previous template exits and the new one enters
-  // using the template's chosen transition. Falls back to "idle" so
-  // black-screen ↔ first-slide also animates.
+  // using the template's chosen transition.
   const slideKey = slot
     ? `${slot.kind}-${slot.source_item_id}-${slot.slide_index}`
     : "idle"
-  const transition = useMemo(() => {
-    if (!template) return DEFAULT_TRANSITION
-    return parseTemplateBody(template.data_json).transition ?? DEFAULT_TRANSITION
-  }, [template])
-  const slideMotion = motionProps(transition.kind, transition.duration_ms)
+
+  // Operator's uniform-fit pass: single fontSize applied to every
+  // fitToBox box in THIS display's bound template, across every
+  // slide in the active item. Undefined unless the show pane has
+  // reported measurements. The show pane measures each enabled
+  // display's template independently and computes one minimum
+  // across every (slide × fitToBox box) — so primary/secondary/
+  // tertiary translations all render at the same size.
+  //
+  // Per-template scoping: a sibling display bound to a different
+  // template doesn't drag our floor with it.
+  const fontSizeOverride = useMemo<number | undefined>(() => {
+    const raw = slot?.font_size_override_by_template
+    if (!raw || !template) return undefined
+    const v = raw[String(template.id)]
+    if (typeof v !== "number" || v <= 0) return undefined
+    return v
+  }, [slot, template])
 
   // If any active overlay's rules opt in to cover_slide, the
   // template below is suppressed entirely — used by countdowns /
@@ -147,23 +159,13 @@ function OutputWindow() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-black">
-      <AnimatePresence mode="popLayout" initial={false}>
-        {template && !overlaysCoverSlide ? (
-          <motion.div
-            key={slideKey}
-            {...slideMotion}
-            className="absolute inset-0"
-          >
-            <ScaledTemplate
-              template={template}
-              fill={fill}
-              measure={false}
-              liveTransparency
-              className="h-full w-full"
-            />
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+      <LiveTemplateView
+        template={overlaysCoverSlide ? null : template}
+        fill={fill}
+        slideKey={slideKey}
+        fontSizeOverride={fontSizeOverride}
+        liveTransparency
+      />
       <OverlayLayer displayId={id} overlays={slot?.active_overlays ?? []} />
     </div>
   )

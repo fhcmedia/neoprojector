@@ -72,9 +72,15 @@ export function SongEditor(props: Props) {
   const [sections, setSections] = useState<LocalSection[]>([])
   // localSongId tracks the row this editor is bound to. Starts as the
   // edit-mode id, gets set after a create-mode auto-save completes.
+  //
+  // localSongIdRef mirrors the state so the in-flight flush loop reads
+  // the just-created id synchronously. Without it, a flush that loops
+  // again (because another snapshot landed during await) would re-enter
+  // the create branch and duplicate the row.
   const [localSongId, setLocalSongId] = useState<number | undefined>(
     editingSongId
   )
+  const localSongIdRef = useRef<number | undefined>(editingSongId)
   const nextId = useRef(1)
 
   const { data: existing, isLoading } = useQuery({
@@ -199,8 +205,9 @@ export function SongEditor(props: Props) {
           })),
         })
 
-        if (localSongId !== undefined) {
-          await Songs.UpdateSongFromSpec(localSongId, spec)
+        const boundId = localSongIdRef.current
+        if (boundId !== undefined) {
+          await Songs.UpdateSongFromSpec(boundId, spec)
         } else {
           // Create mode: hold the write until at least one section has
           // text. Title alone (or empty editor) is not enough — that
@@ -213,6 +220,9 @@ export function SongEditor(props: Props) {
           const created = (await Songs.CreateSongFromSpec(
             spec
           )) as unknown as Song
+          // Set the ref first so the next loop iteration sees the new
+          // id; the state update is for re-render only.
+          localSongIdRef.current = created.id
           setLocalSongId(created.id)
           if (!onSavedFiredRef.current && props.mode === "create") {
             onSavedFiredRef.current = true

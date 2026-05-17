@@ -5,7 +5,7 @@ import { SettingsIcon } from "lucide-react"
 import { useDisplays } from "@/features/displays/api"
 import { useTemplates } from "@/features/library/templates-api"
 import { useLive, type ActiveOverlay } from "@/features/live/live-context"
-import { ScaledTemplate } from "@/features/templates/renderer"
+import { LiveTemplateView } from "@/features/templates/renderer"
 import { widgetDef } from "@/features/overlays/widgets"
 import {
   parseConfig,
@@ -186,21 +186,32 @@ function PreviewTile({
     return parseRules(a.rulesJSON, def.defaultRules).cover_slide === true
   })
 
+  // Slide identity for crossfade — same shape as the output route so
+  // the in-app preview and the audience-facing output animate in lock-
+  // step. Empty string when nothing is live so the tile fades to blank
+  // cleanly.
+  const slideKey = live
+    ? `${live.kind}-${live.sourceItemId ?? "_"}-${live.slideIndex}`
+    : "idle"
+
   return (
     <div
       className={cn(
-        "group relative aspect-video w-full shrink-0",
+        "group relative aspect-video w-full shrink-0 overflow-hidden",
         enabled ? "bg-muted/30" : "bg-muted/10"
       )}
     >
-      {template && live && !overlaysCoverSlide ? (
-        <ScaledTemplate
-          template={template}
-          fill={live.fill}
-          measure={false}
-          className="absolute inset-0 h-full w-full"
-        />
-      ) : null}
+      <LiveTemplateView
+        template={overlaysCoverSlide ? null : template}
+        fill={live?.fill ?? {}}
+        slideKey={slideKey}
+        fontSizeOverride={
+          template
+            ? live?.fontSizeOverrideByTemplate?.[template.id]
+            : undefined
+        }
+        className="absolute inset-0 h-full w-full"
+      />
       {enabled && (
         <PreviewOverlays
           displayId={display.id}

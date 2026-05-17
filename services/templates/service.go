@@ -11,11 +11,12 @@ import (
 )
 
 type Service struct {
-	q *database.Queries
+	db *sql.DB
+	q  *database.Queries
 }
 
 func New(db *sql.DB) *Service {
-	return &Service{q: database.New(db)}
+	return &Service{db: db, q: database.New(db)}
 }
 
 func (*Service) ServiceName() string { return "templates" }
@@ -39,13 +40,29 @@ func (s *Service) CreateTemplate(ctx context.Context, name, kind string, viewpor
 	if name == "" {
 		name = "Untitled template"
 	}
-	return s.q.CreateTemplate(ctx, database.CreateTemplateParams{
-		Name:      uniqueName(ctx, s.q, name),
-		Kind:      kindOrDefault(kind),
-		ViewportW: viewportOrDefault(viewportW, 1920),
-		ViewportH: viewportOrDefault(viewportH, 1080),
-		DataJson:  jsonOrEmpty(dataJSON),
+	var out database.Template
+	err := s.inTx(ctx, func(q *database.Queries) error {
+		unique, err := uniqueName(ctx, q, name)
+		if err != nil {
+			return err
+		}
+		row, err := q.CreateTemplate(ctx, database.CreateTemplateParams{
+			Name:      unique,
+			Kind:      kindOrDefault(kind),
+			ViewportW: viewportOrDefault(viewportW, 1920),
+			ViewportH: viewportOrDefault(viewportH, 1080),
+			DataJson:  jsonOrEmpty(dataJSON),
+		})
+		if err != nil {
+			return err
+		}
+		out = row
+		return nil
 	})
+	if err != nil {
+		return database.Template{}, err
+	}
+	return out, nil
 }
 
 func (s *Service) UpdateTemplate(ctx context.Context, id int64, name, kind string, viewportW, viewportH int64, dataJSON string) (database.Template, error) {
@@ -71,32 +88,65 @@ func (s *Service) DeleteTemplate(ctx context.Context, id int64) error {
 }
 
 func (s *Service) DuplicateTemplate(ctx context.Context, id int64) (database.Template, error) {
-	existing, err := s.q.TemplateByID(ctx, id)
+	var out database.Template
+	err := s.inTx(ctx, func(q *database.Queries) error {
+		existing, err := q.TemplateByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		base := strings.TrimSuffix(existing.Name, " copy")
+		name, err := uniqueName(ctx, q, base+" copy")
+		if err != nil {
+			return err
+		}
+		row, err := q.DuplicateTemplate(ctx, database.DuplicateTemplateParams{
+			Name: name,
+			ID:   id,
+		})
+		if err != nil {
+			return err
+		}
+		out = row
+		return nil
+	})
 	if err != nil {
 		return database.Template{}, err
 	}
-	base := strings.TrimSuffix(existing.Name, " copy")
-	name := uniqueName(ctx, s.q, base+" copy")
-	return s.q.DuplicateTemplate(ctx, database.DuplicateTemplateParams{
-		Name: name,
-		ID:   id,
-	})
+	return out, nil
+}
+
+// inTx runs fn inside a single transaction. The queries handle passed
+// to fn is tx-bound, so any reads (e.g. uniqueName's probe) see the
+// same snapshot the subsequent insert will commit against — closing
+// the TOCTOU window between name probe and insert.
+func (s *Service) inTx(ctx context.Context, fn func(*database.Queries) error) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := fn(s.q.WithTx(tx)); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // uniqueName appends " (n)" to the requested name until the unique index
 // on template.name accepts it. Bounded loop so a misbehaving DB can't
-// spin forever.
-func uniqueName(ctx context.Context, q *database.Queries, want string) string {
+// spin forever; returns an error on exhaustion instead of returning the
+// original `want` (which the caller would then insert and hit a raw
+// unique-constraint error from the driver).
+func uniqueName(ctx context.Context, q *database.Queries, want string) (string, error) {
 	if _, err := q.TemplateByName(ctx, want); errors.Is(err, sql.ErrNoRows) {
-		return want
+		return want, nil
 	}
 	for i := 2; i < 1000; i++ {
 		candidate := fmt.Sprintf("%s (%d)", want, i)
 		if _, err := q.TemplateByName(ctx, candidate); errors.Is(err, sql.ErrNoRows) {
-			return candidate
+			return candidate, nil
 		}
 	}
-	return want
+	return "", fmt.Errorf("could not find a unique template name starting from %q", want)
 }
 
 func kindOrDefault(k string) string {

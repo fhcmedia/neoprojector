@@ -1,12 +1,19 @@
 import { useState, useEffect } from "react"
-import { createFileRoute, useNavigate } from "@tanstack/react-router"
+import { createFileRoute, redirect, useNavigate } from "@tanstack/react-router"
 import { GradFlow } from "gradflow"
 import { motion, AnimatePresence } from "motion/react"
 import { useAuth } from "@/hooks/use-auth"
+import { MOCK_AUTH_ENABLED } from "@/lib/auth-storage"
 import { Input } from "@/components/input"
 import { Label } from "@/components/label"
 
 export const Route = createFileRoute("/auth")({
+  beforeLoad: () => {
+    // Auth UI is a dev-only mock; production users never see it.
+    if (!MOCK_AUTH_ENABLED) {
+      throw redirect({ to: "/", replace: true })
+    }
+  },
   component: AuthPage,
 })
 

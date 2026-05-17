@@ -6,6 +6,7 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -27,8 +28,15 @@ import (
 // mediaAssetMiddleware intercepts GET /media-asset/{id} and serves the
 // corresponding media file from disk. This lets the frontend render real
 // thumbnails and play video/audio without any base64 encoding.
+//
+// Containment: the file path stored in the DB is validated against the
+// known media directory before serving. A row whose path escapes the
+// media dir (legacy data, tampered DB) is treated as not found —
+// otherwise http.ServeFile would happily serve /etc/passwd given the
+// right row.
 func mediaAssetMiddleware(db *sql.DB, next http.Handler) http.Handler {
 	q := database.New(db)
+	mediaDir := mediaStorageDir()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/media-asset/") {
 			next.ServeHTTP(w, r)
@@ -45,8 +53,25 @@ func mediaAssetMiddleware(db *sql.DB, next http.Handler) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		http.ServeFile(w, r, m.Path)
+		clean := filepath.Clean(m.Path)
+		if mediaDir == "" || !strings.HasPrefix(clean, mediaDir+string(filepath.Separator)) {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeFile(w, r, clean)
 	})
+}
+
+// mediaStorageDir returns the absolute, cleaned path to the app's
+// media storage directory. Used by the asset middleware to enforce
+// containment. Returns "" on lookup failure so callers can treat any
+// request as not-found rather than serving from an unknown root.
+func mediaStorageDir() string {
+	p, err := xdg.DataFile("neoprojector/media/.touch")
+	if err != nil {
+		return ""
+	}
+	return filepath.Clean(filepath.Dir(p))
 }
 
 //go:embed all:dist

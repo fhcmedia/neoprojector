@@ -42,18 +42,19 @@ import { useLive } from "@/features/live/live-context"
 import { useKeybinds } from "@/hooks/use-keybinds"
 import { CommandPalette } from "@/features/command-palette/command-palette"
 import { useAuth } from "@/hooks/use-auth"
+import { MOCK_AUTH_ENABLED, hasMockSession } from "@/lib/auth-storage"
 import logo from "@/assets/logo.png"
 
 export const Route = createFileRoute("/_app")({
   beforeLoad: () => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("neoprojector.auth")
-      if (!saved) {
-        throw redirect({
-          to: "/auth",
-          replace: true,
-        })
-      }
+    // Mock auth is dev-only — in production the gate is a no-op so
+    // users land directly in the app. See lib/auth-storage.ts.
+    if (!MOCK_AUTH_ENABLED) return
+    if (!hasMockSession()) {
+      throw redirect({
+        to: "/auth",
+        replace: true,
+      })
     }
   },
   component: AppShell,

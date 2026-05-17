@@ -39,6 +39,24 @@ type LivePayload struct {
 	SourceItemID   int64               `json:"source_item_id"`
 	SlideIndex     int64               `json:"slide_index"`
 	ActiveOverlays []OverlayActivation `json:"active_overlays"`
+	// Per-template uniform fontSize override for the currently-
+	// broadcasting item. Keyed by template id (as a string, since
+	// JSON maps require string keys). Each entry is a SINGLE fontSize
+	// applied to every fitToBox box in that template — across every
+	// slide in the active item and across every box (primary,
+	// secondary, tertiary, …). Computed by the operator's show-pane
+	// uniform-fit pass: the minimum fontSize across all (slide × box)
+	// pairs that doesn't clip, so a three-translations template
+	// renders every translation at the same size on every verse.
+	//
+	// Per-template scoping: a lower-thirds template (small box) and a
+	// two-translations template (medium box) need different floors;
+	// they must not bleed into each other. Each audience window looks
+	// up the entry for its own bound template; entries for templates
+	// no display uses just get ignored.
+	//
+	// Empty for slides that didn't go through the uniform pass.
+	FontSizeOverrideByTemplate map[string]int64 `json:"font_size_override_by_template,omitempty"`
 }
 
 // OverlayActivation is a schedule-item overlay currently toggled on.
@@ -67,9 +85,29 @@ type LiveFill struct {
 	Media     *LiveMediaRef `json:"media,omitempty"`
 }
 
+// LiveMediaRef carries everything the audience-output side needs to
+// render a media slot — what to play, how to frame it, and how the
+// operator currently wants it behaving.
+//
+// Playback state is operator-driven: every push of a new payload from
+// the main window flows through PushLive and is rebroadcast to every
+// output window. Position/seek is NOT tracked here — the output runs
+// its own clock and the operator controls coarse state only (play,
+// pause, loop, mute, restart). A scrubber is deferred until we need
+// it.
+//
+// RestartToken is a monotonically increasing counter the operator
+// bumps to force the output to seek back to 0 and resume playback.
+// The output checks for a value change rather than reading absolute
+// time — that way a re-broadcast of the same token (e.g. on output
+// window reopen) doesn't re-trigger a restart.
 type LiveMediaRef struct {
-	MediaID int64  `json:"mediaId"`
-	Mode    string `json:"mode,omitempty"`
+	MediaID      int64  `json:"mediaId"`
+	Mode         string `json:"mode,omitempty"`
+	Playing      bool   `json:"playing"`
+	Loop         bool   `json:"loop"`
+	Muted        bool   `json:"muted"`
+	RestartToken int64  `json:"restart_token"`
 }
 
 func New(db *sql.DB) *Service {
@@ -209,19 +247,30 @@ func (s *Service) SetSongTemplate(ctx context.Context, id int64, templateID int6
 // All updates run in a single transaction so the list never has a
 // half-applied order visible to other readers.
 func (s *Service) ReorderDisplays(ctx context.Context, ids []int64) error {
+	return s.inTx(ctx, func(q *database.Queries) error {
+		for i, id := range ids {
+			if err := q.SetDisplayPosition(ctx, database.SetDisplayPositionParams{
+				ID:       id,
+				Position: int64(i),
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// inTx runs fn inside a single transaction. defer-Rollback fires after
+// Commit too (no-op on a committed tx), so the connection always
+// returns to the pool even if Commit panics.
+func (s *Service) inTx(ctx context.Context, fn func(*database.Queries) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	q := s.q.WithTx(tx)
-	for i, id := range ids {
-		if err := q.SetDisplayPosition(ctx, database.SetDisplayPositionParams{
-			ID:       id,
-			Position: int64(i),
-		}); err != nil {
-			_ = tx.Rollback()
-			return err
-		}
+	defer tx.Rollback()
+	if err := fn(s.q.WithTx(tx)); err != nil {
+		return err
 	}
 	return tx.Commit()
 }
@@ -263,12 +312,22 @@ func (s *Service) IsLive(_ context.Context) bool {
 // and ones without a binding (or whose bound screen is disconnected)
 // are skipped silently — the user sees the result in the previews.
 // Idempotent: a second call while live is a no-op.
+//
+// The mutex is intentionally released before opening native windows.
+// `app.Window.NewWithOptions` calls into the OS window subsystem
+// (NSWindow alloc on macOS takes 100–500ms per window) — holding `mu`
+// across those calls blocks IsLive/CurrentLive/PushLive/StopLive on
+// every other goroutine for the duration. We re-acquire only to
+// flip the live flag and stash the opened set.
 func (s *Service) StartLive(ctx context.Context) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.live != nil {
+		s.mu.Unlock()
 		return nil
 	}
+	bypass := s.bypassDisplayCheck
+	s.mu.Unlock()
+
 	app := application.Get()
 	if app == nil {
 		return fmt.Errorf("application not initialized")
@@ -360,13 +419,25 @@ func (s *Service) StartLive(ctx context.Context) error {
 		)
 		opened[d.ID] = win
 	}
-	if len(opened) == 0 && !s.bypassDisplayCheck {
+	if len(opened) == 0 && !bypass {
 		return fmt.Errorf("no displays are enabled and bound to a connected monitor")
 	}
 	// Assign unconditionally so IsLive() (which checks s.live != nil)
 	// returns true even in bypass-mode with no external displays.
 	// An empty-but-non-nil map is the sentinel for bypass-only live.
+	s.mu.Lock()
+	// Another goroutine might have raced us to start live (unlikely
+	// from the UI but cheap to defend). If so, close what we just
+	// opened so we don't strand a second set of NSWindows.
+	if s.live != nil {
+		s.mu.Unlock()
+		for _, w := range opened {
+			w.Close()
+		}
+		return nil
+	}
 	s.live = opened
+	s.mu.Unlock()
 	return nil
 }
 

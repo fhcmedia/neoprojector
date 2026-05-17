@@ -35,14 +35,48 @@ export class LiveFill {
     }
 }
 
+/**
+ * LiveMediaRef carries everything the audience-output side needs to
+ * render a media slot — what to play, how to frame it, and how the
+ * operator currently wants it behaving.
+ * 
+ * Playback state is operator-driven: every push of a new payload from
+ * the main window flows through PushLive and is rebroadcast to every
+ * output window. Position/seek is NOT tracked here — the output runs
+ * its own clock and the operator controls coarse state only (play,
+ * pause, loop, mute, restart). A scrubber is deferred until we need
+ * it.
+ * 
+ * RestartToken is a monotonically increasing counter the operator
+ * bumps to force the output to seek back to 0 and resume playback.
+ * The output checks for a value change rather than reading absolute
+ * time — that way a re-broadcast of the same token (e.g. on output
+ * window reopen) doesn't re-trigger a restart.
+ */
 export class LiveMediaRef {
     "mediaId": number;
     "mode"?: string;
+    "playing": boolean;
+    "loop": boolean;
+    "muted": boolean;
+    "restart_token": number;
 
     /** Creates a new LiveMediaRef instance. */
     constructor($$source: Partial<LiveMediaRef> = {}) {
         if (!("mediaId" in $$source)) {
             this["mediaId"] = 0;
+        }
+        if (!("playing" in $$source)) {
+            this["playing"] = false;
+        }
+        if (!("loop" in $$source)) {
+            this["loop"] = false;
+        }
+        if (!("muted" in $$source)) {
+            this["muted"] = false;
+        }
+        if (!("restart_token" in $$source)) {
+            this["restart_token"] = 0;
         }
 
         Object.assign(this, $$source);
@@ -69,6 +103,27 @@ export class LivePayload {
     "source_item_id": number;
     "slide_index": number;
     "active_overlays": OverlayActivation[];
+
+    /**
+     * Per-template uniform fontSize override for the currently-
+     * broadcasting item. Keyed by template id (as a string, since
+     * JSON maps require string keys). Each entry is a SINGLE fontSize
+     * applied to every fitToBox box in that template — across every
+     * slide in the active item and across every box (primary,
+     * secondary, tertiary, …). Computed by the operator's show-pane
+     * uniform-fit pass: the minimum fontSize across all (slide × box)
+     * pairs that doesn't clip, so a three-translations template
+     * renders every translation at the same size on every verse.
+     * 
+     * Per-template scoping: a lower-thirds template (small box) and a
+     * two-translations template (medium box) need different floors;
+     * they must not bleed into each other. Each audience window looks
+     * up the entry for its own bound template; entries for templates
+     * no display uses just get ignored.
+     * 
+     * Empty for slides that didn't go through the uniform pass.
+     */
+    "font_size_override_by_template"?: { [_ in string]?: number };
 
     /** Creates a new LivePayload instance. */
     constructor($$source: Partial<LivePayload> = {}) {
@@ -97,12 +152,16 @@ export class LivePayload {
     static createFrom($$source: any = {}): LivePayload {
         const $$createField1_0 = $$createType2;
         const $$createField4_0 = $$createType4;
+        const $$createField5_0 = $$createType5;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("fill" in $$parsedSource) {
             $$parsedSource["fill"] = $$createField1_0($$parsedSource["fill"]);
         }
         if ("active_overlays" in $$parsedSource) {
             $$parsedSource["active_overlays"] = $$createField4_0($$parsedSource["active_overlays"]);
+        }
+        if ("font_size_override_by_template" in $$parsedSource) {
+            $$parsedSource["font_size_override_by_template"] = $$createField5_0($$parsedSource["font_size_override_by_template"]);
         }
         return new LivePayload($$parsedSource as Partial<LivePayload>);
     }
@@ -209,3 +268,4 @@ const $$createType1 = $Create.Nullable($$createType0);
 const $$createType2 = LiveFill.createFrom;
 const $$createType3 = OverlayActivation.createFrom;
 const $$createType4 = $Create.Array($$createType3);
+const $$createType5 = $Create.Map($Create.Any, $Create.Any);

@@ -44,7 +44,7 @@ func (a *App) runInit(splash application.Window) {
 	emit("splash:status", "Verifying license...")
 	emit("splash:progress", 18)
 	log.Info("license verified")
-	time.Sleep(400 * time.Millisecond) //nigga
+	time.Sleep(400 * time.Millisecond)
 
 	emit("splash:status", "Laying the foundation...")
 	emit("splash:progress", 30)

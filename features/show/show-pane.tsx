@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import { useQueryClient } from "@tanstack/react-query"
 import type {
@@ -12,11 +12,27 @@ import {
   type Slide,
 } from "@/features/live/slides"
 import { useLive } from "@/features/live/live-context"
-import { PlayIcon } from "lucide-react"
+import { useDisplays } from "@/features/displays/api"
+import { useTemplates } from "@/features/library/templates-api"
+import { parseTemplateBody, type SlotName } from "@/features/templates/types"
+import {
+  PlayIcon,
+  PauseIcon,
+  RepeatIcon,
+  Volume2Icon,
+  VolumeXIcon,
+  RotateCcwIcon,
+} from "lucide-react"
 import { useShowTemplate } from "@/features/show/use-show-template"
 import { ScaledTemplate } from "@/features/templates/renderer"
 import { songSectionType } from "@/features/songs/section-types"
 import { cn } from "@/lib/utils"
+
+// Per-template minimum fontSize. Single number per template applied
+// uniformly to every fitToBox box across every slide in the active
+// item — primary/secondary/tertiary translation boxes all render at
+// the same size on every verse.
+type TemplateMins = { [templateId: number]: number }
 
 // AdHocBibleRef: a bible range typed into the library search and
 // pushed live via Enter. Owns the show pane while set, displacing
@@ -73,7 +89,53 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
   // means click-to-toggle works correctly in either mode.
   const sourceItemId: number | null = item ? item.id : null
 
-  const { setLive, isLive, registerNavigators } = useLive()
+  const { live, setLive, isLive, registerNavigators } = useLive()
+  const { data: displays } = useDisplays()
+  const { data: allTemplates } = useTemplates()
+
+  // Uniform-fit pass, scoped per template. Lower-thirds (small box)
+  // and two-translations (medium box) have different floors; they
+  // must not bleed into each other. Within a template, every fitToBox
+  // box (across every slide) folds into ONE minimum — so primary /
+  // secondary / tertiary translations always render at the same
+  // size on every verse.
+  //
+  // Reset whenever the source changes — old mins shouldn't carry
+  // across items.
+  const [templateMins, setTemplateMins] = useState<TemplateMins>({})
+  const fitScopeKey = adHocBibleRef
+    ? `adhoc-${adHocBibleRef.book}-${adHocBibleRef.chapter}-${adHocBibleRef.verseStart}-${adHocBibleRef.verseEnd}`
+    : `item-${sourceItemId ?? "none"}`
+  useEffect(() => {
+    setTemplateMins({})
+  }, [fitScopeKey])
+
+  // reportFit ignores the slot — every fitToBox box folds into the
+  // template's single minimum. Slot is kept in the callback signature
+  // for diagnostic logging only.
+  const reportFit = useCallback(
+    (templateId: number, _slot: SlotName, fontSize: number) => {
+      setTemplateMins((prev) => {
+        const existing = prev[templateId]
+        if (existing !== undefined && existing <= fontSize) return prev
+        return { ...prev, [templateId]: fontSize }
+      })
+    },
+    []
+  )
+
+  // Re-broadcast when templateMins shrinks during an active live
+  // slide. Without this, the first click's broadcast captures whatever
+  // mins exist at that instant (possibly incomplete — only some tiles
+  // have measured yet), and each audience locks to that snapshot.
+  // Later reports lower the mins but the broadcast doesn't follow.
+  useEffect(() => {
+    if (!live) return
+    if (live.sourceItemId !== sourceItemId) return
+    const current = live.fontSizeOverrideByTemplate ?? {}
+    if (templateMinsEqual(current, templateMins)) return
+    setLive({ ...live, fontSizeOverrideByTemplate: templateMins })
+  }, [templateMins, live, sourceItemId, setLive])
 
   // Auto-broadcast the first slide when an ad-hoc bible reference
   // arrives and its verses have resolved. Without this the operator
@@ -94,9 +156,10 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
       sourceItemId: null,
       slideIndex: 0,
       fill: first.fill,
+      fontSizeOverrideByTemplate: templateMins,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adHocKey, adHocSlides.isLoading])
+  }, [adHocKey, adHocSlides.isLoading, templateMins])
 
   // Register arrow-key navigators that walk this source's slide
   // list. Re-registered on every slide-list change so the closure
@@ -114,6 +177,7 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
         sourceItemId,
         slideIndex: idx,
         fill: s.fill,
+        fontSizeOverrideByTemplate: templateMins,
       })
     }
     registerNavigators({
@@ -130,7 +194,14 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
         if (cur > 0) setIndex(cur - 1)
       },
     })
-  }, [slides, sourceItemId, isLive, setLive, registerNavigators])
+  }, [
+    slides,
+    sourceItemId,
+    isLive,
+    setLive,
+    registerNavigators,
+    templateMins,
+  ])
 
   // Pick the template per-kind from the first enabled display. Both
   // hooks always run (React rule); we read the one matching the
@@ -143,6 +214,35 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
     if (slide.kind === "song") return songTemplate
     return undefined
   }
+
+  // Collect every template id we need to measure across slides for
+  // the current slide kind. ONLY templates with crossSlideUniform=true
+  // qualify — those are the ones (lower thirds) that need a single
+  // fontSize across every verse. Audience templates self-coordinate
+  // per-slide inside their canvas; they don't need a cross-slide
+  // measurement pass at all.
+  const slideKind = slides[0]?.kind
+  const measurementTemplates = useMemo<Template[]>(() => {
+    if (!allTemplates || !slideKind || slideKind === "media") return []
+    const visibleId =
+      slideKind === "bible"
+        ? bibleTemplate?.id
+        : slideKind === "song"
+          ? songTemplate?.id
+          : undefined
+    const ids = new Set<number>()
+    if (visibleId !== undefined) ids.add(visibleId)
+    for (const d of displays ?? []) {
+      if (d.enabled === 0) continue
+      const binding =
+        slideKind === "bible" ? d.bible_template_id : d.song_template_id
+      if (binding?.Valid) ids.add(binding.Int64)
+    }
+    return Array.from(ids)
+      .map((id) => allTemplates.find((t) => t.id === id))
+      .filter((t): t is Template => !!t)
+      .filter((t) => parseTemplateBody(t.data_json).crossSlideUniform === true)
+  }, [allTemplates, displays, bibleTemplate, songTemplate, slideKind])
 
   // Empty state copy depends on which source is active so the
   // operator sees the right next-step prompt.
@@ -216,6 +316,14 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
             >
               {slides.map((slide, idx) => {
                 const active = isLive(slide.kind, sourceItemId, idx)
+                const tmpl = templateForSlide(slide)
+                const tmplBody = tmpl
+                  ? parseTemplateBody(tmpl.data_json)
+                  : undefined
+                const tmplCrossSlide =
+                  tmplBody?.crossSlideUniform === true
+                const tmplOverride =
+                  tmpl && tmplCrossSlide ? templateMins[tmpl.id] : undefined
                 return (
                   <motion.div
                     key={idx}
@@ -229,8 +337,17 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
                   >
                     <SlideTile
                       slide={slide}
-                      template={templateForSlide(slide)}
+                      template={tmpl}
                       active={active}
+                      fontSizeOverride={tmplOverride}
+                      onFitComputed={(slot, fontSize) => {
+                        // Only forward fits for templates that opted
+                        // into cross-slide uniform. Per-slide-only
+                        // templates handle their own cross-box unify
+                        // inside TemplateCanvas — no broadcast needed.
+                        if (!tmpl || !tmplCrossSlide) return
+                        reportFit(tmpl.id, slot, fontSize)
+                      }}
                       onClick={() => {
                         if (active) {
                           setLive(null)
@@ -241,6 +358,7 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
                           sourceItemId,
                           slideIndex: idx,
                           fill: slide.fill,
+                          fontSizeOverrideByTemplate: templateMins,
                         })
                       }}
                     />
@@ -250,20 +368,81 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Off-screen measurement layer for every OTHER template a
+            display might use. The visible tiles only measure against
+            the show pane's primary template; without this hidden pass,
+            an audience window bound to a different template would
+            never get its own per-slot minimum and would fall back to
+            no override (potentially cutting). Each hidden ScaledTemplate
+            renders at the template's native viewport size so the box
+            layout matches what the audience window will see — same
+            measurements, same floor decision. */}
+        {measurementTemplates.length > 0 && slides.length > 0 && (
+          <div
+            aria-hidden
+            style={{
+              position: "fixed",
+              left: -100000,
+              top: -100000,
+              pointerEvents: "none",
+              opacity: 0,
+            }}
+          >
+            {measurementTemplates.map((tmpl) =>
+              slides.map((slide, idx) => (
+                <div
+                  key={`${tmpl.id}-${idx}`}
+                  style={{
+                    width: tmpl.viewport_w,
+                    height: tmpl.viewport_h,
+                  }}
+                >
+                  <ScaledTemplate
+                    template={tmpl}
+                    fill={slide.fill}
+                    measure
+                    onFitComputed={(slot, fontSize) =>
+                      reportFit(tmpl.id, slot, fontSize)
+                    }
+                  />
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
+}
+
+// Shallow equality for the per-template single-value map. Used by the
+// re-broadcast effect to avoid infinite setLive loops when nothing has
+// actually changed (the audience output's BoxRenderer would still
+// re-run if we passed a fresh object reference identical in content).
+function templateMinsEqual(a: TemplateMins, b: TemplateMins): boolean {
+  const aKeys = Object.keys(a)
+  const bKeys = Object.keys(b)
+  if (aKeys.length !== bKeys.length) return false
+  for (const k of aKeys) {
+    if (a[Number(k)] !== b[Number(k)]) return false
+  }
+  return true
 }
 
 function SlideTile({
   slide,
   template,
   active,
+  fontSizeOverride,
+  onFitComputed,
   onClick,
 }: {
   slide: Slide
   template: Template | undefined
   active: boolean
+  fontSizeOverride: number | undefined
+  onFitComputed: (slot: SlotName, fontSize: number) => void
   onClick: () => void
 }) {
   const bottomAccent =
@@ -280,7 +459,9 @@ function SlideTile({
         <ScaledTemplate
           template={template}
           fill={slide.fill}
-          measure={false}
+          measure
+          fontSizeOverride={fontSizeOverride}
+          onFitComputed={onFitComputed}
           className="absolute inset-0 h-full w-full"
         />
       ) : (
@@ -347,6 +528,22 @@ function MediaPreview({
   )
   const isVideo = medium?.type === "video"
   const isImage = medium?.type === "image"
+  const isAudio = medium?.type === "audio"
+
+  // Operator-side controls drive the live state. When this media is
+  // live (live.fill.media points at this id), the buttons reflect and
+  // mutate the shared playback fields; the output windows pick the
+  // change up on the next PushLive.
+  const { live, setMediaPlayback, restartMedia } = useLive()
+  const liveMedia =
+    live?.kind === "media" && live.fill.media?.mediaId === mediaId
+      ? live.fill.media
+      : null
+  const isLive = !!liveMedia
+  const playing = liveMedia?.playing ?? false
+  const looping = liveMedia?.loop ?? false
+  const muted = liveMedia?.muted ?? false
+
   return (
     <div className="flex flex-1 flex-col gap-3 overflow-hidden p-3">
       <div className="relative flex-1 overflow-hidden rounded-md bg-black">
@@ -357,26 +554,105 @@ function MediaPreview({
             className="h-full w-full object-contain"
           />
         ) : isVideo && mediaId ? (
+          // Local preview keeps native controls so the operator can
+          // scrub independently of what the audience sees. The live
+          // output is the controlled surface — this is the monitor.
           <video
             src={`/media-asset/${mediaId}`}
             controls
+            muted
             className="h-full w-full"
           />
+        ) : isAudio && mediaId ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground/70">
+            <Volume2Icon className="size-10 opacity-60" />
+            <audio
+              src={`/media-asset/${mediaId}`}
+              controls
+              className="w-3/4"
+            />
+          </div>
         ) : (
           <div className="grid h-full place-items-center text-xs text-muted-foreground/40">
             {item.label || "Media"}
           </div>
         )}
       </div>
+
+      {/* Control bar — playback controls only matter for video/audio. */}
+      {(isVideo || isAudio) && isLive ? (
+        <div className="flex items-center gap-1 rounded-md border border-border/40 bg-muted/20 px-2 py-1.5">
+          <ControlButton
+            label={playing ? "Pause" : "Play"}
+            onClick={() => setMediaPlayback({ playing: !playing })}
+          >
+            {playing ? <PauseIcon className="size-3.5" /> : <PlayIcon className="size-3.5" />}
+          </ControlButton>
+          <ControlButton
+            label="Restart from beginning"
+            onClick={restartMedia}
+          >
+            <RotateCcwIcon className="size-3.5" />
+          </ControlButton>
+          <ControlButton
+            label={looping ? "Looping" : "Loop"}
+            active={looping}
+            onClick={() => setMediaPlayback({ loop: !looping })}
+          >
+            <RepeatIcon className="size-3.5" />
+          </ControlButton>
+          <ControlButton
+            label={muted ? "Unmute output" : "Mute output"}
+            active={muted}
+            onClick={() => setMediaPlayback({ muted: !muted })}
+          >
+            {muted ? <VolumeXIcon className="size-3.5" /> : <Volume2Icon className="size-3.5" />}
+          </ControlButton>
+          <div className="ml-auto text-[10px] uppercase tracking-wider text-muted-foreground/70">
+            Live
+          </div>
+        </div>
+      ) : null}
+
       <button
         type="button"
         onClick={onSend}
         className="flex items-center justify-center gap-2 rounded-md bg-foreground/10 px-3 py-2 text-xs font-medium transition-colors hover:bg-foreground/15"
       >
         <PlayIcon className="size-3" />
-        Send to Live
+        {isLive ? "Re-send to Live" : "Send to Live"}
       </button>
     </div>
+  )
+}
+
+function ControlButton({
+  label,
+  active,
+  onClick,
+  children,
+}: {
+  label: string
+  active?: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn(
+        "grid size-7 place-items-center rounded transition-colors",
+        active
+          ? "bg-foreground/15 text-foreground"
+          : "text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+      )}
+    >
+      {children}
+    </button>
   )
 }
 

@@ -29,6 +29,20 @@ export type LiveSlide = {
   // index for bible, section index for song, 0 for media).
   slideIndex: number
   fill: SlotFill
+  // Per-template uniform fontSize override computed by the operator's
+  // uniform-fit pass. Keyed by template id; the value is a single
+  // fontSize applied to every fitToBox box in that template across
+  // every slide. Each template's floor is computed independently
+  // against ITS box dimensions, so a lower-thirds template doesn't
+  // drag a two-translations template down to its tighter floor.
+  // Within a template, the value is the min across all boxes (e.g.
+  // primary/secondary/tertiary translations) so every box renders at
+  // the same size — verses across all translations stay visually
+  // aligned. Stamped onto every slide dispatched via setLive; each
+  // audience window looks up its own template's entry.
+  fontSizeOverrideByTemplate?: {
+    [templateId: number]: number
+  }
 }
 
 // ActiveOverlay = an overlay schedule item the operator has toggled
@@ -71,6 +85,16 @@ type Ctx = {
   activeOverlays: ActiveOverlay[]
   toggleOverlay: (o: Omit<ActiveOverlay, "activatedAt">) => void
   isOverlayActive: (scheduleItemId: number) => boolean
+  // Operator-side media playback controls. Each call updates the
+  // current live slide's fill.media and re-pushes the payload so
+  // output windows can reflect the new state. No-ops when the
+  // current slide doesn't have a media fill.
+  setMediaPlayback: (patch: {
+    playing?: boolean
+    loop?: boolean
+    muted?: boolean
+  }) => void
+  restartMedia: () => void
   // republish re-sends the current snapshot to Go. The button uses
   // this after Go Live so that windows just opened by StartLive see
   // the latest payload — their initial CurrentLive() fetch can race
@@ -93,6 +117,8 @@ const LiveContext = createContext<Ctx>({
   activeOverlays: [],
   toggleOverlay: () => {},
   isOverlayActive: () => false,
+  setMediaPlayback: () => {},
+  restartMedia: () => {},
   republish: () => {},
   registerNavigators: () => {},
   navigateNext: () => {},
@@ -129,6 +155,50 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const clearLive = useCallback(() => setLive(null), [])
   const clearOverlays = useCallback(() => setActiveOverlays([]), [])
 
+  // Media playback patcher. Updates fill.media on the current slide
+  // in-place (preserving every other field) so the push effect picks
+  // it up and rebroadcasts. No-op when nothing is live or the live
+  // slide has no media fill — keeps the keybind path safe to call
+  // unconditionally.
+  const setMediaPlayback = useCallback(
+    (patch: { playing?: boolean; loop?: boolean; muted?: boolean }) => {
+      setLive((prev) => {
+        if (!prev?.fill.media) return prev
+        return {
+          ...prev,
+          fill: {
+            ...prev.fill,
+            media: {
+              ...prev.fill.media,
+              ...patch,
+            },
+          },
+        }
+      })
+    },
+    []
+  )
+
+  // Restart bumps the token, which the output watches for changes.
+  // Date.now() is monotonic enough for human-scale operator clicks
+  // and guarantees uniqueness across reopens of an output window.
+  const restartMedia = useCallback(() => {
+    setLive((prev) => {
+      if (!prev?.fill.media) return prev
+      return {
+        ...prev,
+        fill: {
+          ...prev.fill,
+          media: {
+            ...prev.fill.media,
+            playing: true,
+            restartToken: Date.now(),
+          },
+        },
+      }
+    })
+  }, [])
+
   // Navigator handlers live in a ref so we don't trigger re-renders
   // of consumers when the show pane reinstalls them on slide-list
   // changes; the keybind hook just dereferences the ref at click
@@ -146,10 +216,22 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const lastPayloadRef = useRef<LivePayload | null>(null)
 
   function buildPayload(): LivePayload {
+    // Convert frontend's per-template single-number map into the
+    // string-keyed shape Wails expects. Empty when no uniform-fit
+    // pass has reported anything yet.
+    const overrideByTemplate: { [k: string]: number } = {}
+    if (live?.fontSizeOverrideByTemplate) {
+      for (const [tmplId, size] of Object.entries(
+        live.fontSizeOverrideByTemplate
+      )) {
+        if (typeof size === "number" && size > 0) overrideByTemplate[tmplId] = size
+      }
+    }
     return new LivePayload({
       kind: live?.kind ?? "none",
       source_item_id: live?.sourceItemId ?? 0,
       slide_index: live?.slideIndex ?? 0,
+      font_size_override_by_template: overrideByTemplate,
       fill: live
         ? new LiveFill({
             primary: asString(live.fill.primary),
@@ -157,7 +239,17 @@ export function LiveProvider({ children }: { children: ReactNode }) {
             tertiary: asString(live.fill.tertiary),
             caption: asString(live.fill.caption),
             media: live.fill.media
-              ? { mediaId: live.fill.media.mediaId, mode: live.fill.media.mode ?? "" }
+              ? {
+                  mediaId: live.fill.media.mediaId,
+                  mode: live.fill.media.mode ?? "",
+                  // Default to playing/unmuted/no-loop when the
+                  // operator hasn't touched the controls yet —
+                  // matches the "send to live and it plays" expectation.
+                  playing: live.fill.media.playing ?? true,
+                  loop: live.fill.media.loop ?? false,
+                  muted: live.fill.media.muted ?? false,
+                  restart_token: live.fill.media.restartToken ?? 0,
+                }
               : undefined,
           })
         : new LiveFill(),
@@ -197,10 +289,15 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   // listeners aren't attached yet at the moment Wails returns from
   // NewWithOptions — re-pushing after a short delay covers the gap
   // either way (the CurrentLive fetch reads the cached payload too).
+  //
+  // Only re-send the cached payload — never rebuild from outer-closure
+  // state here. The empty-deps useCallback captures live/activeOverlays
+  // at first render, so buildPayload() would broadcast stale state
+  // (e.g. an empty payload) instead of what's actually on the air.
   const republish = useCallback(() => {
-    const payload = lastPayloadRef.current ?? buildPayload()
+    const payload = lastPayloadRef.current
+    if (!payload) return
     Displays.PushLive(payload).catch(() => {})
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const isLive = useCallback(
@@ -226,6 +323,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         activeOverlays,
         toggleOverlay,
         isOverlayActive,
+        setMediaPlayback,
+        restartMedia,
         republish,
         registerNavigators,
         navigateNext,

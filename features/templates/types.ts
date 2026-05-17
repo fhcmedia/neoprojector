@@ -11,6 +11,18 @@ export type TemplateBody = {
   // Falls back to fade if absent — keeps existing templates working
   // without a migration.
   transition?: TemplateTransition
+  // crossSlideUniform: aggregate the fit-to-box minimum ACROSS every
+  // slide in the active item and apply that single value to every
+  // fitToBox box on every slide. Used by lower-thirds templates where
+  // a stable, consistent font across verses is the whole point. Off
+  // for audience templates: each slide independently shrinks to fit
+  // its own content. Within a slide, fitToBox boxes always coordinate
+  // to share one fontSize regardless of this flag — the flag only
+  // controls whether different slides talk to each other.
+  // Defaults to false; existing templates without the field behave
+  // as "per-slide only", which matches user-visible behavior in
+  // every non-lower-thirds default.
+  crossSlideUniform?: boolean
 }
 
 export type TemplateTransition = {
@@ -109,7 +121,21 @@ export type Span = {
 
 export type MediaRef = {
   mediaId: number
+  // Visual framing. `loop` is legacy from before playback fields
+  // existed — kept for backwards compatibility with stored data;
+  // new code should rely on `playing`/`loop` (the boolean below)
+  // for behavior and use `mode` only for `cover` vs `contain`.
   mode?: "cover" | "contain" | "loop"
+  // Operator-driven playback state for video/audio. Ignored for
+  // images (they don't have a play head). `playing=false` pauses
+  // at the current frame on the output; `restartToken` is bumped
+  // by the operator to force a seek-to-0+play, which is how the
+  // "Restart" control communicates intent without needing a
+  // position field.
+  playing?: boolean
+  loop?: boolean
+  muted?: boolean
+  restartToken?: number
 }
 
 // Default an empty body so a corrupt or missing data_json still renders
@@ -117,14 +143,17 @@ export type MediaRef = {
 export const EMPTY_BODY: TemplateBody = {
   background: { type: "color", value: "#000000" },
   boxes: [],
-  transition: { kind: "fade", duration_ms: 180 },
+  transition: { kind: "fade", duration_ms: 500 },
 }
 
 // Default transition used when a template's body parses without one
-// (older templates that pre-date this field).
+// (older templates that pre-date this field). 500ms is comfortable for
+// the audience — fast enough to feel responsive when the operator
+// advances a slide, slow enough that the crossfade reads as deliberate
+// motion rather than a flicker.
 export const DEFAULT_TRANSITION: TemplateTransition = {
   kind: "fade",
-  duration_ms: 180,
+  duration_ms: 500,
 }
 
 export function parseTemplateBody(json: string): TemplateBody {
@@ -134,6 +163,7 @@ export function parseTemplateBody(json: string): TemplateBody {
       background: parsed.background ?? EMPTY_BODY.background,
       boxes: Array.isArray(parsed.boxes) ? parsed.boxes : [],
       transition: parsed.transition ?? DEFAULT_TRANSITION,
+      crossSlideUniform: parsed.crossSlideUniform === true,
     }
   } catch {
     return EMPTY_BODY

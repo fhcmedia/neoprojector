@@ -13,6 +13,7 @@ import (
 	"neoprojector/database"
 
 	"github.com/adrg/xdg"
+	"github.com/charmbracelet/log"
 	"github.com/google/uuid"
 )
 
@@ -26,12 +27,45 @@ func New(db *sql.DB) *Service {
 
 func (*Service) ServiceName() string { return "media" }
 
+// ListMedia returns every imported media row. The `path` field is zeroed
+// before crossing the Wails boundary — the frontend reaches the actual
+// file through /media-asset/{id}, and exposing the raw filesystem path
+// would leak the user's home directory layout to anything that can read
+// the response (e.g. webview devtools, a misbehaving extension).
 func (s *Service) ListMedia(ctx context.Context) ([]database.Medium, error) {
-	return s.q.ListMedia(ctx)
+	rows, err := s.q.ListMedia(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		rows[i].Path = ""
+	}
+	return rows, nil
 }
 
+// DeleteMedia removes the DB row and the on-disk file together. A
+// failure to remove the file is logged but does not roll the DB row
+// back — the row is the authoritative reference; an orphan file on
+// disk is recoverable, a deleted file with a stale row is not.
 func (s *Service) DeleteMedia(ctx context.Context, id int64) error {
-	return s.q.DeleteMedia(ctx, id)
+	row, err := s.q.MediaByID(ctx, id)
+	if err != nil {
+		// Row gone already — best-effort idempotent delete.
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if err := s.q.DeleteMedia(ctx, id); err != nil {
+		return err
+	}
+	if row.Path == "" {
+		return nil
+	}
+	if err := os.Remove(row.Path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Warn("media file remove failed", "id", id, "path", row.Path, "err", err)
+	}
+	return nil
 }
 
 // ImportFiles copies each given absolute file path into the app's media
@@ -57,6 +91,9 @@ func (s *Service) ImportFiles(ctx context.Context, paths []string) ([]database.M
 			// shouldn't abort the rest.
 			continue
 		}
+		// Same path-stripping as ListMedia — the row crosses to the
+		// frontend, which should never see the on-disk path.
+		row.Path = ""
 		out = append(out, row)
 	}
 	return out, nil

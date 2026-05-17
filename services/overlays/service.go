@@ -83,19 +83,30 @@ func (s *Service) SetRules(ctx context.Context, id int64, rulesJSON string) (dat
 // ReorderOverlays writes position values to match the given id order.
 // Single transaction so readers never see a half-applied order.
 func (s *Service) ReorderOverlays(ctx context.Context, ids []int64) error {
+	return s.inTx(ctx, func(q *database.Queries) error {
+		for i, id := range ids {
+			if err := q.SetOverlayPosition(ctx, database.SetOverlayPositionParams{
+				ID:       id,
+				Position: int64(i),
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// inTx runs fn inside a single transaction. defer-Rollback fires after
+// Commit too (it's a no-op on a committed tx), guaranteeing the
+// connection is released even if Commit itself panics.
+func (s *Service) inTx(ctx context.Context, fn func(*database.Queries) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
-	q := s.q.WithTx(tx)
-	for i, id := range ids {
-		if err := q.SetOverlayPosition(ctx, database.SetOverlayPositionParams{
-			ID:       id,
-			Position: int64(i),
-		}); err != nil {
-			_ = tx.Rollback()
-			return err
-		}
+	defer tx.Rollback()
+	if err := fn(s.q.WithTx(tx)); err != nil {
+		return err
 	}
 	return tx.Commit()
 }

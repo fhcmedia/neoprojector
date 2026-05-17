@@ -2,14 +2,14 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 
+	"neoprojector/database"
+
 	"github.com/pressly/goose/v3"
-	_ "modernc.org/sqlite"
 )
 
 const defaultMigrationsDir = "database/migrations"
@@ -55,7 +55,10 @@ func main() {
 		log.Fatal("missing required -db flag")
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	// Open through database.Open so FK enforcement, WAL journaling, and the
+	// busy_timeout match the app — running down-migrations without these
+	// pragmas can corrupt the WAL and silently no-op FK cascades.
+	db, err := database.Open(dbPath)
 	if err != nil {
 		log.Fatalf("open sqlite db: %v", err)
 	}

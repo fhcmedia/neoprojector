@@ -108,9 +108,27 @@ export function CommandPalette({ open, onOpenChange }: Props) {
                 <CommandItem
                   key={song.id}
                   value={song.title}
-                  onSelect={() => {
-                    onOpenChange(false)
-                  }}
+                  onSelect={() =>
+                    run(() => {
+                      // Land on the library's Songs tab with this title
+                      // pre-filtered so the picked song is the only hit
+                      // — same session-state keys library-view.tsx uses.
+                      try {
+                        window.sessionStorage.setItem(
+                          "neoprojector.libraryTab",
+                          JSON.stringify("songs")
+                        )
+                        window.sessionStorage.setItem(
+                          "neoprojector.songSearch",
+                          JSON.stringify(song.title)
+                        )
+                      } catch {
+                        // sessionStorage can throw in private modes;
+                        // navigating still puts the user near the song.
+                      }
+                      navigate({ to: "/" })
+                    })
+                  }
                 >
                   <MusicIcon />
                   {song.title}

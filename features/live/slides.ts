@@ -213,10 +213,26 @@ export function useSongSlides(
         sectionType: type,
         caption: `${title} · ${label}`,
         body: text,
+        // `secondary` is filled in a second pass below — at this point
+        // we don't know what the next slide's text will be yet.
         fill: { primary: text, caption: title },
       })
     }
   }
+
+  // Second pass: link each slide's `secondary` fill to the NEXT slide's
+  // primary text. The audience template renders this under the current
+  // line as a "what's next" preview so singers see the upcoming line
+  // before the slide actually advances. Last slide gets no secondary.
+  for (let i = 0; i < slides.length - 1; i++) {
+    const next = slides[i + 1]
+    const nextText = typeof next.fill.primary === "string" ? next.fill.primary : ""
+    slides[i] = {
+      ...slides[i],
+      fill: { ...slides[i].fill, secondary: nextText },
+    }
+  }
+
   return { slides, isLoading }
 }
 
@@ -226,14 +242,22 @@ export function useMediaSlides(
   item: ListServiceItemsWithContentRow | null
 ): { slides: Slide[]; isLoading: boolean } {
   if (!item || item.kind !== "media") return { slides: [], isLoading: false }
-  // Phase 5 punts video/audio playback; the slot fill just carries the
-  // media id so the bound template can decide how to render it.
+  // Initial playback defaults: send-to-live starts playback for
+  // video/audio, no loop, audible (muted=false). The operator
+  // controls in show-pane override after the first push.
+  // restartToken=0 — bumped only by the explicit Restart control.
   const slide: Slide = {
     kind: "media",
     caption: item.label || "Media",
     body: item.label || "(media)",
     fill: {
-      media: { mediaId: item.media_id },
+      media: {
+        mediaId: item.media_id,
+        playing: true,
+        loop: false,
+        muted: false,
+        restartToken: 0,
+      },
     },
   }
   return { slides: [slide], isLoading: false }

@@ -9,6 +9,12 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // @ts-ignore: Unused imports
 import * as database$0 from "../../database/models.js";
 
+/**
+ * DeleteMedia removes the DB row and the on-disk file together. A
+ * failure to remove the file is logged but does not roll the DB row
+ * back — the row is the authoritative reference; an orphan file on
+ * disk is recoverable, a deleted file with a stale row is not.
+ */
 export function DeleteMedia(id: number): $CancellablePromise<void> {
     return $Call.ByID(3130460193, id);
 }
@@ -25,6 +31,13 @@ export function ImportFiles(paths: string[]): $CancellablePromise<database$0.Med
     });
 }
 
+/**
+ * ListMedia returns every imported media row. The `path` field is zeroed
+ * before crossing the Wails boundary — the frontend reaches the actual
+ * file through /media-asset/{id}, and exposing the raw filesystem path
+ * would leak the user's home directory layout to anything that can read
+ * the response (e.g. webview devtools, a misbehaving extension).
+ */
 export function ListMedia(): $CancellablePromise<database$0.Medium[]> {
     return $Call.ByID(3428398416).then(($result: any) => {
         return $$createType1($result);

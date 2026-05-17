@@ -49,6 +49,7 @@ import {
   type TransitionKind,
 } from "@/features/templates/types"
 import { ANIM_KINDS } from "@/features/animations/variants"
+import { FONTS, TEMPLATE_DEFAULT_FONT } from "@/features/templates/fonts"
 import {
   useCreateTemplate,
   useTemplate,
@@ -166,7 +167,7 @@ function TemplateEditor() {
       y: isMedia ? 0 : Math.round(template.viewport_h * 0.3),
       w: isMedia ? template.viewport_w : Math.round(template.viewport_w * 0.8),
       h: isMedia ? template.viewport_h : Math.round(template.viewport_h * 0.35),
-      font: "Inter",
+      font: TEMPLATE_DEFAULT_FONT,
       fontSize: isMedia ? 40 : 80,
       fontSizeMin: 20,
       fitToBox: !isMedia,
@@ -203,6 +204,12 @@ function TemplateEditor() {
 
   // Keyboard shortcuts: Delete = remove selected box,
   // Arrow keys = nudge 1px (10px with Shift), Ctrl+D = duplicate.
+  //
+  // Registered in the capture phase + stopImmediatePropagation on the
+  // keys we actually handle. The global keybind hook (use-keybinds.ts)
+  // also listens on window for arrow keys — without this, nudging a
+  // box also fires the navigateNext/Prev handler and the live slide
+  // advances in front of the audience.
   useEffect(() => {
     if (isDefault) return
     function onKey(e: KeyboardEvent) {
@@ -211,20 +218,20 @@ function TemplateEditor() {
       if (selectedIndex < 0 || !body) return
       if (e.key === "Escape") { setSelectedIndex(-1); return }
       if (e.key === "Delete" || e.key === "Backspace") {
-        e.preventDefault(); deleteBox(selectedIndex); return
+        e.preventDefault(); e.stopImmediatePropagation(); deleteBox(selectedIndex); return
       }
       if ((e.metaKey || e.ctrlKey) && e.key === "d") {
-        e.preventDefault(); duplicateBox(selectedIndex); return
+        e.preventDefault(); e.stopImmediatePropagation(); duplicateBox(selectedIndex); return
       }
       const step = e.shiftKey ? 10 : 1
       const box = body.boxes[selectedIndex]
-      if (e.key === "ArrowLeft")  { e.preventDefault(); updateBox(selectedIndex, { x: box.x - step }) }
-      if (e.key === "ArrowRight") { e.preventDefault(); updateBox(selectedIndex, { x: box.x + step }) }
-      if (e.key === "ArrowUp")    { e.preventDefault(); updateBox(selectedIndex, { y: box.y - step }) }
-      if (e.key === "ArrowDown")  { e.preventDefault(); updateBox(selectedIndex, { y: box.y + step }) }
+      if (e.key === "ArrowLeft")  { e.preventDefault(); e.stopImmediatePropagation(); updateBox(selectedIndex, { x: box.x - step }); return }
+      if (e.key === "ArrowRight") { e.preventDefault(); e.stopImmediatePropagation(); updateBox(selectedIndex, { x: box.x + step }); return }
+      if (e.key === "ArrowUp")    { e.preventDefault(); e.stopImmediatePropagation(); updateBox(selectedIndex, { y: box.y - step }); return }
+      if (e.key === "ArrowDown")  { e.preventDefault(); e.stopImmediatePropagation(); updateBox(selectedIndex, { y: box.y + step }); return }
     }
-    window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
+    window.addEventListener("keydown", onKey, true)
+    return () => window.removeEventListener("keydown", onKey, true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIndex, body, isDefault])
 
@@ -602,6 +609,23 @@ function TemplatePanel({
         />
       </Section>
 
+      {/* Cross-slide uniform sizing */}
+      <Section title="Sizing">
+        <CheckboxField
+          label="Uniform font size across slides"
+          value={body.crossSlideUniform === true}
+          readOnly={readOnly}
+          onChange={(v) => onChange({ crossSlideUniform: v })}
+        />
+        <div className="text-[10px] text-muted-foreground/70">
+          On: every slide in a multi-slide item (e.g. a bible verse range)
+          renders at the same shrunk font — ideal for lower-thirds where a
+          jumpy font would distract.
+          Off (default): each slide auto-shrinks to fit its own content;
+          fit-to-box boxes within a slide still share one size.
+        </div>
+      </Section>
+
       {/* Canvas info */}
       <Section title="Canvas">
         <div className="grid grid-cols-2 gap-1 text-[11px] text-muted-foreground">
@@ -901,44 +925,6 @@ function WeightChoice({
   )
 }
 
-// Fonts available without per-template asset loading.
-// Inter: @imported in App.css. The rest are system fonts present on
-// every macOS + Windows install we target.
-const AVAILABLE_FONTS = [
-  // App
-  "Inter",
-  // Sans-serif
-  "Arial",
-  "Arial Black",
-  "Arial Narrow",
-  "Calibri",
-  "Candara",
-  "Century Gothic",
-  "Franklin Gothic Medium",
-  "Helvetica",
-  "Helvetica Neue",
-  "Lucida Sans Unicode",
-  "Microsoft Sans Serif",
-  "Segoe UI",
-  "Tahoma",
-  "Trebuchet MS",
-  "Verdana",
-  // Serif
-  "Book Antiqua",
-  "Cambria",
-  "Garamond",
-  "Georgia",
-  "Palatino Linotype",
-  "Times New Roman",
-  // Monospace
-  "Consolas",
-  "Courier New",
-  "Lucida Console",
-  // Display / Decorative
-  "Impact",
-  "Comic Sans MS",
-]
-
 function FontPicker({
   value,
   readOnly,
@@ -950,13 +936,26 @@ function FontPicker({
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
-  const filtered = useMemo(() => {
+
+  // Group by category so the picker reads "App → Sans → Display → Serif
+  // → Mono → Handwritten → System" rather than one flat dump.
+  // Search filters within groups; empty groups are dropped from the
+  // render so the user doesn't see an empty section header.
+  const grouped = useMemo(() => {
     const q = query.trim().toLowerCase()
-    if (!q) return AVAILABLE_FONTS
-    return AVAILABLE_FONTS.filter((f) =>
-      f.toLowerCase().includes(q)
-    )
+    const out = new Map<string, typeof FONTS[number][]>()
+    for (const f of FONTS) {
+      if (q && !f.family.toLowerCase().includes(q)) continue
+      const arr = out.get(f.category) ?? []
+      arr.push(f)
+      out.set(f.category, arr)
+    }
+    return out
   }, [query])
+  const totalCount = useMemo(
+    () => Array.from(grouped.values()).reduce((n, arr) => n + arr.length, 0),
+    [grouped]
+  )
 
   return (
     <div className="flex flex-col gap-0.5">
@@ -996,41 +995,48 @@ function FontPicker({
               className="h-5 flex-1 bg-transparent text-[11px] outline-none placeholder:text-muted-foreground/40"
             />
           </div>
-          <div className="max-h-[240px] overflow-y-auto py-1">
-            {filtered.length === 0 ? (
+          <div className="max-h-[320px] overflow-y-auto py-1">
+            {totalCount === 0 ? (
               <div className="px-3 py-2 text-[11px] text-muted-foreground/50">
                 No matches.
               </div>
             ) : (
-              filtered.map((f) => {
-                const active = f === value
-                return (
-                  <button
-                    key={f}
-                    type="button"
-                    onClick={() => {
-                      onChange(f)
-                      setOpen(false)
-                    }}
-                    className={cn(
-                      "flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs transition-colors",
-                      active
-                        ? "bg-muted text-foreground"
-                        : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                    )}
-                  >
-                    <span
-                      className="truncate"
-                      style={{ fontFamily: f }}
-                    >
-                      {f}
-                    </span>
-                    {active && (
-                      <CheckIcon className="size-3.5 shrink-0 text-foreground" />
-                    )}
-                  </button>
-                )
-              })
+              Array.from(grouped.entries()).map(([category, fonts]) => (
+                <div key={category} className="py-1">
+                  <div className="px-3 pb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/50">
+                    {category}
+                  </div>
+                  {fonts.map((f) => {
+                    const active = f.family === value
+                    return (
+                      <button
+                        key={f.family}
+                        type="button"
+                        onClick={() => {
+                          onChange(f.family)
+                          setOpen(false)
+                        }}
+                        className={cn(
+                          "flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs transition-colors",
+                          active
+                            ? "bg-muted text-foreground"
+                            : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                        )}
+                      >
+                        <span
+                          className="truncate"
+                          style={{ fontFamily: f.family }}
+                        >
+                          {f.family}
+                        </span>
+                        {active && (
+                          <CheckIcon className="size-3.5 shrink-0 text-foreground" />
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              ))
             )}
           </div>
         </PopoverContent>

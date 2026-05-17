@@ -90,8 +90,7 @@ export function MediaPicker({
       void importAndAdd(paths)
     })
     return () => {
-      Events.Off(DROP_EVENT)
-      void off
+      off?.()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sectionId])

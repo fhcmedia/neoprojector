@@ -1,14 +1,29 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
+import { useQuery } from "@tanstack/react-query"
+import {
+  DEFAULT_TRANSITION,
   parseTemplateBody,
   type Background,
   type Box,
+  type MediaRef,
   type RichText,
   type SlotFill,
+  type SlotName,
   type SlotValue,
   type Span,
   type TemplateBody,
 } from "@/features/templates/types"
+import { UI_FONT } from "@/features/templates/fonts"
+import { Service as Media } from "@/bindings/neoprojector/services/media"
+import type { Medium } from "@/bindings/neoprojector/database"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -67,6 +82,23 @@ type CanvasProps = {
    * Defaults to false so editor/library/preview keep the checker.
    */
   liveTransparency?: boolean
+  /**
+   * Uniform fontSize override applied to every fitToBox box in the
+   * template. Single value — not per-slot — so that primary,
+   * secondary, tertiary translation boxes (and any other fitToBox
+   * box on the slide) all render at the same size. Used by the
+   * uniform-fit pass: the show pane collects every box's measured
+   * fit via `onFitComputed`, takes the min across every box and
+   * every slide, and feeds it back here so the operator never sees
+   * font jumps between verses or between translations.
+   */
+  fontSizeOverride?: number
+  /**
+   * Called once after each box has measured itself, with the final
+   * fontSize it landed on. The show pane uses this to compute the
+   * per-template minimum across every fitToBox box and every slide.
+   */
+  onFitComputed?: (slot: SlotName, fontSize: number) => void
 }
 
 export function TemplateCanvas({
@@ -78,6 +110,8 @@ export function TemplateCanvas({
   body: bodyOverride,
   scale = 1,
   liveTransparency = false,
+  fontSizeOverride,
+  onFitComputed,
 }: CanvasProps) {
   const body = bodyOverride ?? parseTemplateBody(template.data_json)
   const interactive = !!onSelectBox
@@ -88,6 +122,37 @@ export function TemplateCanvas({
     if (e.target !== e.currentTarget) return
     onSelectBox?.(-1)
   }
+
+  // Per-slide coordinator: every fitToBox box reports its measured
+  // ownFit here. We take the min and feed it back to every box so the
+  // boxes on THIS slide share one fontSize — primary/secondary/
+  // tertiary translations stay aligned even when only one of them
+  // would have needed to shrink. Reset when the fill changes (a new
+  // slide is being rendered into this canvas) so a short slide
+  // doesn't stay locked at the previous long slide's floor.
+  //
+  // Independent of the external `fontSizeOverride` (cross-slide
+  // broadcast). When external is set, it wins — the show pane has
+  // already computed the cross-slide min, which is <= our internal
+  // min. When external is undefined, internal is what's used,
+  // giving per-slide auto-shrink without cross-slide coupling.
+  const [internalMin, setInternalMin] = useState<number | undefined>(undefined)
+  const fillSig = useMemo(() => JSON.stringify(fill), [fill])
+  useEffect(() => {
+    setInternalMin(undefined)
+  }, [fillSig, template.id])
+  const handleFitComputed = useCallback(
+    (slot: SlotName, fontSize: number) => {
+      setInternalMin((prev) => {
+        if (prev !== undefined && prev <= fontSize) return prev
+        return fontSize
+      })
+      onFitComputed?.(slot, fontSize)
+    },
+    [onFitComputed]
+  )
+
+  const effectiveOverride = fontSizeOverride ?? internalMin
 
   return (
     <div
@@ -111,6 +176,8 @@ export function TemplateCanvas({
           box={box}
           value={resolveSlot(box, fill)}
           measure={measure}
+          fontSizeOverride={effectiveOverride}
+          onFitComputed={handleFitComputed}
           selected={selectedBoxIndex === i}
           interactive={interactive}
           onSelect={interactive ? () => onSelectBox?.(i) : undefined}
@@ -136,6 +203,8 @@ export function ScaledTemplate({
   className,
   style,
   liveTransparency,
+  fontSizeOverride,
+  onFitComputed,
 }: CanvasProps & { className?: string; style?: React.CSSProperties }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const [scale, setScale] = useState(1)
@@ -188,8 +257,230 @@ export function ScaledTemplate({
           body={body}
           scale={scale}
           liveTransparency={liveTransparency}
+          fontSizeOverride={fontSizeOverride}
+          onFitComputed={onFitComputed}
         />
       </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LiveTemplateView — renders a slide with the template's configured
+// transition. Whenever the live content changes (operator advances
+// slides, jumps to a new bible reference, switches songs), the consumer
+// passes a fresh `slideKey` and we crossfade the previous render into
+// the new one using whatever duration the template's data_json declares.
+//
+// Implementation: two stacked layers, inline opacity + CSS transition,
+// applied with setProperty('important') so the [data-no-anim] kill-
+// switch can't override it. We previously tried the motion library
+// (popLayout fixes, MotionConfig overrides, direct objects vs variants)
+// — every approach produced an instant cut inside the output webview
+// even after logs confirmed the key was changing. CSS is the bedrock;
+// going through a JS animation library here costs us reliability for
+// no real gain.
+//
+// Used by output windows AND in-app surfaces that mirror live state
+// (presenter view, display preview tiles). Consumers that render
+// templates with static content should use ScaledTemplate directly.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type Layer = {
+  id: number
+  slideKey: string
+  template: RawTemplate | null
+  fill: SlotFill
+  empty: ReactNode | null
+  // Mode is fixed at mount. "enter" runs a fade-in animation once.
+  // "exit" runs a fade-out animation once. The component then settles
+  // at the final opacity (fill: "forwards" on the Web Animations API
+  // call). No further opacity changes happen on a Layer — for each
+  // navigation we mint new Layer instances and let old ones be
+  // unmounted by cleanup.
+  mode: "enter" | "exit"
+}
+
+export function LiveTemplateView({
+  template,
+  fill,
+  slideKey,
+  liveTransparency,
+  className,
+  empty,
+  fontSizeOverride,
+}: {
+  template: RawTemplate | null | undefined
+  fill: SlotFill
+  slideKey: string | number
+  liveTransparency?: boolean
+  className?: string
+  empty?: ReactNode
+  // Uniform fontSize override for this template. When set, every
+  // fitToBox box in the template renders at exactly this size —
+  // primary/secondary/tertiary translation boxes stay aligned,
+  // every verse in the active item renders at the same size.
+  fontSizeOverride?: number
+}) {
+  const transition = useMemo(() => {
+    if (!template) return DEFAULT_TRANSITION
+    return parseTemplateBody(template.data_json).transition ?? DEFAULT_TRANSITION
+  }, [template])
+  const durationMs = transition.duration_ms
+
+  // Two distinct state buckets:
+  //   - `active`: the layer currently showing (or fading in to) the
+  //     latest content. Replaced wholesale on every slide change.
+  //   - `exiting`: snapshot clones of previously-active layers that
+  //     are running their fade-out. They unmount themselves after the
+  //     duration via a setTimeout.
+  //
+  // Each layer mounts with a fixed `mode` and runs its Web-Animations
+  // -API animation exactly once on mount (see CrossfadeLayer below).
+  // No two-render dance, no raf-batched flip, no CSS-transition guard.
+  // This is the most reliable shape for "every slide animates."
+  const idRef = useRef(1)
+  const [active, setActive] = useState<Layer>(() => ({
+    id: 0,
+    slideKey: String(slideKey),
+    template: template ?? null,
+    fill,
+    empty: empty ?? null,
+    // Initial layer doesn't fade in — it's the starting state.
+    // We tag it "exit" so on mount it animates 1→1 (a no-op via
+    // CrossfadeLayer's instant-resolve branch).
+    mode: "enter",
+  }))
+  const [exiting, setExiting] = useState<Layer[]>([])
+  const lastSlideKeyRef = useRef(String(slideKey))
+  // Snapshot the *current* active layer in a ref so the slideKey
+  // effect can read it without including `active` in deps (which would
+  // re-fire the effect every time we install a new active).
+  const activeRef = useRef(active)
+  useEffect(() => {
+    activeRef.current = active
+  }, [active])
+
+  useEffect(() => {
+    const newSlideKey = String(slideKey)
+    if (lastSlideKeyRef.current === newSlideKey) {
+      // Same slide — refresh active in place (e.g. media playback
+      // state changed). No fresh layer mint, no animation.
+      setActive((prev) => ({
+        ...prev,
+        template: template ?? null,
+        fill,
+        empty: empty ?? null,
+      }))
+      return
+    }
+    lastSlideKeyRef.current = newSlideKey
+    const prevActive = activeRef.current
+    // Clone the previous active as an exit layer (so it gets a fresh
+    // id and its mode is now "exit" — that mounts as a NEW component
+    // and the WAAPI fade-out fires from mount).
+    const exitClone: Layer = {
+      ...prevActive,
+      id: idRef.current++,
+      mode: "exit",
+    }
+    const nextActive: Layer = {
+      id: idRef.current++,
+      slideKey: newSlideKey,
+      template: template ?? null,
+      fill,
+      empty: empty ?? null,
+      mode: "enter",
+    }
+    setExiting((curr) => [...curr, exitClone])
+    setActive(nextActive)
+    // Drop this exit clone after the fade finishes. Setting a
+    // generous buffer covers WAAPI completion + paint latency.
+    setTimeout(() => {
+      setExiting((curr) => curr.filter((l) => l.id !== exitClone.id))
+    }, durationMs + 100)
+  }, [slideKey, template, fill, empty, durationMs])
+
+  return (
+    <>
+      {exiting.map((layer) => (
+        <CrossfadeLayer
+          key={layer.id}
+          layer={layer}
+          durationMs={durationMs}
+          className={className}
+          liveTransparency={liveTransparency}
+          fontSizeOverride={fontSizeOverride}
+        />
+      ))}
+      <CrossfadeLayer
+        key={active.id}
+        layer={active}
+        durationMs={durationMs}
+        className={className}
+        liveTransparency={liveTransparency}
+        fontSizeOverride={fontSizeOverride}
+      />
+    </>
+  )
+}
+
+function CrossfadeLayer({
+  layer,
+  durationMs,
+  className,
+  liveTransparency,
+  fontSizeOverride,
+}: {
+  layer: Layer
+  durationMs: number
+  className?: string
+  liveTransparency?: boolean
+  fontSizeOverride?: number
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  // Fire the fade animation exactly once, at mount. Web Animations
+  // API drives this directly — no CSS transitions, no raf-paired
+  // state flips, no MotionGlobalConfig to fight. fill: "forwards"
+  // keeps the element at the final opacity after the animation ends.
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const keyframes =
+      layer.mode === "enter"
+        ? [{ opacity: 0 }, { opacity: 1 }]
+        : [{ opacity: 1 }, { opacity: 0 }]
+    el.animate(keyframes, {
+      duration: durationMs,
+      easing: "ease-in-out",
+      fill: "forwards",
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Initial inline opacity matches the WAAPI starting frame so there's
+  // no first-paint flash before the animation begins.
+  const initialOpacity = layer.mode === "enter" ? 0 : 1
+
+  return (
+    <div
+      ref={ref}
+      className={className ?? "absolute inset-0"}
+      style={{ opacity: initialOpacity, pointerEvents: "none" }}
+    >
+      {layer.template ? (
+        <ScaledTemplate
+          template={layer.template}
+          fill={layer.fill}
+          measure
+          liveTransparency={liveTransparency}
+          fontSizeOverride={fontSizeOverride}
+          className="h-full w-full"
+        />
+      ) : (
+        layer.empty
+      )}
     </div>
   )
 }
@@ -214,22 +505,7 @@ function BackgroundLayer({
   // include media content of its own.
   const slotMedia = fill.media
   if (slotMedia) {
-    return (
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: "#222",
-          color: "#888",
-          display: "grid",
-          placeItems: "center",
-          fontSize: 24,
-          fontFamily: "monospace",
-        }}
-      >
-        media #{slotMedia.mediaId}
-      </div>
-    )
+    return <MediaSurface media={slotMedia} />
   }
 
   if (background.type === "color") {
@@ -244,21 +520,20 @@ function BackgroundLayer({
     )
   }
   if (background.type === "media") {
+    // Template-declared media background: no operator playback state
+    // travels with this path, so we render a static media surface.
+    // Defaults: image → cover; video → playing+looping muted; audio
+    // → unsupported as a background (renders nothing).
     return (
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: "color-mix(in oklch, var(--foreground) 6%, var(--background))",
-          color: "var(--muted-foreground)",
-          display: "grid",
-          placeItems: "center",
-          fontSize: 24,
-          fontFamily: "monospace",
+      <MediaSurface
+        media={{
+          mediaId: background.mediaId,
+          mode: background.mode,
+          playing: true,
+          loop: true,
+          muted: true,
         }}
-      >
-        media #{background.mediaId}
-      </div>
+      />
     )
   }
   // Transparent on the live output: actually transparent — let the
@@ -297,6 +572,202 @@ function BackgroundLayer({
   )
 }
 
+// MediaSurface renders the actual media bytes for a slot-bound or
+// template-declared media reference. Branches by media kind (image /
+// video / audio / pdf), reading the kind from the cached media list
+// — the operator-side library has already populated it, and output
+// windows fetch the same list once on mount.
+//
+// Playback fields on MediaRef are operator-driven; this component is
+// a controlled renderer that mirrors them imperatively to the video
+// /audio element so the audience output stays in sync with whatever
+// the operator clicked, with no autonomous playhead drift.
+function MediaSurface({ media }: { media: MediaRef }) {
+  const { data: list } = useQuery({
+    queryKey: ["media", "list"],
+    queryFn: () => Media.ListMedia() as unknown as Promise<Medium[]>,
+    staleTime: 60_000,
+  })
+  const item = list?.find((m) => m.id === media.mediaId)
+  const src = `/media-asset/${media.mediaId}`
+  // `mode` is overloaded: legacy values "cover"/"contain" map directly
+  // to object-fit; "loop" is a legacy flag that meant "video should
+  // loop" before the explicit `loop` boolean existed. We treat
+  // anything that isn't "contain" as cover, and OR the legacy loop
+  // hint into the explicit boolean.
+  const objectFit: "cover" | "contain" =
+    media.mode === "contain" ? "contain" : "cover"
+  const wantLoop = !!media.loop || media.mode === "loop"
+  const wantPlaying = media.playing !== false
+  const wantMuted = !!media.muted
+
+  // Type is unknown until the list resolves. Show a black surface in
+  // that brief window rather than a debug stub — looks the same as a
+  // pre-fade-in slide change.
+  if (!item) {
+    return <div style={{ position: "absolute", inset: 0, background: "#000" }} />
+  }
+
+  if (item.type === "image") {
+    return (
+      <img
+        src={src}
+        alt={item.title || ""}
+        draggable={false}
+        style={{
+          position: "absolute",
+          inset: 0,
+          width: "100%",
+          height: "100%",
+          objectFit,
+        }}
+      />
+    )
+  }
+
+  if (item.type === "video") {
+    return (
+      <ControlledVideo
+        src={src}
+        playing={wantPlaying}
+        loop={wantLoop}
+        muted={wantMuted}
+        restartToken={media.restartToken ?? 0}
+        objectFit={objectFit}
+      />
+    )
+  }
+
+  if (item.type === "audio") {
+    // Audio has no visual surface — fall through to a black canvas
+    // so the bound template's text boxes still get a clean
+    // background — and hand the playhead to ControlledAudio.
+    return (
+      <>
+        <div style={{ position: "absolute", inset: 0, background: "#000" }} />
+        <ControlledAudio
+          src={src}
+          playing={wantPlaying}
+          loop={wantLoop}
+          muted={wantMuted}
+          restartToken={media.restartToken ?? 0}
+        />
+      </>
+    )
+  }
+
+  // pdf and other future kinds: keep a discreet placeholder.
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        background:
+          "color-mix(in oklch, var(--foreground) 6%, var(--background))",
+        color: "var(--muted-foreground)",
+        display: "grid",
+        placeItems: "center",
+        fontSize: 24,
+        fontFamily: "monospace",
+      }}
+    >
+      {item.title || item.type}
+    </div>
+  )
+}
+
+function ControlledVideo({
+  src,
+  playing,
+  loop,
+  muted,
+  restartToken,
+  objectFit,
+}: {
+  src: string
+  playing: boolean
+  loop: boolean
+  muted: boolean
+  restartToken: number
+  objectFit: "cover" | "contain"
+}) {
+  const ref = useRef<HTMLVideoElement>(null)
+  const lastRestart = useRef(restartToken)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (restartToken !== lastRestart.current) {
+      lastRestart.current = restartToken
+      el.currentTime = 0
+    }
+    el.muted = muted
+    el.loop = loop
+    if (playing) {
+      // play() returns a promise that rejects when the browser
+      // refuses (e.g. autoplay-with-sound). We always start muted-
+      // capable so it will succeed; swallow rejection just in case.
+      void el.play().catch(() => {})
+    } else {
+      el.pause()
+    }
+  }, [playing, loop, muted, restartToken])
+
+  return (
+    <video
+      ref={ref}
+      src={src}
+      playsInline
+      autoPlay={playing}
+      muted={muted}
+      loop={loop}
+      style={{
+        position: "absolute",
+        inset: 0,
+        width: "100%",
+        height: "100%",
+        objectFit,
+        background: "#000",
+      }}
+    />
+  )
+}
+
+function ControlledAudio({
+  src,
+  playing,
+  loop,
+  muted,
+  restartToken,
+}: {
+  src: string
+  playing: boolean
+  loop: boolean
+  muted: boolean
+  restartToken: number
+}) {
+  const ref = useRef<HTMLAudioElement>(null)
+  const lastRestart = useRef(restartToken)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    if (restartToken !== lastRestart.current) {
+      lastRestart.current = restartToken
+      el.currentTime = 0
+    }
+    el.muted = muted
+    el.loop = loop
+    if (playing) {
+      void el.play().catch(() => {})
+    } else {
+      el.pause()
+    }
+  }, [playing, loop, muted, restartToken])
+
+  return <audio ref={ref} src={src} autoPlay={playing} muted={muted} loop={loop} />
+}
+
 function pickCleanPatternSize(targetScreen: number, scale: number): number {
   // Divisors of gcd(1920, 1080) = 120, so every candidate produces
   // an integer count of pattern cells in both axes — clean tiling on
@@ -323,16 +794,30 @@ function pickCleanPatternSize(targetScreen: number, scale: number): number {
 // ─────────────────────────────────────────────────────────────────────────────
 // Box renderer + fit-to-box
 //
-// Strategy: render at the box's declared fontSize, then if `fitToBox`
-// is true and the rendered content overflows the box, shrink by 4px
-// increments down toward fontSizeMin until it fits or the floor is hit.
-// Bounded loop, so a runaway content can't lock the UI.
+// Strategy:
+//   1. Render at the box's declared fontSize.
+//   2. If `fitToBox` is true and the content overflows, shrink by 4px
+//      increments down toward `fontSizeMin`.
+//   3. If at `fontSizeMin` the content STILL overflows vertically,
+//      expand the box upward — decrease its top, increase its height
+//      by the same delta — so the full content fits without clipping.
+//      Capped at the viewport top (y=0).
+//
+// Step 3 trades layout stability for legibility: super-long verses no
+// longer chop off at the top/bottom of the box. We expand upward only
+// (not downward) so the box's "anchor" stays at its original bottom
+// edge — preserves the relationship to anything that comes below it
+// (caption, next translation, etc.). Templates that sit close to the
+// viewport top get less room to grow; that's a template-design
+// constraint, not a renderer bug.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function BoxRenderer({
   box,
   value,
   measure,
+  fontSizeOverride,
+  onFitComputed,
   selected,
   interactive,
   onSelect,
@@ -340,34 +825,191 @@ function BoxRenderer({
   box: Box
   value: SlotValue | undefined
   measure: boolean
+  // When set, skip the entire fit-to-box pass and just render at this
+  // size. The expand-top behaviour still runs if needed — overflow at
+  // an externally-imposed size still needs to be handled.
+  fontSizeOverride?: number
+  // Reports the final fontSize this box landed on AFTER its own fit
+  // (not called when fontSizeOverride is set — we didn't measure).
+  onFitComputed?: (slot: SlotName, fontSize: number) => void
   selected?: boolean
   interactive?: boolean
   onSelect?: () => void
 }) {
   const innerRef = useRef<HTMLDivElement>(null)
   const [fontSize, setFontSize] = useState(box.fontSize)
+  const [expandUp, setExpandUp] = useState(0)
 
-  // Reset on box change or value change.
-  useEffect(() => setFontSize(box.fontSize), [box.fontSize, value])
+  // Track the last value we fitted against. When it changes the
+  // expansion resets to 0 so a short verse following a long one
+  // doesn't keep the long verse's grown box.
+  const lastValueRef = useRef<SlotValue | undefined>(undefined)
 
+  // fontsReadyTick increments whenever document.fonts finishes loading.
+  // Drives a re-measurement: the first measure may run before the
+  // template's custom font has loaded, falling back to system metrics
+  // that are usually narrower. Text "fits" with fallback but overflows
+  // with the real font — which is exactly the cutting the operator
+  // was seeing. Forcing a re-measure after fonts settle eliminates
+  // that mismatch.
+  const [fontsReadyTick, setFontsReadyTick] = useState(0)
+  useEffect(() => {
+    if (typeof document === "undefined" || !document.fonts) return
+    let cancelled = false
+    document.fonts.ready.then(() => {
+      if (!cancelled) setFontsReadyTick((t) => t + 1)
+    })
+    const onLoadingDone = () => {
+      if (!cancelled) setFontsReadyTick((t) => t + 1)
+    }
+    document.fonts.addEventListener("loadingdone", onLoadingDone)
+    return () => {
+      cancelled = true
+      document.fonts.removeEventListener("loadingdone", onLoadingDone)
+    }
+  }, [])
+
+  // Single layout effect: reset → measure → shrink → expand. All DOM
+  // mutations happen directly here; React state syncs at the end so
+  // the next render reflects the same values via JSX. Critically, we
+  // do NOT include `fontSize` or `expandUp` in deps — they're outputs
+  // of this effect, not inputs, and listing them would oscillate.
   useLayoutEffect(() => {
-    if (!box.fitToBox || !measure) return
+    if (!measure) return
     const el = innerRef.current
     if (!el) return
-    let current = box.fontSize
-    // Iteratively shrink. 4px steps strike a balance between fewer
-    // reflows and not visibly missing a fit-at-N-1 case.
-    while (
-      current > box.fontSizeMin &&
-      (el.scrollHeight > el.clientHeight ||
-        el.scrollWidth > el.clientWidth)
-    ) {
-      current -= 4
-      el.style.fontSize = `${current}px`
+    const wrapper = el.parentElement as HTMLDivElement | null
+    if (!wrapper) return
+
+    const valueChanged = lastValueRef.current !== value
+    lastValueRef.current = value
+
+    // flexShrink:0 keeps the inner at its natural content height
+    // so overflow is actually measurable.
+    el.style.flexShrink = "0"
+
+    // ALWAYS reset the wrapper to original dimensions before
+    // measuring. If a previous render's expand-up grew the wrapper,
+    // measuring ownFit against the expanded box would understate
+    // the fit (text "fits" in the bigger box but actually needs to
+    // shrink at the original size). Reset here, restore after.
+    wrapper.style.top = `${box.y}px`
+    wrapper.style.height = `${box.h}px`
+
+    // Phase 1 — stepwise shrink until the content fits (or the floor
+    // is reached). Each iteration drops fontSize by 2px and re-measures
+    // overflow. The loop exits at the LARGEST fontSize that fits, so
+    // a slide that needs to drop a little doesn't get yanked all the
+    // way to fontSizeMin. That granularity matters per the user: if
+    // a verse cuts we shrink by a point, recheck, and stop the moment
+    // it fits — we don't slam every slide to the floor when only a
+    // small adjustment was needed.
+    //
+    // Only fitToBox boxes participate; fitToBox=false boxes have a
+    // fixed design size the author chose deliberately, and they
+    // neither report nor accept overrides.
+    let ownFit: number
+    if (box.fitToBox) {
+      el.style.fontSize = `${box.fontSize}px`
+      const overflowsAt = () =>
+        el.offsetHeight - wrapper.clientHeight > 0 ||
+        el.scrollWidth - wrapper.clientWidth > 0
+      ownFit = box.fontSize
+      while (ownFit > box.fontSizeMin && overflowsAt()) {
+        ownFit = Math.max(ownFit - 2, box.fontSizeMin)
+        el.style.fontSize = `${ownFit}px`
+      }
+      // Tell the parent what size this box needs unconstrained. The
+      // show pane aggregates the per-template minimum across every
+      // fitToBox box and every slide.
+      if (onFitComputed) onFitComputed(box.slot, ownFit)
+    } else {
+      ownFit = box.fontSize
     }
-    if (current !== fontSize) setFontSize(current)
+
+    // Phase 2 — apply the effective size. When an override is set on
+    // a fitToBox slot, we use it DIRECTLY (not min(override, ownFit)).
+    // The override is the broadcast minimum across the whole slide
+    // set; the whole point of the uniform-fit pass is that every
+    // slide renders at that same value, even if some happen to fit
+    // at a larger size. Non-fit boxes ignore the override entirely —
+    // their size is a design choice, not a fit target.
+    const effective =
+      box.fitToBox && fontSizeOverride !== undefined
+        ? fontSizeOverride
+        : ownFit
+    el.style.fontSize = `${effective}px`
+
+    // Phase 3 — expand-up whenever a fitToBox box's content overflows
+    // at the effective size, regardless of whether we're at the floor.
+    //
+    // The original "atFloor" gate was too restrictive: when the uniform
+    // override is applied across slides, the most-cramped slide drives
+    // the broadcast value. If that value happens to land above the
+    // template's fontSizeMin but the audience still measures overflow
+    // (font-load timing, sub-pixel differences between the show-pane
+    // tile webview and the output webview), the slide would cut.
+    //
+    // The user's invariant: "the font should not cut." So we expand
+    // whenever overflow remains at the rendered size. Per-slide box
+    // expansion is fine — short slides won't overflow, won't expand;
+    // only the cutting slide grows its box upward. Capped at y=0 so
+    // we never escape the viewport.
+    let expand = valueChanged ? 0 : expandUp
+    if (expand > 0) {
+      wrapper.style.top = `${box.y - expand}px`
+      wrapper.style.height = `${box.h + expand}px`
+    }
+    let safety = 20
+    while (
+      safety-- > 0 &&
+      box.fitToBox &&
+      el.offsetHeight - wrapper.clientHeight > 0 &&
+      expand < Math.max(0, box.y)
+    ) {
+      const overflowPx = el.offsetHeight - wrapper.clientHeight + 8
+      const next = Math.min(expand + overflowPx, Math.max(0, box.y))
+      if (next === expand) break
+      expand = next
+      wrapper.style.top = `${box.y - expand}px`
+      wrapper.style.height = `${box.h + expand}px`
+    }
+
+    if (valueChanged && typeof window !== "undefined") {
+      // eslint-disable-next-line no-console
+      console.log("[Fit]", {
+        slot: box.slot,
+        fitToBox: box.fitToBox,
+        fontSize: {
+          declared: box.fontSize,
+          ownFit,
+          effective,
+          min: box.fontSizeMin,
+          override: fontSizeOverride,
+        },
+        expand,
+        innerHeight: el.offsetHeight,
+        wrapperHeight: wrapper.clientHeight,
+        boxH: box.h,
+        boxY: box.y,
+      })
+    }
+
+    if (effective !== fontSize) setFontSize(effective)
+    if (expand !== expandUp) setExpandUp(expand)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [box.fitToBox, box.fontSize, box.fontSizeMin, value, measure])
+  }, [
+    box.fitToBox,
+    box.fontSize,
+    box.fontSizeMin,
+    box.slot,
+    box.y,
+    box.h,
+    value,
+    measure,
+    fontSizeOverride,
+    fontsReadyTick,
+  ])
 
   const justifyContent =
     box.vAlign === "top"
@@ -391,9 +1033,9 @@ function BoxRenderer({
       style={{
         position: "absolute",
         left: box.x,
-        top: box.y,
+        top: box.y - expandUp,
         width: box.w,
-        height: box.h,
+        height: box.h + expandUp,
         display: "flex",
         flexDirection: "column",
         justifyContent,
@@ -417,6 +1059,20 @@ function BoxRenderer({
         <div
           ref={innerRef}
           style={{
+            // width:100% pins the inner to the wrapper's width so
+            // text wraps within the box. Relying on the implicit
+            // align-items:stretch behaviour was unreliable —
+            // observed in the field: the inner rendered at its
+            // natural content width (no wrap), text spilling
+            // horizontally beyond the box and getting clipped on
+            // both sides.
+            width: "100%",
+            // flexShrink:0 keeps the inner at its natural content
+            // height instead of being squished to the parent's height.
+            // Without this the inner's scrollHeight/clientHeight both
+            // report the squished size and overflow can't be detected.
+            // The wrapper's overflow:hidden still clips visually.
+            flexShrink: 0,
             fontFamily: box.font,
             fontSize,
             fontWeight: box.weight,
@@ -442,7 +1098,7 @@ function BoxRenderer({
         <div
           style={{
             margin: "auto",
-            fontFamily: "Inter",
+            fontFamily: UI_FONT,
             fontSize: 22,
             color: "rgba(255,255,255,0.35)",
             fontStyle: "italic",

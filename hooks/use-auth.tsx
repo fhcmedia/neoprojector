@@ -1,4 +1,8 @@
 import { createContext, useContext, useState, useEffect } from "react"
+import {
+  AUTH_STORAGE_KEY,
+  MOCK_AUTH_ENABLED,
+} from "@/lib/auth-storage"
 
 type AuthContextType = {
   isAuthenticated: boolean
@@ -10,13 +14,22 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
+// MOCK AUTH — DEV ONLY.
+//
+// Real authentication has not been wired yet (no server validation, no
+// signed session, no license check). In production builds the mock is
+// disabled and `isAuthenticated` is always true so the app is reachable
+// without the placeholder login flow.
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  // In production, treat every visitor as authenticated. The auth
+  // route is unreachable (see routes/auth.tsx), and the _app guard is
+  // a no-op (see routes/_app.tsx beforeLoad).
+  const [isAuthenticated, setIsAuthenticated] = useState(!MOCK_AUTH_ENABLED)
   const [user, setUser] = useState<{ username: string } | null>(null)
 
-  // On mount, check if there's a mocked session in localStorage
   useEffect(() => {
-    const saved = localStorage.getItem("neoprojector.auth")
+    if (!MOCK_AUTH_ENABLED) return
+    const saved = localStorage.getItem(AUTH_STORAGE_KEY)
     if (saved) {
       setIsAuthenticated(true)
       setUser({ username: saved })
@@ -24,22 +37,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const login = (username: string, pass: string) => {
-    // Mock login logic
+    if (!MOCK_AUTH_ENABLED) return true
     if (username === "test" && pass === "test") {
       setIsAuthenticated(true)
       setUser({ username })
-      localStorage.setItem("neoprojector.auth", username)
+      localStorage.setItem(AUTH_STORAGE_KEY, username)
       return true
     }
     return false
   }
 
   const signup = (username: string, pass: string, license: string) => {
-    // Mock signup logic
+    if (!MOCK_AUTH_ENABLED) return true
     if (username && pass && license) {
       setIsAuthenticated(true)
       setUser({ username })
-      localStorage.setItem("neoprojector.auth", username)
+      localStorage.setItem(AUTH_STORAGE_KEY, username)
       return true
     }
     return false
@@ -48,7 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = () => {
     setIsAuthenticated(false)
     setUser(null)
-    localStorage.removeItem("neoprojector.auth")
+    if (MOCK_AUTH_ENABLED) localStorage.removeItem(AUTH_STORAGE_KEY)
   }
 
   return (

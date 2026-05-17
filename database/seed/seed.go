@@ -156,14 +156,14 @@ func parseBibleBooksTable(data string) []bibleBookSeed {
 	return books
 }
 
-func bibleBookCategory(position int) string {
+func bibleBookCategory(position int) (string, error) {
 	for _, category := range bibleBookCategoryRanges {
 		if position >= category.From && position <= category.To {
-			return category.Category
+			return category.Category, nil
 		}
 	}
 
-	panic("invalid bible book position")
+	return "", fmt.Errorf("bible book position %d falls outside any known category range", position)
 }
 
 var bibles = []bibleConfig{
@@ -201,7 +201,10 @@ func Seed(db *sql.DB, progress func(string, int)) error {
 	}
 
 	for i, book := range bibleBooks {
-		cat := bibleBookCategory(i + 1)
+		cat, err := bibleBookCategory(i + 1)
+		if err != nil {
+			return fmt.Errorf("categorize bible_book %s: %w", book.Name, err)
+		}
 		if _, err := db.Exec(
 			"INSERT INTO bible_book (name, position, category, name_kjv, name_rst) VALUES (?, ?, ?, ?, ?)",
 			book.Name, i+1, cat, book.NameKJV, book.NameRST,

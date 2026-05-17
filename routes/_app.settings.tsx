@@ -1,8 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router"
-import { useState, useEffect, useMemo } from "react"
-import { useTheme } from "next-themes"
-import { MonitorIcon, MoonIcon, SunIcon } from "lucide-react"
-import { ToggleGroup, ToggleGroupItem } from "@/components/toggle-group"
+import { useMemo, useState } from "react"
 import { Switch } from "@/components/switch"
 import { Input } from "@/components/input"
 import { useAnimations } from "@/hooks/use-animations"
@@ -86,37 +83,6 @@ function Row({
   )
 }
 
-function ThemeToggle() {
-  const { theme, setTheme } = useTheme()
-  // Avoid SSR/hydration mismatch — render once mounted.
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
-  const value = mounted ? (theme ?? "system") : "system"
-
-  return (
-    <ToggleGroup
-      type="single"
-      value={value}
-      onValueChange={(v) => v && setTheme(v)}
-      variant="outline"
-      size="sm"
-    >
-      <ToggleGroupItem value="system" aria-label="System theme">
-        <MonitorIcon className="size-3.5" />
-        System
-      </ToggleGroupItem>
-      <ToggleGroupItem value="light" aria-label="Light theme">
-        <SunIcon className="size-3.5" />
-        Light
-      </ToggleGroupItem>
-      <ToggleGroupItem value="dark" aria-label="Dark theme">
-        <MoonIcon className="size-3.5" />
-        Dark
-      </ToggleGroupItem>
-    </ToggleGroup>
-  )
-}
-
 function AnimationsToggle() {
   const { enabled, setEnabled } = useAnimations()
   return (
@@ -173,12 +139,6 @@ function ServiceNameFormatField() {
 function GeneralPanel() {
   return (
     <div className="divide-y divide-border/40">
-      <Row
-        label="Theme"
-        description="Follow your OS preference or pin to a specific theme."
-      >
-        <ThemeToggle />
-      </Row>
       <Row
         label="UI animations"
         description="Subtle motion across the app. Disable for an instant, static interface."

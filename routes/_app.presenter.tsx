@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from "motion/react"
 import { createFileRoute } from "@tanstack/react-router"
 import { RadioIcon, XIcon, ArrowRightIcon } from "lucide-react"
 import { useLive } from "@/features/live/live-context"
-import { ScaledTemplate } from "@/features/templates/renderer"
+import { LiveTemplateView } from "@/features/templates/renderer"
 import { useShowTemplate } from "@/features/show/use-show-template"
 import { cn } from "@/lib/utils"
 
@@ -77,36 +77,21 @@ function PresenterView() {
               live ? "border-emerald-500/40" : "border-white/10"
             )}
           >
-            <AnimatePresence mode="popLayout" initial={false}>
-              {template && live ? (
-                <motion.div
-                  key={`${live.kind}-${live.slideIndex}`}
-                  initial={{ opacity: 0, y: 6, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -6, scale: 0.98 }}
-                  transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
-                  className="absolute inset-0"
-                >
-                  <ScaledTemplate
-                    template={template}
-                    fill={live.fill}
-                    measure={false}
-                    className="h-full w-full"
-                  />
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="empty"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.15 }}
-                  className="grid h-full place-items-center text-sm text-white/20"
-                >
+            <LiveTemplateView
+              template={live ? template : null}
+              fill={live?.fill ?? {}}
+              slideKey={live ? `${live.kind}-${live.slideIndex}` : "idle"}
+              fontSizeOverride={
+                template
+                  ? live?.fontSizeOverrideByTemplate?.[template.id]
+                  : undefined
+              }
+              empty={
+                <div className="grid h-full place-items-center text-sm text-white/20">
                   {live?.kind === "media" ? "Media" : "Nothing live"}
-                </motion.div>
-              )}
-            </AnimatePresence>
+                </div>
+              }
+            />
           </div>
           <AnimatePresence initial={false}>
             {live && (
