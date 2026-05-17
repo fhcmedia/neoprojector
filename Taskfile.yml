@@ -31,7 +31,7 @@ tasks:
   generate:icons:
     desc: Regenerate icons.icns + icon.ico from build/appicon.png
     cmds:
-      - cd build && go tool wails3 generate icons -input appicon.png -macfilename icons.icns -windowsfilename icon.ico
+      - cd build && go tool wails3 generate icons -input appicon.png -macfilename icons.icns -windowsfilename windows/icon.ico
 
   migrate:
     desc: Run goose migrations, e.g. task migrate -- -db ./neoprojector.db up
