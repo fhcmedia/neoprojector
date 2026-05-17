@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query"
 import { Service as Bible } from "@/bindings/neoprojector/services/bible"
 import { Service as Songs } from "@/bindings/neoprojector/services/songs"
+import { Service as Presentations } from "@/bindings/neoprojector/services/presentations"
 import type {
+  ListPresentationSlidesRow,
   ListServiceItemsWithContentRow,
 } from "@/bindings/neoprojector/database"
 import type { ChapterVerse } from "@/bindings/neoprojector/services/bible"
@@ -25,6 +27,112 @@ export type Slide = {
   // sectionType is set for song slides so the show pane can colorize
   // the left accent by type (verse, chorus, bridge, …).
   sectionType?: string
+}
+
+// PresentationPlayback carries the per-presentation runtime settings
+// the show pane needs to drive loop auto-advance and the audience
+// needs to apply the right transition. usePresentationSlides loads
+// the presentation row and exposes this alongside the slide list.
+export type PresentationPlayback = {
+  loop: boolean
+  intervalMs: number
+  transitionKind: string
+  transitionDurationMs: number
+}
+
+// Presentations expand to one media slide per row in the
+// presentation_slide table. Operator advances with arrow keys like
+// bible verses; each slide is a media background, not a templated
+// fill, so audience output renders the bytes directly (same path as
+// a single-media schedule item).
+export function usePresentationSlides(
+  item: ListServiceItemsWithContentRow | null
+): {
+  slides: Slide[]
+  isLoading: boolean
+  playback: PresentationPlayback | null
+} {
+  const enabled =
+    !!item && item.kind === "presentation" && item.presentation_id !== 0
+  const slidesQ = useQuery({
+    queryKey: ["presentations", "slides", item?.presentation_id],
+    queryFn: () =>
+      Presentations.ListSlides(
+        item!.presentation_id
+      ) as unknown as Promise<ListPresentationSlidesRow[]>,
+    enabled,
+  })
+  // Pulls the presentation row (loop / interval / transition). Kept
+  // in its own query so loop-config edits invalidate independently
+  // of the slide list — typing in the duration field doesn't refetch
+  // every slide.
+  const playbackQ = useQuery({
+    queryKey: ["presentations", "one", item?.presentation_id],
+    queryFn: () =>
+      Presentations.PresentationByID(
+        item!.presentation_id
+      ) as unknown as Promise<{
+        id: number
+        loop: number
+        interval_ms: number
+        transition_kind: string
+        transition_duration_ms: number
+      }>,
+    enabled,
+  })
+
+  if (!enabled)
+    return { slides: [], isLoading: false, playback: null }
+
+  const playback: PresentationPlayback | null = playbackQ.data
+    ? {
+        loop: playbackQ.data.loop === 1,
+        intervalMs: playbackQ.data.interval_ms,
+        transitionKind: playbackQ.data.transition_kind,
+        transitionDurationMs: playbackQ.data.transition_duration_ms,
+      }
+    : null
+
+  if (!slidesQ.data)
+    return {
+      slides: [],
+      isLoading: slidesQ.isLoading || playbackQ.isLoading,
+      playback,
+    }
+
+  const slides: Slide[] = slidesQ.data.map((s, idx) => {
+    // media_title comes from a LEFT JOIN to keep the slide row even
+    // if the media was deleted (we'd rather show "Slide N" than 404
+    // the whole presentation). The sqlc NullString shape wraps the
+    // string with a Valid flag; unwrap defensively.
+    const title =
+      s.media_title && s.media_title.Valid
+        ? s.media_title.String
+        : `Slide ${idx + 1}`
+    return {
+      kind: "media",
+      caption: title,
+      body: title,
+      fill: {
+        media: {
+          mediaId: s.media_id,
+          // Background-style playback: video slides loop muted by
+          // default so the operator doesn't have to babysit a per-
+          // slide control surface. Tweak in the schedule editor if
+          // you want sound or a one-shot.
+          playing: true,
+          loop: true,
+          muted: true,
+          restartToken: 0,
+        },
+      },
+    }
+  })
+  return {
+    slides,
+    isLoading: slidesQ.isLoading || playbackQ.isLoading,
+    playback,
+  }
 }
 
 // ---- bible ----------------------------------------------------------------
@@ -266,23 +374,32 @@ export function useMediaSlides(
 // ---- unified --------------------------------------------------------------
 
 // useItemSlides dispatches to the right per-kind hook based on the
-// item type. All three hooks always render (React rule); only the one
-// matching the kind returns real data.
+// item type. All hooks always run (React rule); only the one
+// matching the kind returns real data. `playback` is set ONLY for
+// presentation items — callers wanting to drive auto-advance check
+// for non-null here.
 export function useItemSlides(
   item: ListServiceItemsWithContentRow | null
-): { slides: Slide[]; isLoading: boolean } {
+): {
+  slides: Slide[]
+  isLoading: boolean
+  playback: PresentationPlayback | null
+} {
   const bible = useBibleSlides(item)
   const song = useSongSlides(item)
   const media = useMediaSlides(item)
-  if (!item) return { slides: [], isLoading: false }
+  const presentation = usePresentationSlides(item)
+  if (!item) return { slides: [], isLoading: false, playback: null }
   switch (item.kind) {
     case "bible":
-      return bible
+      return { ...bible, playback: null }
     case "song":
-      return song
+      return { ...song, playback: null }
     case "media":
-      return media
+      return { ...media, playback: null }
+    case "presentation":
+      return presentation
     default:
-      return { slides: [], isLoading: false }
+      return { slides: [], isLoading: false, playback: null }
   }
 }

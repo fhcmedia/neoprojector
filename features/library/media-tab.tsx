@@ -1,5 +1,5 @@
-import { useMemo } from "react"
-import { useQuery } from "@tanstack/react-query"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSessionState } from "@/hooks/use-session-state"
 import {
   ImageIcon,
@@ -7,9 +7,11 @@ import {
   FileAudioIcon,
   FileTextIcon,
   FileIcon,
-  PlusIcon,
+  Trash2Icon,
   UploadIcon,
+  XIcon,
 } from "lucide-react"
+import { AddTile } from "@/features/library/add-tile"
 import { Service as Media } from "@/bindings/neoprojector/services/media"
 import type { Medium } from "@/bindings/neoprojector/database"
 import { cn } from "@/lib/utils"
@@ -23,6 +25,11 @@ type Props = {
   importing: boolean
   onImport: () => void | Promise<void>
   dropTarget: string
+  // Called when the operator clicks a media tile. The parent
+  // appends to the "Media from Library" inbox and surfaces the new
+  // schedule item in the show pane. When undefined, clicks fall
+  // back to the local-only "selected" highlight.
+  onPick?: (mediaId: number) => void
 }
 
 export function MediaTab({
@@ -31,7 +38,9 @@ export function MediaTab({
   importing,
   onImport,
   dropTarget,
+  onPick,
 }: Props) {
+  const qc = useQueryClient()
   const { data: media, isLoading } = useQuery({
     queryKey: ["media", "list"],
     queryFn: () => Media.ListMedia() as unknown as Promise<Medium[]>,
@@ -40,6 +49,17 @@ export function MediaTab({
     "neoprojector.mediaSelectedId",
     null
   )
+
+  // Delete-with-confirm mirrors the templates / overlays tabs: first
+  // click on the trash icon arms (turns red); second click commits.
+  // We invalidate the media list query on success so the tile
+  // disappears immediately and the show pane drops a stale preview.
+  const deleteMut = useMutation({
+    mutationFn: (id: number) => Media.DeleteMedia(id) as unknown as Promise<void>,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["media", "list"] })
+    },
+  })
 
   const debounced = useDebounce(search, 200)
 
@@ -78,71 +98,161 @@ export function MediaTab({
             </div>
           </button>
         ) : (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2">
-            {filtered.map((m) => {
-              const isActive = m.id === selectedId
-              const Icon = iconFor(m.type)
-              return (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setSelectedId(m.id)}
-                  title={m.original_filename}
-                  className={cn(
-                    "group flex flex-col overflow-hidden rounded border text-left transition-colors",
-                    isActive
-                      ? "border-foreground/60 ring-1 ring-foreground/40"
-                      : "border-border/50 hover:border-border"
-                  )}
-                >
-                  <div className="relative aspect-video w-full overflow-hidden bg-muted/40">
-                    {m.type === "image" ? (
-                      <img
-                        src={`/media-asset/${m.id}`}
-                        alt={m.title}
-                        className="absolute inset-0 h-full w-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : m.type === "video" ? (
-                      <video
-                        src={`/media-asset/${m.id}`}
-                        className="absolute inset-0 h-full w-full object-cover"
-                        preload="metadata"
-                        muted
-                      />
-                    ) : (
-                      <div className="grid h-full place-items-center text-muted-foreground/60">
-                        <Icon className="size-6 opacity-70" />
-                      </div>
-                    )}
-                  </div>
-                  <div
-                    className={cn(
-                      "truncate border-t border-border/40 px-2 py-1 text-[11px]",
-                      isActive
-                        ? "text-foreground"
-                        : "text-muted-foreground group-hover:text-foreground"
-                    )}
-                  >
-                    {m.title}
-                  </div>
-                </button>
-              )
-            })}
-            <button
-              type="button"
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2">
+            {filtered.map((m) => (
+              <MediaTile
+                key={m.id}
+                medium={m}
+                active={m.id === selectedId}
+                onSelect={() => {
+                  setSelectedId(m.id)
+                  onPick?.(m.id)
+                }}
+                onDelete={() => {
+                  deleteMut.mutate(m.id)
+                  if (selectedId === m.id) setSelectedId(null)
+                }}
+              />
+            ))}
+            <AddTile
+              label="Add media"
+              sublabel="Import"
+              busyLabel="Importing…"
+              busy={importing}
               onClick={() => void onImport()}
-              disabled={importing}
-              className="group flex aspect-[4/3] flex-col items-center justify-center gap-1 rounded border border-dashed border-border/50 text-muted-foreground/40 transition-colors hover:border-border hover:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <PlusIcon className="size-5" />
-              <span className="text-[11px]">
-                {importing ? "Importing…" : "Add media"}
-              </span>
-            </button>
+            />
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function MediaTile({
+  medium,
+  active,
+  onSelect,
+  onDelete,
+}: {
+  medium: Medium
+  active: boolean
+  onSelect: () => void
+  onDelete: () => void
+}) {
+  const Icon = iconFor(medium.type)
+  const [pendingDelete, setPendingDelete] = useState(false)
+  const tileRef = useRef<HTMLDivElement | null>(null)
+
+  // Click anywhere outside the tile cancels a pending delete — same
+  // affordance as the templates / overlays tabs. Without this, the
+  // red "click to confirm" state would persist until the user
+  // explicitly cancels, which is a footgun.
+  useEffect(() => {
+    if (!pendingDelete) return
+    function handler(e: MouseEvent) {
+      const target = e.target as HTMLElement | null
+      if (!target) return
+      if (tileRef.current?.contains(target)) return
+      setPendingDelete(false)
+    }
+    document.addEventListener("mousedown", handler)
+    return () => document.removeEventListener("mousedown", handler)
+  }, [pendingDelete])
+
+  return (
+    <div
+      ref={tileRef}
+      className={cn(
+        "group relative flex flex-col overflow-hidden rounded border bg-background transition-colors",
+        active
+          ? "border-foreground/60 ring-1 ring-foreground/40"
+          : "border-border/50 hover:border-border"
+      )}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        title={medium.original_filename}
+        className="block text-left"
+      >
+        <div className="relative aspect-video w-full overflow-hidden bg-muted/40">
+          {medium.type === "image" ? (
+            <img
+              src={`/media-asset/${medium.id}`}
+              alt={medium.title}
+              className="absolute inset-0 h-full w-full object-cover"
+              loading="lazy"
+            />
+          ) : medium.type === "video" ? (
+            <video
+              src={`/media-asset/${medium.id}`}
+              className="absolute inset-0 h-full w-full object-cover"
+              preload="metadata"
+              muted
+            />
+          ) : (
+            <div className="grid h-full place-items-center text-muted-foreground/60">
+              <Icon className="size-6 opacity-70" />
+            </div>
+          )}
+        </div>
+      </button>
+      <div
+        className={cn(
+          "flex flex-col gap-0.5 border-t border-border/40 px-2 py-1.5",
+          active
+            ? "text-foreground"
+            : "text-muted-foreground group-hover:text-foreground"
+        )}
+      >
+        <span className="truncate text-[11px] font-medium">
+          {medium.title}
+        </span>
+        <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60">
+          {medium.type}
+        </span>
+      </div>
+      {/* Delete affordance — hover-revealed in the top-right corner.
+          A `span role="button"` so it isn't a nested button (invalid
+          HTML); identical pattern to templates / overlays tiles. */}
+      <span
+        role="button"
+        aria-label={pendingDelete ? "Confirm delete" : "Delete"}
+        tabIndex={0}
+        onClick={(e) => {
+          e.stopPropagation()
+          if (pendingDelete) {
+            onDelete()
+            setPendingDelete(false)
+          } else {
+            setPendingDelete(true)
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            e.stopPropagation()
+            if (pendingDelete) {
+              onDelete()
+              setPendingDelete(false)
+            } else {
+              setPendingDelete(true)
+            }
+          }
+        }}
+        className={cn(
+          "absolute right-1.5 top-1.5 grid size-6 cursor-pointer place-items-center rounded transition-opacity",
+          pendingDelete
+            ? "bg-destructive text-destructive-foreground opacity-100"
+            : "bg-background/70 text-muted-foreground backdrop-blur opacity-0 hover:bg-destructive/30 hover:text-destructive group-hover:opacity-100"
+        )}
+      >
+        {pendingDelete ? (
+          <XIcon className="size-3.5" />
+        ) : (
+          <Trash2Icon className="size-3.5" />
+        )}
+      </span>
     </div>
   )
 }

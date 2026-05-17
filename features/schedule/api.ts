@@ -1,5 +1,10 @@
 import { useCallback } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query"
 import { Service as Schedule } from "@/bindings/neoprojector/services/schedule"
 import { BibleRef, OverlayItemSpec } from "@/bindings/neoprojector/services/schedule"
 import type {
@@ -265,57 +270,184 @@ export function useMoveItem() {
   })
 }
 
-// Section name used by the ad-hoc bible flow. Auto-created in the
-// active service when the operator broadcasts a verse from the
-// library so they can re-pick it later without re-typing.
-export const PREVIOUS_VERSES_SECTION = "Previous verses"
+// Auto-inbox section names. Created lazily in the active service when
+// the operator first sends something live from the library so they
+// can re-pick the same item later without re-finding it. Both auto-
+// sections sit at the end of the schedule; "Media from Library"
+// appears above "Scripture from Library" so the two have a stable
+// relative position regardless of which one was created first.
+export const MEDIA_FROM_LIBRARY_SECTION = "Media from Library"
+export const SCRIPTURE_FROM_LIBRARY_SECTION = "Scripture from Library"
+// Legacy: very early builds shipped "Previous verses" instead. We
+// keep accepting that name on lookup so an existing service's items
+// don't get orphaned next to a brand-new "Scripture from Library"
+// section. New sections are always created under the new name.
+const LEGACY_SCRIPTURE_SECTION = "Previous verses"
 
-// useAppendPreviousVerse: idempotently appends an ad-hoc bible
-// reference to the active service's "Previous verses" section.
-// Creates the section on first use, dedupes against existing rows so
-// re-broadcasting the same reference doesn't pile up duplicates.
+// Auto sections only appended at end never bumped to top. Order:
+// [user sections] [media] [scripture]
+const AUTO_SECTION_ORDER = [
+  MEDIA_FROM_LIBRARY_SECTION,
+  SCRIPTURE_FROM_LIBRARY_SECTION,
+  LEGACY_SCRIPTURE_SECTION,
+]
+
+function isAutoSectionName(name: string): boolean {
+  return AUTO_SECTION_ORDER.includes(name)
+}
+
+// ensureAutoSectionOrder rearranges sections so any auto-inbox
+// sections sit at the very bottom in the canonical order above.
+// User-defined sections retain their current relative order. Safe
+// to call after any auto-section create — idempotent, no-op when
+// the order is already correct.
+async function ensureAutoSectionOrder(
+  qc: QueryClient,
+  serviceId: number
+): Promise<ServiceSection[]> {
+  const sections = (await qc.fetchQuery({
+    queryKey: scheduleKeys.sections(serviceId),
+    queryFn: () =>
+      Schedule.ListSections(serviceId) as unknown as Promise<ServiceSection[]>,
+  })) as ServiceSection[]
+  const userSections = sections.filter((s) => !isAutoSectionName(s.name))
+  const autoByName = new Map<string, ServiceSection>()
+  for (const s of sections) {
+    if (isAutoSectionName(s.name)) autoByName.set(s.name, s)
+  }
+  const orderedAuto: ServiceSection[] = []
+  for (const name of AUTO_SECTION_ORDER) {
+    const s = autoByName.get(name)
+    if (s) orderedAuto.push(s)
+  }
+  const desired = [...userSections, ...orderedAuto]
+  const desiredIds = desired.map((s) => s.id)
+  const currentIds = sections.map((s) => s.id)
+  const same =
+    desiredIds.length === currentIds.length &&
+    desiredIds.every((id, i) => id === currentIds[i])
+  if (same) return sections
+  await Schedule.ReorderSections(desiredIds)
+  qc.invalidateQueries({ queryKey: scheduleKeys.sections(serviceId) })
+  return desired
+}
+
+// findOrCreateAutoSection looks up an auto-inbox section by name,
+// creating it on first use, and re-asserts the canonical bottom
+// ordering so it lands in the right place relative to siblings.
+async function findOrCreateAutoSection(
+  qc: QueryClient,
+  serviceId: number,
+  name: string,
+  alsoAcceptNames: string[] = []
+): Promise<ServiceSection> {
+  const sections = (await qc.fetchQuery({
+    queryKey: scheduleKeys.sections(serviceId),
+    queryFn: () =>
+      Schedule.ListSections(serviceId) as unknown as Promise<ServiceSection[]>,
+  })) as ServiceSection[]
+  const accepted = new Set([name, ...alsoAcceptNames])
+  let section = sections.find((s) => accepted.has(s.name))
+  if (!section) {
+    section = (await Schedule.CreateSection(
+      serviceId,
+      name
+    )) as unknown as ServiceSection
+    qc.invalidateQueries({ queryKey: scheduleKeys.sections(serviceId) })
+  }
+  await ensureAutoSectionOrder(qc, serviceId)
+  return section
+}
+
+// useAppendPreviousVerse: appends an ad-hoc bible reference to the
+// active service's "Scripture from Library" inbox. Adjacent /
+// overlapping verses MERGE into the last item rather than creating
+// a fresh one — so Mark 1:5 → Mark 1:6 → Mark 1:7 stays as a single
+// Mark 1:5-7 row instead of three. Non-adjacent refs (different
+// book, different chapter, or a gap > 1) start a new item.
+//
+// Merge rule on the last item L and new ref R when same book +
+// chapter and ranges touch or overlap (R.start <= L.end+1 AND
+// R.end+1 >= L.start): replace L with [min(starts), max(ends)].
+// Already-contained refs collapse to a no-op.
 export function useAppendPreviousVerse(serviceId: number | undefined) {
   const qc = useQueryClient()
   return useCallback(
     async (ref: BibleRef) => {
       if (!serviceId) return
-      const sections = (await qc.fetchQuery({
-        queryKey: scheduleKeys.sections(serviceId),
-        queryFn: () =>
-          Schedule.ListSections(serviceId) as unknown as Promise<
-            ServiceSection[]
-          >,
-      })) as ServiceSection[]
-      let section = sections.find(
-        (s) => s.name === PREVIOUS_VERSES_SECTION
+      const section = await findOrCreateAutoSection(
+        qc,
+        serviceId,
+        SCRIPTURE_FROM_LIBRARY_SECTION,
+        [LEGACY_SCRIPTURE_SECTION]
       )
-      if (!section) {
-        section = (await Schedule.CreateSection(
-          serviceId,
-          PREVIOUS_VERSES_SECTION
-        )) as unknown as ServiceSection
-        qc.invalidateQueries({
-          queryKey: scheduleKeys.sections(serviceId),
-        })
-      }
       const items = (await qc.fetchQuery({
         queryKey: scheduleKeys.items(section.id),
         queryFn: () =>
-          Schedule.ListItems(section!.id) as unknown as Promise<
+          Schedule.ListItems(section.id) as unknown as Promise<
             ListServiceItemsWithContentRow[]
           >,
       })) as ListServiceItemsWithContentRow[]
-      const duplicate = items.some(
-        (i) =>
-          i.kind === "bible" &&
-          i.book === ref.book &&
-          i.chapter === ref.chapter &&
-          i.verse_start === ref.verse_start &&
-          i.verse_end === ref.verse_end
-      )
-      if (duplicate) return
+
+      const last = items[items.length - 1]
+      if (
+        last &&
+        last.kind === "bible" &&
+        last.book === ref.book &&
+        last.chapter === ref.chapter
+      ) {
+        // Adjacent / overlapping → merge into last item.
+        const touches =
+          ref.verse_start <= last.verse_end + 1 &&
+          ref.verse_end + 1 >= last.verse_start
+        if (touches) {
+          const merged = {
+            book: ref.book,
+            chapter: ref.chapter,
+            verse_start: Math.min(last.verse_start, ref.verse_start),
+            verse_end: Math.max(last.verse_end, ref.verse_end),
+          }
+          if (
+            merged.verse_start === last.verse_start &&
+            merged.verse_end === last.verse_end
+          ) {
+            // Already covered — no DB write needed.
+            return
+          }
+          await Schedule.UpdateBibleItem(last.id, merged)
+          qc.invalidateQueries({ queryKey: scheduleKeys.items(section.id) })
+          return
+        }
+      }
+      // No mergeable neighbor — append a new item.
       await Schedule.AddBibleItem(section.id, ref)
       qc.invalidateQueries({ queryKey: scheduleKeys.items(section.id) })
+    },
+    [qc, serviceId]
+  )
+}
+
+// useAppendMediaFromLibrary: appends a media id to the active service's
+// "Media from Library" inbox. Same auto-section + ordering machinery
+// as the scripture inbox. No merge / dedupe behaviour — sending the
+// same media twice intentionally creates two rows so the operator can
+// build a sequence (e.g. announcement loop) from repeated clicks.
+export function useAppendMediaFromLibrary(serviceId: number | undefined) {
+  const qc = useQueryClient()
+  return useCallback(
+    async (mediaId: number): Promise<number | null> => {
+      if (!serviceId) return null
+      const section = await findOrCreateAutoSection(
+        qc,
+        serviceId,
+        MEDIA_FROM_LIBRARY_SECTION
+      )
+      const item = (await Schedule.AddMediaItem(
+        section.id,
+        mediaId
+      )) as unknown as { id: number }
+      qc.invalidateQueries({ queryKey: scheduleKeys.items(section.id) })
+      return item.id
     },
     [qc, serviceId]
   )

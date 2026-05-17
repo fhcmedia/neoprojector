@@ -1,5 +1,11 @@
 version: "3"
 
+vars:
+  APP_NAME: neoprojector
+  APP_DISPLAY: NeoProjector
+  BUNDLE_ID: org.fhcmedia.neoprojector
+  VERSION: 0.1.0
+
 tasks:
   default:
     cmds:
@@ -22,37 +28,111 @@ tasks:
     cmds:
       - sqlc generate
 
+  generate:icons:
+    desc: Regenerate icons.icns + icon.ico from build/appicon.png
+    cmds:
+      - cd build && go tool wails3 generate icons -input appicon.png -macfilename icons.icns -windowsfilename icon.ico
+
   migrate:
     desc: Run goose migrations, e.g. task migrate -- -db ./neoprojector.db up
     cmds:
       - go run ./cmd/migrate {{.CLI_ARGS}}
 
-  build:mac:
-    desc: Universal macOS build (Intel + Apple Silicon)
-    deps: [generate:bindings]
+  # ---- Build pipeline ---------------------------------------------------------
+  #
+  # wails3 alpha-89's `build` subcommand delegates to a hidden `<os>:build`
+  # task and is missing the -platform/-clean flags older docs reference. We
+  # bypass it and call `go build` directly with platform-specific tags, then
+  # assemble the .app bundle ourselves on macOS. Cross-compilation works for
+  # Linux but is unreliable for Windows/macOS because of CGO + native UI
+  # toolkits — build those on native hosts (or CI runners).
+
+  build:clean:
+    desc: Remove previous build artifacts under ./bin
     cmds:
-      - go tool wails3 build -clean -platform darwin/universal
+      - rm -rf bin
+
+  # Build the frontend bundle that's embedded into the Go binary. Without
+  # this step, `go build` embeds whatever `dist/` happened to contain
+  # last — including stale UI that won't match the current backend
+  # schema and can stall the app at splash.
+  #
+  # Bindings must exist before this runs (the frontend imports them).
+  # We delete the tsbuildinfo cache first because `tsc -b` reads it
+  # from the previous run and can falsely flag modules as unresolved.
+  build:frontend:
+    desc: Build the embedded frontend bundle (pnpm build)
+    cmds:
+      - task: generate:bindings
+      - rm -f tsconfig.tsbuildinfo
+      - pnpm install --frozen-lockfile
+      - pnpm build
+
+  # All build:* tasks call sub-tasks via `task: name` in cmds rather
+  # than the `deps:` array — `deps:` runs items in parallel, which
+  # races (frontend tries to compile before bindings exist). Serial
+  # in cmds keeps the pipeline deterministic.
+
+  build:mac:
+    desc: macOS .app bundle for the current arch
+    cmds:
+      - task: build:clean
+      - task: build:frontend
+      - go build -tags production -ldflags="-w -s" -o bin/{{.APP_NAME}} .
+      - task: package:mac
+
+  build:mac:universal:
+    desc: Universal macOS .app bundle (Intel + Apple Silicon via lipo)
+    cmds:
+      - task: build:clean
+      - task: build:frontend
+      - GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -tags production -ldflags="-w -s" -o bin/{{.APP_NAME}}-arm64 .
+      - GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -tags production -ldflags="-w -s" -o bin/{{.APP_NAME}}-amd64 .
+      - go tool wails3 tool lipo -input bin/{{.APP_NAME}}-arm64 -input bin/{{.APP_NAME}}-amd64 -output bin/{{.APP_NAME}}
+      - rm bin/{{.APP_NAME}}-arm64 bin/{{.APP_NAME}}-amd64
+      - task: package:mac
+
+  # package:mac copies the built binary into the .app skeleton. The raw
+  # bin/{{.APP_NAME}} is left in place so you can launch the app from a
+  # terminal (handy when you want stdout/log file location visible);
+  # bin/{{.APP_DISPLAY}}.app is the bundle you'd ship / put in /Applications.
+  # Both files are the same binary on disk; they just live at two paths.
+  package:mac:
+    desc: Wrap bin/{{.APP_NAME}} as bin/{{.APP_DISPLAY}}.app
+    cmds:
+      - rm -rf bin/{{.APP_DISPLAY}}.app
+      - mkdir -p bin/{{.APP_DISPLAY}}.app/Contents/MacOS
+      - mkdir -p bin/{{.APP_DISPLAY}}.app/Contents/Resources
+      - cp build/darwin/Info.plist bin/{{.APP_DISPLAY}}.app/Contents/Info.plist
+      - cp build/icons.icns bin/{{.APP_DISPLAY}}.app/Contents/Resources/icons.icns
+      - cp bin/{{.APP_NAME}} bin/{{.APP_DISPLAY}}.app/Contents/MacOS/{{.APP_NAME}}
+      - chmod +x bin/{{.APP_DISPLAY}}.app/Contents/MacOS/{{.APP_NAME}}
 
   build:windows:
-    desc: Windows build
-    deps: [generate:bindings]
+    desc: Windows .exe (run on a Windows host)
     cmds:
-      - go tool wails3 build -clean -platform windows/amd64
+      - task: build:clean
+      - task: build:frontend
+      - cd build && go tool wails3 generate syso -arch amd64 -icon windows/icon.ico -manifest windows/wails.exe.manifest -info windows/info.json -out ../wails_windows.syso
+      - GOOS=windows GOARCH=amd64 CGO_ENABLED=1 go build -tags production -ldflags="-w -s -H windowsgui" -o bin/{{.APP_NAME}}.exe .
+      - rm -f wails_windows.syso
 
   build:linux:
-    desc: Linux build
-    deps: [generate:bindings]
+    desc: Linux binary (run on a Linux host)
     cmds:
-      - go tool wails3 build -clean -platform linux/amd64
+      - task: build:clean
+      - task: build:frontend
+      - GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -tags production -ldflags="-w -s" -o bin/{{.APP_NAME}} .
 
   build:all:
-    desc: Build for all platforms
-    deps: [build:mac, build:windows, build:linux]
+    desc: Native build for the current host platform only — cross-platform via CI
+    cmds:
+      - task: build:mac
 
   clean:
     desc: Remove build artifacts
     cmds:
-      - rm -rf build/bin
+      - rm -rf bin
       - rm -rf dist
       - rm -rf node_modules
       - rm -rf bindings

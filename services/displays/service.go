@@ -39,6 +39,13 @@ type LivePayload struct {
 	SourceItemID   int64               `json:"source_item_id"`
 	SlideIndex     int64               `json:"slide_index"`
 	ActiveOverlays []OverlayActivation `json:"active_overlays"`
+	// Optional transition override for the audience output. Set when
+	// the live source is a presentation (the per-presentation
+	// transition wins over the template's own — presentation slides
+	// don't go through a template anyway). Empty string in
+	// TransitionKind = "no override, use template default."
+	TransitionKind       string `json:"transition_kind,omitempty"`
+	TransitionDurationMs int64  `json:"transition_duration_ms,omitempty"`
 	// Per-template uniform fontSize override for the currently-
 	// broadcasting item. Keyed by template id (as a string, since
 	// JSON maps require string keys). Each entry is a SINGLE fontSize

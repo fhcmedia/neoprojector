@@ -20,15 +20,23 @@ import { SongsTab } from "@/features/library/songs-tab"
 import { MediaTab } from "@/features/library/media-tab"
 import { TemplatesTab } from "@/features/library/templates-tab"
 import { OverlaysTab } from "@/features/library/overlays-tab"
+import { PresentationsTab } from "@/features/library/presentations-tab"
 import { parseBibleRef } from "@/features/schedule/bible-ref"
 import { formatBibleRef } from "@/features/bible/categories"
 
-type Tab = "bible" | "songs" | "media" | "templates" | "overlays"
+type Tab =
+  | "bible"
+  | "songs"
+  | "media"
+  | "presentations"
+  | "templates"
+  | "overlays"
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "bible", label: "Bible" },
   { key: "songs", label: "Songs" },
   { key: "media", label: "Media" },
+  { key: "presentations", label: "Presentations" },
   { key: "templates", label: "Templates" },
   { key: "overlays", label: "Overlays" },
 ]
@@ -43,9 +51,16 @@ type MediaDropPayload = {
 
 type LibraryViewProps = {
   onAdHocBibleRef?: (ref: AdHocBibleRef) => void
+  // Called when the operator clicks a media tile. Parent decides
+  // what "click" means (typically: append to the auto-inbox + focus
+  // the new schedule item so its preview shows in the show pane).
+  onMediaPick?: (mediaId: number) => void
 }
 
-export function LibraryView({ onAdHocBibleRef }: LibraryViewProps = {}) {
+export function LibraryView({
+  onAdHocBibleRef,
+  onMediaPick,
+}: LibraryViewProps = {}) {
   const navigate = useNavigate()
   // Library state is session-persisted: active tab + per-tab search
   // strings survive route changes (template editor and back) within
@@ -73,6 +88,10 @@ export function LibraryView({ onAdHocBibleRef }: LibraryViewProps = {}) {
   )
   const [overlaySearch, setOverlaySearch] = useSessionState<string>(
     "neoprojector.overlaySearch",
+    ""
+  )
+  const [presentationSearch, setPresentationSearch] = useSessionState<string>(
+    "neoprojector.presentationSearch",
     ""
   )
 
@@ -249,6 +268,21 @@ export function LibraryView({ onAdHocBibleRef }: LibraryViewProps = {}) {
                 />
               </motion.div>
             )}
+            {active === "presentations" && (
+              <motion.div
+                key="presentations-controls"
+                initial={{ opacity: 0, x: 6 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -6 }}
+                transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
+                className="flex h-full w-full items-center gap-2"
+              >
+                <PresentationSearchInput
+                  value={presentationSearch}
+                  onChange={setPresentationSearch}
+                />
+              </motion.div>
+            )}
           </AnimatePresence>
         </div>
       </div>
@@ -275,6 +309,7 @@ export function LibraryView({ onAdHocBibleRef }: LibraryViewProps = {}) {
                 importing={importing}
                 onImport={openMediaFileDialog}
                 dropTarget={MEDIA_DROP_TARGET}
+                onPick={onMediaPick}
               />
             )}
             {active === "templates" && (
@@ -295,6 +330,17 @@ export function LibraryView({ onAdHocBibleRef }: LibraryViewProps = {}) {
                   navigate({
                     to: "/overlays/$overlayId",
                     params: { overlayId: String(o.id) },
+                  })
+                }
+              />
+            )}
+            {active === "presentations" && (
+              <PresentationsTab
+                search={presentationSearch}
+                onOpen={(p) =>
+                  navigate({
+                    to: "/presentations/$presentationId",
+                    params: { presentationId: String(p.id) },
                   })
                 }
               />
@@ -582,6 +628,27 @@ function OverlaySearchInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Search overlays"
+        data-library-search
+        className="h-6 rounded-none border-0 bg-transparent pl-7 pr-2 py-0 text-xs shadow-none focus-visible:ring-0 dark:bg-transparent"
+      />
+    </div>
+  )
+}
+
+function PresentationSearchInput({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <div className="relative h-6 w-full max-w-[260px]">
+      <SearchIcon className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Search presentations"
         data-library-search
         className="h-6 rounded-none border-0 bg-transparent pl-7 pr-2 py-0 text-xs shadow-none focus-visible:ring-0 dark:bg-transparent"
       />

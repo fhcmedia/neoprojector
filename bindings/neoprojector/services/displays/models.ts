@@ -105,6 +105,16 @@ export class LivePayload {
     "active_overlays": OverlayActivation[];
 
     /**
+     * Optional transition override for the audience output. Set when
+     * the live source is a presentation (the per-presentation
+     * transition wins over the template's own — presentation slides
+     * don't go through a template anyway). Empty string in
+     * TransitionKind = "no override, use template default."
+     */
+    "transition_kind"?: string;
+    "transition_duration_ms"?: number;
+
+    /**
      * Per-template uniform fontSize override for the currently-
      * broadcasting item. Keyed by template id (as a string, since
      * JSON maps require string keys). Each entry is a SINGLE fontSize
@@ -152,7 +162,7 @@ export class LivePayload {
     static createFrom($$source: any = {}): LivePayload {
         const $$createField1_0 = $$createType2;
         const $$createField4_0 = $$createType4;
-        const $$createField5_0 = $$createType5;
+        const $$createField7_0 = $$createType5;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("fill" in $$parsedSource) {
             $$parsedSource["fill"] = $$createField1_0($$parsedSource["fill"]);
@@ -161,7 +171,7 @@ export class LivePayload {
             $$parsedSource["active_overlays"] = $$createField4_0($$parsedSource["active_overlays"]);
         }
         if ("font_size_override_by_template" in $$parsedSource) {
-            $$parsedSource["font_size_override_by_template"] = $$createField5_0($$parsedSource["font_size_override_by_template"]);
+            $$parsedSource["font_size_override_by_template"] = $$createField7_0($$parsedSource["font_size_override_by_template"]);
         }
         return new LivePayload($$parsedSource as Partial<LivePayload>);
     }

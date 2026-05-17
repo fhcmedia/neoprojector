@@ -1,0 +1,259 @@
+name: Release
+
+# Triggers:
+#   - push to main: build all three platforms, publish a PRERELEASE
+#     versioned `<config-version>-beta.<run-number>`. This is the
+#     "every commit becomes a beta build" path.
+#   - push of a tag matching `v*` (e.g. v0.1.1): build all three
+#     platforms, publish a STABLE release at that tag. This is the
+#     "manual cut a real version" path.
+#
+# Both flows reuse the same build matrix and upload-to-Release
+# steps so beta and stable artifacts look identical except for the
+# tag and the prerelease flag.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+# Cancel an in-progress run if a new push lands on the same ref —
+# avoids stacking beta builds on a fast-moving branch.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # required for softprops/action-gh-release
+
+env:
+  GO_VERSION: "1.26.3"
+  NODE_VERSION: "22"
+  PNPM_VERSION: "10"
+
+jobs:
+  # --- version: decides the tag + prerelease flag once so every -----------
+  # downstream build sees the same value. Outputs feed into needs.* in the
+  # build and release jobs.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+      tag: ${{ steps.compute.outputs.tag }}
+      prerelease: ${{ steps.compute.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: compute
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            TAG="${{ github.ref_name }}"
+            VERSION="${TAG#v}"
+            PRERELEASE="false"
+          else
+            # Pull the base version from build/config.yml — the
+            # single source of truth for "what version are we
+            # working toward." Beta builds append .beta.<run-number>
+            # so every commit produces a unique, monotonically-
+            # increasing tag the CI can publish without conflicts.
+            BASE=$(awk -F'"' '/^  version:/ {print $2}' build/config.yml)
+            if [[ -z "$BASE" ]]; then
+              echo "could not read version from build/config.yml" >&2
+              exit 1
+            fi
+            VERSION="${BASE}-beta.${{ github.run_number }}"
+            TAG="v${VERSION}"
+            PRERELEASE="true"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "::notice::Building $TAG (prerelease=$PRERELEASE)"
+
+  # --- macOS: universal .app bundle ---------------------------------------
+  # We lipo the arm64 + amd64 binaries together so one .app runs on
+  # Intel and Apple Silicon. The bundle is zipped (not codesigned) —
+  # downloaders right-click → Open the first time to bypass Gatekeeper.
+  build-mac:
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - uses: arduino/setup-task@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build universal macOS bundle
+        run: task build:mac:universal
+      - name: Package .app bundle
+        run: |
+          cd bin
+          zip -ryq "neoprojector-${{ needs.version.outputs.version }}-mac.zip" \
+            "NeoProjector.app"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mac
+          path: bin/neoprojector-*-mac.zip
+          retention-days: 7
+
+  # --- Windows: .exe ------------------------------------------------------
+  # No NSIS installer yet — distribute the raw .exe in a zip. CGO is
+  # supplied by the runner's mingw-w64. SmartScreen will warn on first
+  # launch (no code-signing cert), users click through.
+  build-windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - uses: arduino/setup-task@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Windows .exe
+        shell: bash
+        run: task build:windows
+      - name: Package .exe
+        shell: bash
+        run: |
+          cd bin
+          7z a "neoprojector-${{ needs.version.outputs.version }}-windows.zip" neoprojector.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: bin/neoprojector-*-windows.zip
+          retention-days: 7
+
+  # --- Linux: tar.gz of the binary ----------------------------------------
+  # GTK4 + WebKitGTK 6.0 headers are required for Wails v3 alpha on
+  # Linux. Anything older silently links a stub and crashes at start.
+  # AppImage packaging is a follow-up — for now ship the binary in a
+  # tarball; users `chmod +x` and run.
+  build-linux:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GTK4 + WebKitGTK dev packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-4-dev \
+            libwebkitgtk-6.0-dev \
+            pkg-config
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - uses: arduino/setup-task@v2
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Linux binary
+        run: task build:linux
+      - name: Package binary
+        run: |
+          cd bin
+          tar -czf "neoprojector-${{ needs.version.outputs.version }}-linux.tar.gz" neoprojector
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: bin/neoprojector-*-linux.tar.gz
+          retention-days: 7
+
+  # --- Release: download all three artifacts and publish ------------------
+  release:
+    needs: [version, build-mac, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: List artifacts
+        run: ls -la artifacts/
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: ${{ needs.version.outputs.tag }}
+          prerelease: ${{ needs.version.outputs.prerelease }}
+          # Replace existing release artifacts when re-running the
+          # same tag — useful when an Action retry doesn't actually
+          # mean "a new release is intended."
+          fail_on_unmatched_files: true
+          files: |
+            artifacts/neoprojector-*-mac.zip
+            artifacts/neoprojector-*-windows.zip
+            artifacts/neoprojector-*-linux.tar.gz
+          body: |
+            Built from `${{ github.sha }}` on `${{ github.ref }}`.
+
+            **Artifacts**
+            - `neoprojector-${{ needs.version.outputs.version }}-mac.zip` — universal .app bundle (Intel + Apple Silicon)
+            - `neoprojector-${{ needs.version.outputs.version }}-windows.zip` — Windows .exe
+            - `neoprojector-${{ needs.version.outputs.version }}-linux.tar.gz` — Linux binary
+
+            On first launch macOS/Windows users may need to bypass
+            Gatekeeper / SmartScreen — this build is not yet signed.
+
+      # --- Public mirror to S3-compatible storage --------------------------
+      # Cloudflare R2 / Backblaze B2 / Railway T3 / any S3-API store.
+      # Skipped automatically when the bucket secret isn't configured, so
+      # the workflow stays useful for forks that don't have a CDN set up.
+      # Writes the artifacts under two prefixes:
+      #   - <version>/  — immutable, version-specific URLs
+      #   - latest/     — overwritten on every STABLE release so the
+      #                    branding site can keep a single link that
+      #                    always points at the most recent build.
+      # Beta builds don't touch /latest so we don't accidentally point
+      # public download links at a prerelease.
+      - name: Mirror artifacts to public S3 bucket
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.S3_REGION }}
+          S3_BUCKET: ${{ secrets.S3_BUCKET }}
+          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT_URL }}
+          VERSION: ${{ needs.version.outputs.version }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          # `secrets.*` can't be referenced in `if:` directly, so the
+          # skip check lives here — forks without the S3_BUCKET secret
+          # configured get a no-op step instead of a failed workflow.
+          if [[ -z "${S3_BUCKET:-}" ]]; then
+            echo "S3_BUCKET secret not set — skipping public mirror."
+            exit 0
+          fi
+          aws s3 cp artifacts/ "s3://${S3_BUCKET}/${VERSION}/" \
+            --recursive \
+            --endpoint-url "${S3_ENDPOINT}"
+          if [[ "${PRERELEASE}" == "false" ]]; then
+            aws s3 cp artifacts/ "s3://${S3_BUCKET}/latest/" \
+              --recursive \
+              --endpoint-url "${S3_ENDPOINT}"
+          fi

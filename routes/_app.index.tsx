@@ -19,7 +19,10 @@ import { EditItemDialog } from "@/features/schedule/edit-item-dialog"
 import { LibraryView } from "@/features/library/library-view"
 import { DisplayPreviewPane } from "@/features/displays/display-preview-pane"
 import { ShowPane, type AdHocBibleRef } from "@/features/show/show-pane"
-import { useAppendPreviousVerse } from "@/features/schedule/api"
+import {
+  useAppendPreviousVerse,
+  useAppendMediaFromLibrary,
+} from "@/features/schedule/api"
 
 type Search = {
   service?: number
@@ -121,9 +124,15 @@ function Projector() {
   }
 
   // Auto-append the broadcast reference to the active service's
-  // "Previous verses" section so the operator can re-pick it from
-  // the schedule later without retyping. Dedupes on identical refs.
+  // "Scripture from Library" inbox so the operator can re-pick it
+  // from the schedule later without retyping. Adjacent verses merge
+  // into the last item — Mark 1:5 then 1:6 stays one row as 1:5-6.
   const appendPreviousVerse = useAppendPreviousVerse(activeServiceId)
+  // Mirror behaviour for media — appends to "Media from Library" so
+  // anything sent from the media tab persists for the rest of the
+  // service. No merge / dedupe: clicking the same media twice creates
+  // two rows so the operator can build a sequence.
+  const appendMediaFromLibrary = useAppendMediaFromLibrary(activeServiceId)
 
   // Library Enter sets the ad-hoc ref AND clears active item so the
   // show pane swaps over cleanly.
@@ -136,6 +145,16 @@ function Projector() {
       verse_start: ref.verseStart,
       verse_end: ref.verseEnd,
     })
+  }
+
+  // Media tile click in the library: append to the inbox, then set
+  // the new schedule item as the show-pane source so the operator
+  // immediately sees the preview (and can click that to go live).
+  const handleMediaPick = async (mediaId: number) => {
+    const newItemId = await appendMediaFromLibrary(mediaId)
+    if (newItemId !== null && newItemId !== undefined) {
+      setActiveItemId(newItemId)
+    }
   }
 
   // Persisted "last opened" service id. Survives back-out so the service
@@ -294,7 +313,10 @@ function Projector() {
       </ResizablePanel>
       <ResizableHandle />
       <ResizablePanel defaultSize="30%" minSize="10%" maxSize="60%">
-        <LibraryView onAdHocBibleRef={submitAdHocBibleRef} />
+        <LibraryView
+          onAdHocBibleRef={submitAdHocBibleRef}
+          onMediaPick={handleMediaPick}
+        />
       </ResizablePanel>
     </ResizablePanelGroup>
   )

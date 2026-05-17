@@ -43,6 +43,12 @@ export type LiveSlide = {
   fontSizeOverrideByTemplate?: {
     [templateId: number]: number
   }
+  // Optional transition override. Set by presentation playback so
+  // the audience honors the operator's per-presentation transition
+  // choice instead of the template's default fade. Falsy values are
+  // treated as "no override, use template default."
+  transitionKind?: string
+  transitionDurationMs?: number
 }
 
 // ActiveOverlay = an overlay schedule item the operator has toggled
@@ -232,6 +238,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       source_item_id: live?.sourceItemId ?? 0,
       slide_index: live?.slideIndex ?? 0,
       font_size_override_by_template: overrideByTemplate,
+      transition_kind: live?.transitionKind ?? "",
+      transition_duration_ms: live?.transitionDurationMs ?? 0,
       fill: live
         ? new LiveFill({
             primary: asString(live.fill.primary),

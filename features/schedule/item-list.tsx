@@ -4,6 +4,7 @@ import {
   BookOpenIcon,
   ImageIcon,
   FileQuestionIcon,
+  FilmIcon,
   LayersIcon,
   Trash2Icon,
   GripVerticalIcon,
@@ -295,6 +296,8 @@ function iconFor(kind: string) {
       return ImageIcon
     case "overlay":
       return LayersIcon
+    case "presentation":
+      return FilmIcon
     default:
       return FileQuestionIcon
   }

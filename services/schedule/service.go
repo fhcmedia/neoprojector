@@ -201,6 +201,29 @@ func (s *Service) AddMediaItem(ctx context.Context, sectionID, mediaID int64) (d
 	return out, err
 }
 
+// AddPresentationItem links a presentation into a schedule section.
+// Same shape as AddMediaItem: one row in service_item, one row in
+// the per-kind binding table, both in a single transaction so a
+// crash mid-add can't leave an orphan item with no kind.
+func (s *Service) AddPresentationItem(ctx context.Context, sectionID, presentationID int64) (database.ServiceItem, error) {
+	var out database.ServiceItem
+	err := s.inTx(ctx, func(q *database.Queries) error {
+		item, err := q.CreateServiceItemAppend(ctx, sectionID)
+		if err != nil {
+			return err
+		}
+		if _, err := q.CreateServiceItemPresentation(ctx, database.CreateServiceItemPresentationParams{
+			ItemID:         item.ID,
+			PresentationID: presentationID,
+		}); err != nil {
+			return err
+		}
+		out = item
+		return nil
+	})
+	return out, err
+}
+
 // OverlayItemSpec carries the snapshot the frontend builds from a
 // library overlay (or a fresh registry default) when the operator
 // adds the overlay to a service section. config_json/layouts_json/

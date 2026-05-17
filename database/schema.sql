@@ -167,3 +167,33 @@ CREATE TABLE IF NOT EXISTS display (
   created_at         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS presentation (
+  id                     INTEGER PRIMARY KEY,
+  name                   TEXT NOT NULL,
+  loop                   INTEGER NOT NULL DEFAULT 0,
+  interval_ms            INTEGER NOT NULL DEFAULT 5000,
+  transition_kind        TEXT NOT NULL DEFAULT 'fade',
+  transition_duration_ms INTEGER NOT NULL DEFAULT 500,
+  created_at             TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at             TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS presentation_slide (
+  id              INTEGER PRIMARY KEY,
+  presentation_id INTEGER NOT NULL REFERENCES presentation(id) ON DELETE CASCADE,
+  position        INTEGER NOT NULL DEFAULT 0,
+  media_id        INTEGER NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+  created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_presentation_slide_presentation
+  ON presentation_slide(presentation_id, position);
+
+CREATE TABLE IF NOT EXISTS service_item_presentation (
+  item_id         INTEGER PRIMARY KEY REFERENCES service_item(id) ON DELETE CASCADE,
+  presentation_id INTEGER NOT NULL REFERENCES presentation(id) ON DELETE CASCADE,
+  created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

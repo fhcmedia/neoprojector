@@ -3,10 +3,10 @@ import { AnimatePresence, motion } from "motion/react"
 import {
   CopyIcon,
   LockIcon,
-  PlusIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react"
+import { AddTile } from "@/features/library/add-tile"
 import { useDebounce } from "@/hooks/use-debounce"
 import { cn } from "@/lib/utils"
 import {
@@ -81,7 +81,7 @@ export function OverlaysTab({ search, onOpen }: Props) {
             />
           ))}
         </AnimatePresence>
-        <AddTile
+        <AddOverlayTile
           onPick={(kind) =>
             createMut.mutate(buildCreateInputForKind(kind), {
               onSuccess: onOpen,
@@ -248,19 +248,15 @@ function OverlayTile({
   )
 }
 
-// AddTile: dropdown of widget kinds. Picking one creates a fresh
-// overlay seeded from that kind's registry defaults and opens it.
-function AddTile({ onPick }: { onPick: (kind: WidgetKind) => void }) {
+// AddOverlayTile: same dashed "+" shell as media / templates (via
+// AddTile), but wrapped in a DropdownMenu so picking creates a fresh
+// overlay seeded from the chosen widget's registry defaults. The
+// trigger is `asChild` — the AddTile button IS the trigger.
+function AddOverlayTile({ onPick }: { onPick: (kind: WidgetKind) => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className="flex aspect-video w-full flex-col items-center justify-center gap-1.5 rounded border border-dashed border-border/50 text-xs text-muted-foreground transition-colors hover:border-border hover:text-foreground"
-        >
-          <PlusIcon className="size-4" />
-          <span>Add overlay</span>
-        </button>
+        <AddTile label="Add overlay" sublabel="New" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" sideOffset={4} className="min-w-[200px]">
         {Object.values(WIDGETS).map((w) => {

@@ -15,6 +15,7 @@ import (
 	"neoprojector/services/displays"
 	"neoprojector/services/media"
 	"neoprojector/services/overlays"
+	"neoprojector/services/presentations"
 	"neoprojector/services/schedule"
 	"neoprojector/services/songs"
 	"neoprojector/services/templates"
@@ -24,6 +25,14 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
+
+// spaFallback is build-tag-gated. See spa_prod.go and spa_dev.go for
+// the two implementations. Production wraps the asset handler so
+// /splash falls back to /index.html (the embedded dist has no
+// matching file — see commentary in spa_prod.go). Dev is an identity
+// wrapper: the wails3 dev command proxies to the vite dev server,
+// which already does SPA routing AND needs the original path for
+// HMR to work — rewriting would break hot reload.
 
 // mediaAssetMiddleware intercepts GET /media-asset/{id} and serves the
 // corresponding media file from disk. This lets the frontend render real
@@ -78,7 +87,7 @@ func mediaStorageDir() string {
 var assets embed.FS
 
 func main() {
-	charmlog.SetLevel(charmlog.DebugLevel)
+	setupLogging()
 
 	dbPath, err := xdg.DataFile("neoprojector/neoprojector.db")
 	if err != nil {
@@ -105,9 +114,10 @@ func main() {
 			application.NewService(templates.New(db)),
 			application.NewService(displays.New(db)),
 			application.NewService(overlays.New(db)),
+			application.NewService(presentations.New(db)),
 		},
 		Assets: application.AssetOptions{
-			Handler: application.AssetFileServerFS(assets),
+			Handler: spaFallback(application.AssetFileServerFS(assets)),
 			Middleware: func(next http.Handler) http.Handler {
 				return mediaAssetMiddleware(db, next)
 			},

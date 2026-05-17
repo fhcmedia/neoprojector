@@ -309,6 +309,7 @@ export function LiveTemplateView({
   className,
   empty,
   fontSizeOverride,
+  transitionOverride,
 }: {
   template: RawTemplate | null | undefined
   fill: SlotFill
@@ -321,11 +322,17 @@ export function LiveTemplateView({
   // primary/secondary/tertiary translation boxes stay aligned,
   // every verse in the active item renders at the same size.
   fontSizeOverride?: number
+  // Optional transition override for THIS slide. Used by
+  // presentations to broadcast their per-presentation transition
+  // (the template default is used otherwise). Undefined = use the
+  // template-declared transition.
+  transitionOverride?: { kind: string; duration_ms: number }
 }) {
   const transition = useMemo(() => {
+    if (transitionOverride) return transitionOverride
     if (!template) return DEFAULT_TRANSITION
     return parseTemplateBody(template.data_json).transition ?? DEFAULT_TRANSITION
-  }, [template])
+  }, [template, transitionOverride])
   const durationMs = transition.duration_ms
 
   // Two distinct state buckets:
@@ -478,6 +485,14 @@ function CrossfadeLayer({
           fontSizeOverride={fontSizeOverride}
           className="h-full w-full"
         />
+      ) : layer.fill.media ? (
+        // No template but a media fill → render the media bytes
+        // directly as a full-bleed background. This is the path for
+        // single-media schedule items and presentation slides, since
+        // displays don't ship with a "media template" binding.
+        <div className="absolute inset-0">
+          <MediaSurface media={layer.fill.media} />
+        </div>
       ) : (
         layer.empty
       )}

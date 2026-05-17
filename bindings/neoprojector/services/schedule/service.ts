@@ -31,6 +31,18 @@ export function AddOverlayItem(sectionID: number, spec: $models.OverlayItemSpec)
     });
 }
 
+/**
+ * AddPresentationItem links a presentation into a schedule section.
+ * Same shape as AddMediaItem: one row in service_item, one row in
+ * the per-kind binding table, both in a single transaction so a
+ * crash mid-add can't leave an orphan item with no kind.
+ */
+export function AddPresentationItem(sectionID: number, presentationID: number): $CancellablePromise<database$0.ServiceItem> {
+    return $Call.ByID(3219830327, sectionID, presentationID).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
 export function AddSongItem(sectionID: number, songID: number): $CancellablePromise<database$0.ServiceItem> {
     return $Call.ByID(670158314, sectionID, songID).then(($result: any) => {
         return $$createType0($result);

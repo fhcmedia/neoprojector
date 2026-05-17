@@ -20,7 +20,11 @@ func NewApp(db *sql.DB) *App {
 }
 
 func (a *App) Initialize() {
-	splash := application.Get().Window.Current()
+	app := application.Get()
+	splash, ok := app.Window.GetByName("splash")
+	if !ok {
+		splash = app.Window.Current()
+	}
 	go a.runInit(splash)
 }
 

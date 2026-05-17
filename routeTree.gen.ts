@@ -17,6 +17,7 @@ import { Route as OutputDisplayIdRouteImport } from './routes/output.$displayId'
 import { Route as AppSettingsRouteImport } from './routes/_app.settings'
 import { Route as AppPresenterRouteImport } from './routes/_app.presenter'
 import { Route as AppTemplatesTemplateIdRouteImport } from './routes/_app.templates.$templateId'
+import { Route as AppPresentationsPresentationIdRouteImport } from './routes/_app.presentations.$presentationId'
 import { Route as AppOverlaysOverlayIdRouteImport } from './routes/_app.overlays.$overlayId'
 
 const SplashRoute = SplashRouteImport.update({
@@ -58,6 +59,12 @@ const AppTemplatesTemplateIdRoute = AppTemplatesTemplateIdRouteImport.update({
   path: '/templates/$templateId',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPresentationsPresentationIdRoute =
+  AppPresentationsPresentationIdRouteImport.update({
+    id: '/presentations/$presentationId',
+    path: '/presentations/$presentationId',
+    getParentRoute: () => AppRoute,
+  } as any)
 const AppOverlaysOverlayIdRoute = AppOverlaysOverlayIdRouteImport.update({
   id: '/overlays/$overlayId',
   path: '/overlays/$overlayId',
@@ -72,6 +79,7 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AppSettingsRoute
   '/output/$displayId': typeof OutputDisplayIdRoute
   '/overlays/$overlayId': typeof AppOverlaysOverlayIdRoute
+  '/presentations/$presentationId': typeof AppPresentationsPresentationIdRoute
   '/templates/$templateId': typeof AppTemplatesTemplateIdRoute
 }
 export interface FileRoutesByTo {
@@ -82,6 +90,7 @@ export interface FileRoutesByTo {
   '/output/$displayId': typeof OutputDisplayIdRoute
   '/': typeof AppIndexRoute
   '/overlays/$overlayId': typeof AppOverlaysOverlayIdRoute
+  '/presentations/$presentationId': typeof AppPresentationsPresentationIdRoute
   '/templates/$templateId': typeof AppTemplatesTemplateIdRoute
 }
 export interface FileRoutesById {
@@ -94,6 +103,7 @@ export interface FileRoutesById {
   '/output/$displayId': typeof OutputDisplayIdRoute
   '/_app/': typeof AppIndexRoute
   '/_app/overlays/$overlayId': typeof AppOverlaysOverlayIdRoute
+  '/_app/presentations/$presentationId': typeof AppPresentationsPresentationIdRoute
   '/_app/templates/$templateId': typeof AppTemplatesTemplateIdRoute
 }
 export interface FileRouteTypes {
@@ -106,6 +116,7 @@ export interface FileRouteTypes {
     | '/settings'
     | '/output/$displayId'
     | '/overlays/$overlayId'
+    | '/presentations/$presentationId'
     | '/templates/$templateId'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -116,6 +127,7 @@ export interface FileRouteTypes {
     | '/output/$displayId'
     | '/'
     | '/overlays/$overlayId'
+    | '/presentations/$presentationId'
     | '/templates/$templateId'
   id:
     | '__root__'
@@ -127,6 +139,7 @@ export interface FileRouteTypes {
     | '/output/$displayId'
     | '/_app/'
     | '/_app/overlays/$overlayId'
+    | '/_app/presentations/$presentationId'
     | '/_app/templates/$templateId'
   fileRoutesById: FileRoutesById
 }
@@ -195,6 +208,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTemplatesTemplateIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/presentations/$presentationId': {
+      id: '/_app/presentations/$presentationId'
+      path: '/presentations/$presentationId'
+      fullPath: '/presentations/$presentationId'
+      preLoaderRoute: typeof AppPresentationsPresentationIdRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/overlays/$overlayId': {
       id: '/_app/overlays/$overlayId'
       path: '/overlays/$overlayId'
@@ -210,6 +230,7 @@ interface AppRouteChildren {
   AppSettingsRoute: typeof AppSettingsRoute
   AppIndexRoute: typeof AppIndexRoute
   AppOverlaysOverlayIdRoute: typeof AppOverlaysOverlayIdRoute
+  AppPresentationsPresentationIdRoute: typeof AppPresentationsPresentationIdRoute
   AppTemplatesTemplateIdRoute: typeof AppTemplatesTemplateIdRoute
 }
 
@@ -218,6 +239,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppSettingsRoute: AppSettingsRoute,
   AppIndexRoute: AppIndexRoute,
   AppOverlaysOverlayIdRoute: AppOverlaysOverlayIdRoute,
+  AppPresentationsPresentationIdRoute: AppPresentationsPresentationIdRoute,
   AppTemplatesTemplateIdRoute: AppTemplatesTemplateIdRoute,
 }
 

@@ -83,6 +83,10 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
 
   const slides = adHocBibleRef ? adHocSlides.slides : itemSlides.slides
   const isLoading = adHocBibleRef ? adHocSlides.isLoading : itemSlides.isLoading
+  // playback is set only when the current item is a presentation —
+  // drives auto-advance below and broadcasts the per-presentation
+  // transition to audience output.
+  const playback = adHocBibleRef ? null : itemSlides.playback
 
   // sourceItemId is the live-state correlator: schedule items use
   // their row id; ad-hoc bible uses null. Keeping these distinct
@@ -178,6 +182,8 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
         slideIndex: idx,
         fill: s.fill,
         fontSizeOverrideByTemplate: templateMins,
+        transitionKind: playback?.transitionKind,
+        transitionDurationMs: playback?.transitionDurationMs,
       })
     }
     registerNavigators({
@@ -187,7 +193,13 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
           if (slides.length > 0) setIndex(0)
           return
         }
-        if (cur + 1 < slides.length) setIndex(cur + 1)
+        // Presentations wrap on next so the loop runs forever; other
+        // kinds stop at the end (the operator is driving manually).
+        if (cur + 1 < slides.length) {
+          setIndex(cur + 1)
+        } else if (playback?.loop) {
+          setIndex(0)
+        }
       },
       prev: () => {
         const cur = liveIndex()
@@ -200,6 +212,47 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
     isLive,
     setLive,
     registerNavigators,
+    templateMins,
+    playback,
+  ])
+
+  // Auto-advance loop. Runs ONLY when a presentation item is live
+  // AND its `loop` setting is on AND there's more than one slide.
+  // The timer ticks every playback.intervalMs and calls the same
+  // setIndex used by arrow keys — so loop + manual navigation share
+  // one code path. Cleared whenever any of the deps change (the
+  // interval is restarted from scratch on every dep change, which
+  // means hitting Next manually resets the dwell — the operator's
+  // last action is the new anchor, never a half-elapsed dwell).
+  useEffect(() => {
+    if (!playback || !playback.loop) return
+    if (slides.length <= 1) return
+    if (!live || live.sourceItemId !== sourceItemId) return
+    const id = window.setInterval(() => {
+      const cur = slides.findIndex((s, i) =>
+        isLive(s.kind, sourceItemId, i)
+      )
+      const next = cur < 0 ? 0 : (cur + 1) % slides.length
+      const s = slides[next]
+      if (!s) return
+      setLive({
+        kind: s.kind,
+        sourceItemId,
+        slideIndex: next,
+        fill: s.fill,
+        fontSizeOverrideByTemplate: templateMins,
+        transitionKind: playback.transitionKind,
+        transitionDurationMs: playback.transitionDurationMs,
+      })
+    }, Math.max(250, playback.intervalMs))
+    return () => window.clearInterval(id)
+  }, [
+    playback,
+    slides,
+    live,
+    sourceItemId,
+    isLive,
+    setLive,
     templateMins,
   ])
 
@@ -359,6 +412,8 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
                           slideIndex: idx,
                           fill: slide.fill,
                           fontSizeOverrideByTemplate: templateMins,
+                          transitionKind: playback?.transitionKind,
+                          transitionDurationMs: playback?.transitionDurationMs,
                         })
                       }}
                     />
@@ -464,6 +519,12 @@ function SlideTile({
           onFitComputed={onFitComputed}
           className="absolute inset-0 h-full w-full"
         />
+      ) : slide.fill.media ? (
+        // Media slides (single-media items and presentation slides)
+        // don't have a templated text layer — render the media bytes
+        // directly as the tile background, same approach the audience
+        // output uses when no template binding exists for the kind.
+        <MediaThumb mediaId={slide.fill.media.mediaId} />
       ) : (
         <div className="grid h-full w-full place-items-center text-[10px] text-muted-foreground/40">
           No template
@@ -514,6 +575,50 @@ function SlideTile({
   )
 }
 
+// MediaThumb — tiny background renderer for media slides in show
+// pane tiles. Picks the right element (<img> for image media,
+// muted <video> for video media) by checking the media list cache.
+// Falls back to a placeholder icon if the media row is missing from
+// the cache (deleted, or query hasn't loaded yet).
+function MediaThumb({ mediaId }: { mediaId: number }) {
+  const qc = useQueryClient()
+  const medium = (qc.getQueryData<Medium[]>(["media", "list"]) ?? []).find(
+    (m) => m.id === mediaId
+  )
+  if (!medium) {
+    return (
+      <div className="grid h-full w-full place-items-center bg-muted/30 text-muted-foreground/40">
+        <PlayIcon className="size-5 opacity-60" />
+      </div>
+    )
+  }
+  if (medium.type === "image") {
+    return (
+      <img
+        src={`/media-asset/${mediaId}`}
+        alt={medium.title || ""}
+        className="absolute inset-0 h-full w-full object-cover"
+        loading="lazy"
+      />
+    )
+  }
+  if (medium.type === "video") {
+    return (
+      <video
+        src={`/media-asset/${mediaId}`}
+        className="absolute inset-0 h-full w-full object-cover"
+        preload="metadata"
+        muted
+      />
+    )
+  }
+  return (
+    <div className="grid h-full w-full place-items-center bg-muted/30 text-muted-foreground/40">
+      <PlayIcon className="size-5 opacity-60" />
+    </div>
+  )
+}
+
 function MediaPreview({
   item,
   onSend,
@@ -546,7 +651,27 @@ function MediaPreview({
 
   return (
     <div className="flex flex-1 flex-col gap-3 overflow-hidden p-3">
-      <div className="relative flex-1 overflow-hidden rounded-md bg-black">
+      {/* Click anywhere on the preview surface sends the media to live.
+          Native <video>/<audio> controls live INSIDE the preview and
+          stop propagation so scrubbing doesn't also trigger a send. */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onSend()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            onSend()
+          }
+        }}
+        className={cn(
+          "group relative flex-1 cursor-pointer overflow-hidden rounded-md bg-black transition-shadow",
+          isLive
+            ? "ring-2 ring-inset ring-emerald-500/70"
+            : "hover:ring-2 hover:ring-inset hover:ring-border"
+        )}
+        aria-label={isLive ? "Already live — click to re-send" : "Click to send live"}
+      >
         {isImage && mediaId ? (
           <img
             src={`/media-asset/${mediaId}`}
@@ -557,11 +682,14 @@ function MediaPreview({
           // Local preview keeps native controls so the operator can
           // scrub independently of what the audience sees. The live
           // output is the controlled surface — this is the monitor.
+          // onClick stopPropagation so scrubber drags don't trigger
+          // the outer "click to send live" handler.
           <video
             src={`/media-asset/${mediaId}`}
             controls
             muted
             className="h-full w-full"
+            onClick={(e) => e.stopPropagation()}
           />
         ) : isAudio && mediaId ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground/70">
@@ -570,11 +698,17 @@ function MediaPreview({
               src={`/media-asset/${mediaId}`}
               controls
               className="w-3/4"
+              onClick={(e) => e.stopPropagation()}
             />
           </div>
         ) : (
           <div className="grid h-full place-items-center text-xs text-muted-foreground/40">
             {item.label || "Media"}
+          </div>
+        )}
+        {!isLive && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-center bg-gradient-to-t from-black/70 to-transparent py-2 text-[11px] uppercase tracking-wider text-white/90 opacity-0 transition-opacity group-hover:opacity-100">
+            Click to send live
           </div>
         )}
       </div>

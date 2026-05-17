@@ -1,0 +1,15 @@
+{
+  "fixed": {
+    "file_version": "0.1.0"
+  },
+  "info": {
+    "0000": {
+      "ProductVersion": "0.1.0",
+      "CompanyName": "Fathers House Church Media",
+      "FileDescription": "Church presentation software",
+      "LegalCopyright": "(c) 2025, Fathers House Church Media",
+      "ProductName": "NeoProjector",
+      "Comments": "Church presentation software"
+    }
+  }
+}

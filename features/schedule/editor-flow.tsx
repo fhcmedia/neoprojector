@@ -4,6 +4,7 @@ import {
   MusicIcon,
   BookOpenIcon,
   ImageIcon,
+  FilmIcon,
   LayersIcon,
 } from "lucide-react"
 import type { ListServiceItemsWithContentRow } from "@/bindings/neoprojector/database"
@@ -13,9 +14,10 @@ import { SongPicker } from "@/features/schedule/pickers/song-picker"
 import { BiblePicker } from "@/features/schedule/pickers/bible-picker"
 import { MediaPicker } from "@/features/schedule/pickers/media-picker"
 import { OverlayPicker } from "@/features/schedule/pickers/overlay-picker"
+import { PresentationPicker } from "@/features/schedule/pickers/presentation-picker"
 import { OverlayItemEditor } from "@/features/schedule/overlay-item-editor"
 
-type AddKind = "song" | "bible" | "media" | "overlay"
+type AddKind = "song" | "bible" | "media" | "presentation" | "overlay"
 
 // AddFlow: lets the user pick which kind of item to add, then routes to the
 // matching picker. Narrow-column form factor.
@@ -45,6 +47,9 @@ export function AddFlow({
         {kind === "media" && (
           <MediaPicker sectionId={sectionId} onAdded={onDone} />
         )}
+        {kind === "presentation" && (
+          <PresentationPicker sectionId={sectionId} onAdded={onDone} />
+        )}
         {kind === "overlay" && (
           <OverlayPicker sectionId={sectionId} onAdded={onDone} />
         )}
@@ -64,10 +69,11 @@ function KindChooser({
     { key: "song", label: "Song", Icon: MusicIcon },
     { key: "bible", label: "Bible", Icon: BookOpenIcon },
     { key: "media", label: "Media", Icon: ImageIcon },
+    { key: "presentation", label: "Presentation", Icon: FilmIcon },
     { key: "overlay", label: "Overlay", Icon: LayersIcon },
   ]
   return (
-    <div className="grid grid-cols-4 gap-1 rounded-md border border-border/50 p-0.5">
+    <div className="grid grid-cols-5 gap-1 rounded-md border border-border/50 p-0.5">
       {kinds.map(({ key, label, Icon }) => (
         <button
           key={key}

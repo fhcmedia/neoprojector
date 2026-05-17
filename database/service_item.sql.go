@@ -109,6 +109,7 @@ SELECT
     WHEN sib.item_id IS NOT NULL THEN 'bible'
     WHEN sim.item_id IS NOT NULL THEN 'media'
     WHEN sio.item_id IS NOT NULL THEN 'overlay'
+    WHEN sip.item_id IS NOT NULL THEN 'presentation'
     ELSE ''
   END AS kind,
   CAST(COALESCE(sis.song_id, 0) AS INTEGER) AS song_id,
@@ -117,7 +118,8 @@ SELECT
   CAST(COALESCE(sib.verse_start, 0) AS INTEGER) AS verse_start,
   CAST(COALESCE(sib.verse_end, 0) AS INTEGER) AS verse_end,
   CAST(COALESCE(sim.media_id, 0) AS INTEGER) AS media_id,
-  CAST(COALESCE(s.title, m.title, sio.overlay_name, '') AS TEXT) AS label,
+  CAST(COALESCE(sip.presentation_id, 0) AS INTEGER) AS presentation_id,
+  CAST(COALESCE(s.title, m.title, sio.overlay_name, p.name, '') AS TEXT) AS label,
   CAST(COALESCE(bb.name_kjv, '') AS TEXT) AS book_kjv,
   CAST(COALESCE(sio.overlay_kind, '') AS TEXT) AS overlay_kind,
   CAST(COALESCE(sio.config_json, '') AS TEXT) AS overlay_config_json,
@@ -128,8 +130,10 @@ LEFT JOIN service_item_song sis ON sis.item_id = si.id
 LEFT JOIN service_item_bible sib ON sib.item_id = si.id
 LEFT JOIN service_item_media sim ON sim.item_id = si.id
 LEFT JOIN service_item_overlay sio ON sio.item_id = si.id
+LEFT JOIN service_item_presentation sip ON sip.item_id = si.id
 LEFT JOIN song s ON s.id = sis.song_id
 LEFT JOIN media m ON m.id = sim.media_id
+LEFT JOIN presentation p ON p.id = sip.presentation_id
 LEFT JOIN bible_book bb ON bb.name = sib.book
 WHERE si.section_id = ?
 ORDER BY si.position
@@ -146,6 +150,7 @@ type ListServiceItemsWithContentRow struct {
 	VerseStart         int64  `json:"verse_start"`
 	VerseEnd           int64  `json:"verse_end"`
 	MediaID            int64  `json:"media_id"`
+	PresentationID     int64  `json:"presentation_id"`
 	Label              string `json:"label"`
 	BookKjv            string `json:"book_kjv"`
 	OverlayKind        string `json:"overlay_kind"`
@@ -174,6 +179,7 @@ func (q *Queries) ListServiceItemsWithContent(ctx context.Context, sectionID int
 			&i.VerseStart,
 			&i.VerseEnd,
 			&i.MediaID,
+			&i.PresentationID,
 			&i.Label,
 			&i.BookKjv,
 			&i.OverlayKind,

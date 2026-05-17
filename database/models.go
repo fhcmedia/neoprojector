@@ -74,6 +74,26 @@ type Overlay struct {
 	UpdatedAt   string `json:"updated_at"`
 }
 
+type Presentation struct {
+	ID                   int64  `json:"id"`
+	Name                 string `json:"name"`
+	Loop                 int64  `json:"loop"`
+	IntervalMs           int64  `json:"interval_ms"`
+	TransitionKind       string `json:"transition_kind"`
+	TransitionDurationMs int64  `json:"transition_duration_ms"`
+	CreatedAt            string `json:"created_at"`
+	UpdatedAt            string `json:"updated_at"`
+}
+
+type PresentationSlide struct {
+	ID             int64  `json:"id"`
+	PresentationID int64  `json:"presentation_id"`
+	Position       int64  `json:"position"`
+	MediaID        int64  `json:"media_id"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
+}
+
 type Service struct {
 	ID        int64  `json:"id"`
 	Name      string `json:"name"`
@@ -115,6 +135,13 @@ type ServiceItemOverlay struct {
 	RulesJson   string `json:"rules_json"`
 	CreatedAt   string `json:"created_at"`
 	UpdatedAt   string `json:"updated_at"`
+}
+
+type ServiceItemPresentation struct {
+	ItemID         int64  `json:"item_id"`
+	PresentationID int64  `json:"presentation_id"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
 }
 
 type ServiceItemSong struct {

@@ -140,6 +140,63 @@ export class Display {
     }
 }
 
+export class ListPresentationSlidesRow {
+    "id": number;
+    "presentation_id": number;
+    "position": number;
+    "media_id": number;
+    "created_at": string;
+    "updated_at": string;
+    "media_title": sql$0.NullString;
+    "media_type": sql$0.NullString;
+
+    /** Creates a new ListPresentationSlidesRow instance. */
+    constructor($$source: Partial<ListPresentationSlidesRow> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = 0;
+        }
+        if (!("presentation_id" in $$source)) {
+            this["presentation_id"] = 0;
+        }
+        if (!("position" in $$source)) {
+            this["position"] = 0;
+        }
+        if (!("media_id" in $$source)) {
+            this["media_id"] = 0;
+        }
+        if (!("created_at" in $$source)) {
+            this["created_at"] = "";
+        }
+        if (!("updated_at" in $$source)) {
+            this["updated_at"] = "";
+        }
+        if (!("media_title" in $$source)) {
+            this["media_title"] = (new sql$0.NullString());
+        }
+        if (!("media_type" in $$source)) {
+            this["media_type"] = (new sql$0.NullString());
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new ListPresentationSlidesRow instance from a string or object.
+     */
+    static createFrom($$source: any = {}): ListPresentationSlidesRow {
+        const $$createField6_0 = $$createType1;
+        const $$createField7_0 = $$createType1;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("media_title" in $$parsedSource) {
+            $$parsedSource["media_title"] = $$createField6_0($$parsedSource["media_title"]);
+        }
+        if ("media_type" in $$parsedSource) {
+            $$parsedSource["media_type"] = $$createField7_0($$parsedSource["media_type"]);
+        }
+        return new ListPresentationSlidesRow($$parsedSource as Partial<ListPresentationSlidesRow>);
+    }
+}
+
 export class ListServiceItemsWithContentRow {
     "id": number;
     "section_id": number;
@@ -151,6 +208,7 @@ export class ListServiceItemsWithContentRow {
     "verse_start": number;
     "verse_end": number;
     "media_id": number;
+    "presentation_id": number;
     "label": string;
     "book_kjv": string;
     "overlay_kind": string;
@@ -189,6 +247,9 @@ export class ListServiceItemsWithContentRow {
         }
         if (!("media_id" in $$source)) {
             this["media_id"] = 0;
+        }
+        if (!("presentation_id" in $$source)) {
+            this["presentation_id"] = 0;
         }
         if (!("label" in $$source)) {
             this["label"] = "";
@@ -316,6 +377,96 @@ export class Overlay {
     static createFrom($$source: any = {}): Overlay {
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         return new Overlay($$parsedSource as Partial<Overlay>);
+    }
+}
+
+export class Presentation {
+    "id": number;
+    "name": string;
+    "loop": number;
+    "interval_ms": number;
+    "transition_kind": string;
+    "transition_duration_ms": number;
+    "created_at": string;
+    "updated_at": string;
+
+    /** Creates a new Presentation instance. */
+    constructor($$source: Partial<Presentation> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = 0;
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("loop" in $$source)) {
+            this["loop"] = 0;
+        }
+        if (!("interval_ms" in $$source)) {
+            this["interval_ms"] = 0;
+        }
+        if (!("transition_kind" in $$source)) {
+            this["transition_kind"] = "";
+        }
+        if (!("transition_duration_ms" in $$source)) {
+            this["transition_duration_ms"] = 0;
+        }
+        if (!("created_at" in $$source)) {
+            this["created_at"] = "";
+        }
+        if (!("updated_at" in $$source)) {
+            this["updated_at"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Presentation instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Presentation {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new Presentation($$parsedSource as Partial<Presentation>);
+    }
+}
+
+export class PresentationSlide {
+    "id": number;
+    "presentation_id": number;
+    "position": number;
+    "media_id": number;
+    "created_at": string;
+    "updated_at": string;
+
+    /** Creates a new PresentationSlide instance. */
+    constructor($$source: Partial<PresentationSlide> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = 0;
+        }
+        if (!("presentation_id" in $$source)) {
+            this["presentation_id"] = 0;
+        }
+        if (!("position" in $$source)) {
+            this["position"] = 0;
+        }
+        if (!("media_id" in $$source)) {
+            this["media_id"] = 0;
+        }
+        if (!("created_at" in $$source)) {
+            this["created_at"] = "";
+        }
+        if (!("updated_at" in $$source)) {
+            this["updated_at"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PresentationSlide instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PresentationSlide {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new PresentationSlide($$parsedSource as Partial<PresentationSlide>);
     }
 }
 

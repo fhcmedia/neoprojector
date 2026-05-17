@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import {
+  BookOpenIcon,
   CopyIcon,
   LockIcon,
+  MusicIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react"
@@ -14,10 +16,18 @@ import {
   useDuplicateTemplate,
   useTemplates,
 } from "@/features/library/templates-api"
+import { AddTile } from "@/features/library/add-tile"
 import { ScaledTemplate } from "@/features/templates/renderer"
 import { sampleFor } from "@/features/templates/samples"
 import { isDefaultTemplateId } from "@/features/templates/defaults"
+import { EMPTY_BODY } from "@/features/templates/types"
 import type { Template } from "@/bindings/neoprojector/database"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/dropdown-menu"
 
 type Props = {
   search: string
@@ -45,13 +55,20 @@ export function TemplatesTab({ search, onOpen }: Props) {
   if (isLoading) {
     return <Empty>Loading…</Empty>
   }
-  if (filtered.length === 0) {
-    return (
-      <Empty>
-        {templates && templates.length === 0
-          ? "No templates yet."
-          : "No matches."}
-      </Empty>
+
+  // Fresh-template seed. Plain background, no boxes, default fade —
+  // matches the editor's expectations and gives the user a blank
+  // canvas to drop boxes onto. They name it later in the editor.
+  function createFresh(kind: "bible" | "song") {
+    createMut.mutate(
+      {
+        name: `Untitled ${kind} template`,
+        kind,
+        viewportW: 1920,
+        viewportH: 1080,
+        dataJSON: JSON.stringify(EMPTY_BODY),
+      },
+      { onSuccess: (created) => onOpen(created) }
     )
   }
 
@@ -88,8 +105,43 @@ export function TemplatesTab({ search, onOpen }: Props) {
             />
           ))}
         </AnimatePresence>
+        <AddTemplateTile onPick={createFresh} />
       </div>
+      {filtered.length === 0 && (
+        <Empty>
+          {templates && templates.length === 0
+            ? "No templates yet — pick a kind to start."
+            : "No matches."}
+        </Empty>
+      )}
     </div>
+  )
+}
+
+// AddTemplateTile: same dashed "+" shell as the media + overlays
+// tabs (via AddTile), wrapped in a DropdownMenu so picking a kind
+// creates a fresh blank-body template of that kind and opens it.
+function AddTemplateTile({
+  onPick,
+}: {
+  onPick: (kind: "bible" | "song") => void
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <AddTile label="Add template" sublabel="New" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" sideOffset={4} className="min-w-[180px]">
+        <DropdownMenuItem onSelect={() => onPick("bible")} className="gap-2">
+          <BookOpenIcon className="size-3.5" />
+          <span>Bible</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onPick("song")} className="gap-2">
+          <MusicIcon className="size-3.5" />
+          <span>Song</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

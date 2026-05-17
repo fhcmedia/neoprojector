@@ -157,6 +157,18 @@ function OutputWindow() {
     return parseRules(a.rules_json, def.defaultRules).cover_slide === true
   })
 
+  // Transition override from the broadcast. Set for presentation
+  // playback (operator picked a per-presentation transition);
+  // empty/zero means "use the template default" so bible/song stay
+  // on their template-defined fade.
+  const transitionOverride =
+    slot?.transition_kind && slot.transition_kind !== ""
+      ? {
+          kind: slot.transition_kind,
+          duration_ms: slot.transition_duration_ms ?? 500,
+        }
+      : undefined
+
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-black">
       <LiveTemplateView
@@ -164,6 +176,7 @@ function OutputWindow() {
         fill={fill}
         slideKey={slideKey}
         fontSizeOverride={fontSizeOverride}
+        transitionOverride={transitionOverride}
         liveTransparency
       />
       <OverlayLayer displayId={id} overlays={slot?.active_overlays ?? []} />
