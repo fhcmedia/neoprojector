@@ -79,6 +79,14 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # database/seed/*.json are Git LFS-tracked (~8MB each). Without
+          # this flag the runner gets the pointer files instead of the
+          # actual JSON, embed.FS bakes the pointers into the binary, and
+          # the bible seed errors on first launch with "invalid character
+          # 'v' looking for beginning of value" (the 'v' is from "version
+          # https://git-lfs.github.com/spec/v1").
+          lfs: true
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
@@ -114,9 +122,22 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # database/seed/*.json are Git LFS-tracked (~8MB each). Without
+          # this flag the runner gets the pointer files instead of the
+          # actual JSON, embed.FS bakes the pointers into the binary, and
+          # the bible seed errors on first launch with "invalid character
+          # 'v' looking for beginning of value" (the 'v' is from "version
+          # https://git-lfs.github.com/spec/v1").
+          lfs: true
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          # Windows tar+zstd over a populated Go mod cache hangs for
+          # 5+ min in post-job cleanup (known setup-go issue on
+          # Windows runners). Re-downloading modules each run costs
+          # ~1 min, so the trade pays for itself.
+          cache: false
       - uses: pnpm/action-setup@v4
         with:
           version: ${{ env.PNPM_VERSION }}
