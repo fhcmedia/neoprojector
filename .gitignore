@@ -6,3 +6,20 @@ tsconfig.tsbuildinfo
 build.log
 *.db
 .wails/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+dev.out
+dev.err

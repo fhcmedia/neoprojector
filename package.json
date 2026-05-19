@@ -45,6 +45,7 @@
     "@fontsource/source-sans-3": "^5.2.9",
     "@fontsource/source-serif-4": "^5.2.9",
     "@fontsource/work-sans": "^5.2.8",
+    "@supabase/supabase-js": "^2.45.0",
     "@tanstack/react-query": "^5.75.5",
     "@tanstack/react-query-devtools": "^5.75.5",
     "@tanstack/react-router": "^1.169.2",

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"neoprojector/database"
+	authsvc "neoprojector/services/auth"
 	"neoprojector/services/bible"
 	"neoprojector/services/displays"
 	"neoprojector/services/media"
@@ -115,6 +116,7 @@ func main() {
 			application.NewService(displays.New(db)),
 			application.NewService(overlays.New(db)),
 			application.NewService(presentations.New(db)),
+			application.NewService(authsvc.New()),
 		},
 		Assets: application.AssetOptions{
 			Handler: spaFallback(application.AssetFileServerFS(assets)),
