@@ -229,7 +229,12 @@ export function SongEditor(props: Props) {
             props.onSaved(created.id)
           }
         }
+        const savedId = localSongIdRef.current
         qc.invalidateQueries({ queryKey: ["songs", "list"] })
+        if (savedId !== undefined) {
+          qc.invalidateQueries({ queryKey: ["songs", "full", savedId] })
+        }
+        qc.invalidateQueries({ queryKey: ["schedule", "items"] })
       } catch (err) {
         console.error(err)
       }

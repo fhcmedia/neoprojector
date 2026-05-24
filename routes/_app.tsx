@@ -39,6 +39,7 @@ import {
 } from "@/features/displays/api"
 import { useIsMutating } from "@tanstack/react-query"
 import { useLive } from "@/features/live/live-context"
+import { LivePreviewWidget } from "@/features/live/live-preview-widget"
 import { useKeybinds } from "@/hooks/use-keybinds"
 import { CommandPalette } from "@/features/command-palette/command-palette"
 import { useAuth } from "@/hooks/use-auth"
@@ -283,6 +284,10 @@ function AppShell() {
       <main className="flex-1 min-h-0">
         <Outlet />
       </main>
+      {/* Floating live preview only on the presentations editor —
+          the schedule view already has the dedicated PREVIEW pane on
+          the right, so the corner card would just duplicate it. */}
+      {path.startsWith("/presentations") && <LivePreviewWidget />}
     </motion.div>
   )
 }

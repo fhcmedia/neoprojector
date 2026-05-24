@@ -182,18 +182,18 @@ var bibles = []bibleConfig{
 }
 
 func Seed(db *sql.DB, progress func(string, int)) error {
-	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM bible").Scan(&count); err != nil {
+	var verseCount int
+	if err := db.QueryRow("SELECT COUNT(*) FROM bible_verse").Scan(&verseCount); err != nil {
 		return fmt.Errorf("check seed state: %w", err)
 	}
-	if count > 0 {
+	if verseCount > 0 {
 		log.Info("already seeded, skipping")
 		return nil
 	}
 
 	for _, b := range bibles {
 		if _, err := db.Exec(
-			"INSERT INTO bible (translation, name, language) VALUES (?, ?, ?)",
+			"INSERT OR IGNORE INTO bible (translation, name, language) VALUES (?, ?, ?)",
 			b.Translation, b.Name, b.Language,
 		); err != nil {
 			return fmt.Errorf("insert bible %s: %w", b.Translation, err)
@@ -206,7 +206,7 @@ func Seed(db *sql.DB, progress func(string, int)) error {
 			return fmt.Errorf("categorize bible_book %s: %w", book.Name, err)
 		}
 		if _, err := db.Exec(
-			"INSERT INTO bible_book (name, position, category, name_kjv, name_rst) VALUES (?, ?, ?, ?, ?)",
+			"INSERT OR IGNORE INTO bible_book (name, position, category, name_kjv, name_rst) VALUES (?, ?, ?, ?, ?)",
 			book.Name, i+1, cat, book.NameKJV, book.NameRST,
 		); err != nil {
 			return fmt.Errorf("insert bible_book %s: %w", book.Name, err)

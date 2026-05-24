@@ -5,6 +5,7 @@ import { SettingsIcon } from "lucide-react"
 import { useDisplays } from "@/features/displays/api"
 import { useTemplates } from "@/features/library/templates-api"
 import { useLive, type ActiveOverlay } from "@/features/live/live-context"
+import { ControlBar } from "@/features/live/live-preview-widget"
 import { LiveTemplateView } from "@/features/templates/renderer"
 import { widgetDef } from "@/features/overlays/widgets"
 import {
@@ -64,6 +65,12 @@ export function DisplayPreviewPane() {
             ))}
           </div>
         )}
+        {/* FreeShow-style clear/nav strip pinned below the preview
+            tiles. Stays mounted regardless of live state so the
+            operator can lock the output even when nothing is live. */}
+        <div className="shrink-0 border-t border-border/40 bg-background/60 p-1.5">
+          <ControlBar />
+        </div>
       </div>
     </div>
   )

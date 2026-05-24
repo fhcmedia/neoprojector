@@ -36,9 +36,9 @@ dev_mode:
       type: background
     - cmd: go mod tidy
       type: blocking
-    - cmd: go build -o ./bin/neoprojector .
+    - cmd: go build -o ./bin/neoprojector.exe .
       type: blocking
-    - cmd: ./bin/neoprojector
+    - cmd: ./bin/neoprojector.exe
       type: primary
 
 fileAssociations: []

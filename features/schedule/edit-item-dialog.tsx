@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { MusicIcon, BookOpenIcon, LayersIcon } from "lucide-react"
 import type { ListServiceItemsWithContentRow } from "@/bindings/neoprojector/database"
@@ -28,6 +28,17 @@ const KIND_META: Record<string, { label: string; Icon: typeof MusicIcon }> = {
 export function EditItemDialog({ itemId, onClose }: Props) {
   const qc = useQueryClient()
 
+  const [cacheTick, setCacheTick] = useState(0)
+  useEffect(() => {
+    const unsub = qc.getQueryCache().subscribe((evt) => {
+      const key = evt.query.queryKey
+      if (Array.isArray(key) && key[0] === "schedule" && key[1] === "items") {
+        setCacheTick((t) => t + 1)
+      }
+    })
+    return unsub
+  }, [qc])
+
   const item = useMemo<ListServiceItemsWithContentRow | null>(() => {
     if (itemId === undefined) return null
     const all = qc.getQueriesData<ListServiceItemsWithContentRow[]>({
@@ -39,7 +50,8 @@ export function EditItemDialog({ itemId, onClose }: Props) {
       if (found) return found
     }
     return null
-  }, [qc, itemId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qc, itemId, cacheTick])
 
   const open = itemId !== undefined
   const meta = item ? (KIND_META[item.kind] ?? null) : null

@@ -4,6 +4,7 @@ import {
   useNavigate,
 } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { motion } from "motion/react"
 import {
   ArrowLeftIcon,
   ChevronDownIcon,
@@ -13,10 +14,12 @@ import {
   InfinityIcon,
   PlayIcon,
   PlusIcon,
+  RadioIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useLive } from "@/features/live/live-context"
 import {
   useAddSlide,
   useDeleteSlide,
@@ -133,6 +136,7 @@ function PresentationEditor() {
       <div className="grid min-h-0 flex-1 grid-cols-[3fr_2fr] gap-3 p-3">
         <SlideList
           slides={slides ?? []}
+          presentationId={id}
           onDelete={(slideId) => deleteSlide.mutate(slideId)}
           onReorder={(ids) => reorder.mutate(ids)}
         />
@@ -264,6 +268,7 @@ function SettingsBar({ presentation }: { presentation: Presentation }) {
 
 function SlideList({
   slides,
+  presentationId,
   onDelete,
   onReorder,
 }: {
@@ -272,14 +277,39 @@ function SlideList({
       ? never
       : T
     : never
+  presentationId: number
   onDelete: (slideId: number) => void
   onReorder: (ids: number[]) => void
 }) {
   const qc = useQueryClient()
+  const { live, setLive, clearLive } = useLive()
   const mediaById = useMemo(() => {
     const list = qc.getQueryData<Medium[]>(["media", "list"]) ?? []
     return new Map(list.map((m) => [m.id, m]))
   }, [qc, slides])
+
+  // sourceItemId encodes the presentation row id with a negative sign so
+  // it never collides with real schedule item ids (positive integers from
+  // service_item). Allows ShowPane to know who owns the live slide while
+  // still letting the live preview widget identify the source.
+  const liveSourceId = -presentationId
+  function pushLive(mediaId: number, idx: number, mediaTitle: string) {
+    setLive({
+      kind: "media",
+      sourceItemId: liveSourceId,
+      slideIndex: idx,
+      fill: {
+        caption: mediaTitle,
+        media: {
+          mediaId,
+          playing: true,
+          loop: true,
+          muted: true,
+          restartToken: Date.now(),
+        },
+      },
+    })
+  }
 
   // Drag-to-reorder. Hold a row, drop it on another row, that row's
   // index becomes the dragged row's new position. Keeps the UX
@@ -326,9 +356,19 @@ function SlideList({
               const m = mediaById.get(s.media_id)
               const isFirst = idx === 0
               const isLast = idx === slides.length - 1
+              const isThisLive =
+                !!live &&
+                live.kind === "media" &&
+                live.sourceItemId === liveSourceId &&
+                live.slideIndex === idx
               return (
-                <li
+                <motion.li
                   key={s.id}
+                  layout
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
                   draggable
                   onDragStart={() => setDragId(s.id)}
                   onDragEnd={() => setDragId(null)}
@@ -341,11 +381,24 @@ function SlideList({
                     moveDraggedToBefore(s.id)
                     setDragId(null)
                   }}
+                  onDoubleClick={() => {
+                    if (isThisLive) clearLive()
+                    else pushLive(s.media_id, idx, m?.title || `Slide ${idx + 1}`)
+                  }}
                   className={cn(
-                    "group flex items-center gap-3 border-b border-border/30 px-3 py-2 transition-colors hover:bg-muted/20",
-                    dragId === s.id && "opacity-50"
+                    "group relative flex cursor-pointer items-center gap-3 border-b border-border/30 px-3 py-2 transition-colors hover:bg-muted/20",
+                    dragId === s.id && "opacity-50",
+                    isThisLive && "bg-red-500/[0.08]"
                   )}
+                  title={isThisLive ? "Double-click to take off live" : "Double-click to push live"}
                 >
+                  {isThisLive && (
+                    <motion.span
+                      layoutId="live-row-bar"
+                      className="absolute inset-y-0 left-0 w-[3px] bg-red-500"
+                      transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                    />
+                  )}
                   <GripVerticalIcon className="size-3.5 cursor-grab text-muted-foreground/40" />
                   <span className="w-6 text-right font-mono text-[10px] text-muted-foreground/60">
                     {idx + 1}
@@ -398,6 +451,16 @@ function SlideList({
                       <ChevronDownIcon className="size-3" />
                     </button>
                   </div>
+                  {isThisLive && (
+                    <motion.span
+                      initial={{ opacity: 0, scale: 0.9 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-red-400"
+                    >
+                      <RadioIcon className="size-3 animate-pulse" />
+                      Live
+                    </motion.span>
+                  )}
                   <button
                     type="button"
                     onClick={() => onDelete(s.id)}
@@ -406,7 +469,7 @@ function SlideList({
                   >
                     <Trash2Icon className="size-3.5" />
                   </button>
-                </li>
+                </motion.li>
               )
             })}
           </ul>

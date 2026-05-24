@@ -26,9 +26,21 @@ import {
   Trash2Icon,
   TypeIcon,
   UnderlineIcon,
+  XIcon,
 } from "lucide-react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { Events } from "@wailsio/runtime"
+import { Service as Media } from "@/bindings/neoprojector/services/media"
+import type { Medium } from "@/bindings/neoprojector/database"
 import { Input } from "@/components/input"
 import { Button } from "@/components/button"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/select"
 import {
   Popover,
   PopoverContent,
@@ -40,10 +52,13 @@ import { EditorCanvas } from "@/features/templates/editor-canvas"
 import { sampleFor } from "@/features/templates/samples"
 import { isDefaultTemplateId } from "@/features/templates/defaults"
 import {
+  DEFAULT_GRADFLOW,
   DEFAULT_TRANSITION,
   parseTemplateBody,
   type Background,
   type Box,
+  type GradflowConfig,
+  type GradflowType,
   type SlotName,
   type TemplateBody,
   type TransitionKind,
@@ -116,6 +131,45 @@ function TemplateEditor() {
     // keyed purely off content changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [body, name, template, isDefault])
+
+  // Drop handler: accept image / video drops on the canvas, import as
+  // media, set as template background. Wails fires the native drop
+  // event with absolute file paths; we filter by data-file-drop-target
+  // id so the schedule editor doesn't fight us for the same payload.
+  const qc = useQueryClient()
+  const [bgImporting, setBgImporting] = useState(false)
+  useEffect(() => {
+    const off = Events.On(
+      "media:files-dropped",
+      async (event: { data?: { paths?: string[]; target_id?: string } }) => {
+        const data = event?.data ?? {}
+        if (data.target_id !== "template-bg") return
+        const paths = data.paths ?? []
+        if (paths.length === 0) return
+        setBgImporting(true)
+        try {
+          const imported = (await Media.ImportFiles(paths)) as unknown as Medium[]
+          qc.invalidateQueries({ queryKey: ["media", "list"] })
+          const first = imported.find((m) => m.type === "image" || m.type === "video")
+          if (first) {
+            setBody((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    background: { type: "media", mediaId: first.id, mode: "cover" },
+                  }
+                : prev
+            )
+          }
+        } finally {
+          setBgImporting(false)
+        }
+      }
+    )
+    return () => {
+      off?.()
+    }
+  }, [qc])
 
   function handleBack() {
     if (router.history.canGoBack()) router.history.back()
@@ -335,7 +389,10 @@ function TemplateEditor() {
              to fit width — with the panel taking 300px on the right and
              a typical app window, that means edge-to-edge horizontally
              with empty space above/below, which is what we want. */}
-          <div className="min-h-0 flex-1">
+          <div
+            className="relative min-h-0 flex-1"
+            data-file-drop-target="template-bg"
+          >
             <EditorCanvas
               template={template}
               body={body}
@@ -345,6 +402,13 @@ function TemplateEditor() {
               onBoxChange={(i, patch) => updateBox(i, patch)}
               readOnly={isDefault}
             />
+            {bgImporting && (
+              <div className="pointer-events-none absolute inset-0 grid place-items-center bg-background/60 backdrop-blur-sm">
+                <span className="rounded bg-background px-3 py-1.5 text-xs text-foreground ring-1 ring-border/60">
+                  Importing background…
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -523,6 +587,19 @@ function PropertyPanel({
           <NumberField label="Padding X" value={box.paddingX ?? 0} min={0} readOnly={readOnly} onChange={(v) => onChange({ paddingX: v })} />
           <NumberField label="Padding Y" value={box.paddingY ?? 0} min={0} readOnly={readOnly} onChange={(v) => onChange({ paddingY: v })} />
         </Grid2>
+        <BackdropFilterFields box={box} readOnly={readOnly} onChange={onChange} />
+        <FieldLabel>CSS class</FieldLabel>
+        <Input
+          value={box.className ?? ""}
+          readOnly={readOnly}
+          onChange={(e) => onChange({ className: e.target.value || undefined })}
+          placeholder="e.g. headline"
+          spellCheck={false}
+          className="h-7 font-mono text-[11px]"
+        />
+        <div className="text-[10px] text-muted-foreground/60">
+          Used in template Custom CSS to target this box.
+        </div>
       </Section>
     </div>
   )
@@ -556,11 +633,28 @@ function TemplatePanel({
               onChange({ background: { type: "color", value: bg.type === "color" ? bg.value : "#000000" } })
             else if (t === "transparent")
               onChange({ background: { type: "transparent" } })
+            else if (t === "media")
+              onChange({
+                background: {
+                  type: "media",
+                  mediaId: bg.type === "media" ? bg.mediaId : 0,
+                  mode: bg.type === "media" ? (bg.mode ?? "cover") : "cover",
+                },
+              })
+            else if (t === "gradflow")
+              onChange({
+                background: {
+                  type: "gradflow",
+                  config: bg.type === "gradflow" ? bg.config : DEFAULT_GRADFLOW,
+                },
+              })
           }}
           className="h-7 rounded border border-border/50 bg-background px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
         >
           <option value="color">Solid color</option>
           <option value="transparent">Transparent</option>
+          <option value="media">Image / Video</option>
+          <option value="gradflow">Animated gradient (Gradflow)</option>
         </select>
         {bgType === "color" && (
           <ColorField
@@ -574,6 +668,20 @@ function TemplatePanel({
           <div className="text-[10px] text-muted-foreground/60">
             The canvas background shows through. Useful for lower-thirds overlaid on video.
           </div>
+        )}
+        {bgType === "media" && (
+          <MediaBackgroundPicker
+            value={bg as { type: "media"; mediaId: number; mode?: "cover" | "contain" | "loop" }}
+            readOnly={readOnly}
+            onChange={(next) => onChange({ background: next })}
+          />
+        )}
+        {bgType === "gradflow" && (
+          <GradflowEditor
+            value={(bg as { type: "gradflow"; config: GradflowConfig }).config}
+            readOnly={readOnly}
+            onChange={(next) => onChange({ background: { type: "gradflow", config: next } })}
+          />
         )}
       </Section>
 
@@ -624,6 +732,29 @@ function TemplatePanel({
           Off (default): each slide auto-shrinks to fit its own content;
           fit-to-box boxes within a slide still share one size.
         </div>
+      </Section>
+
+      {/* Custom CSS — power-user escape hatch for animations + custom
+          styling. Selectors are auto-scoped to this template via CSS
+          nesting; boxes expose data-slot, data-box-index, and the
+          optional className. @keyframes leak globally — prefix names
+          to avoid collisions. */}
+      <Section title="Custom CSS">
+        <div className="text-[10px] text-muted-foreground/70">
+          Power-user only. Targets DOM elements rendered by this template.
+          Boxes expose <code className="font-mono text-[10px] text-muted-foreground">[data-slot]</code>,
+          <code className="font-mono text-[10px] text-muted-foreground"> [data-box-index]</code>,
+          and the per-box class name (set in Box Settings).
+        </div>
+        <textarea
+          value={body.customCSS ?? ""}
+          readOnly={readOnly}
+          onChange={(e) => onChange({ customCSS: e.target.value })}
+          rows={8}
+          spellCheck={false}
+          placeholder={`/* example */\n[data-slot="primary"] {\n  animation: fadeUp 600ms ease-out;\n}\n@keyframes fadeUp {\n  from { opacity: 0; transform: translateY(20px); }\n  to   { opacity: 1; transform: translateY(0); }\n}`}
+          className="min-h-[140px] w-full resize-y rounded border border-border/50 bg-background px-2 py-1.5 font-mono text-[11px] leading-snug outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+        />
       </Section>
 
       {/* Canvas info */}
@@ -691,23 +822,58 @@ function NumberField({
   readOnly: boolean
   onChange: (v: number) => void
 }) {
+  // Keep the input editable as plain text so the user can clear, type
+  // a partial number ("8", "8."), or paste — without each keystroke
+  // round-tripping through Number() (which turns "" into 0 and trips
+  // the min clamp, killing the edit mid-flow). Commit on blur / Enter;
+  // sync local state when the parent value changes from elsewhere.
+  const [text, setText] = useState(String(value))
+  const editingRef = useRef(false)
+  useEffect(() => {
+    if (editingRef.current) return
+    setText(String(value))
+  }, [value])
+
+  function commit() {
+    editingRef.current = false
+    const trimmed = text.trim()
+    if (trimmed === "") {
+      setText(String(value))
+      return
+    }
+    const parsed = Number(trimmed)
+    if (!Number.isFinite(parsed)) {
+      setText(String(value))
+      return
+    }
+    const clamped = min !== undefined && parsed < min ? min : parsed
+    if (clamped !== value) onChange(clamped)
+    setText(String(clamped))
+  }
+
   return (
     <label className="flex flex-col gap-0.5">
       <FieldLabel>{label}</FieldLabel>
       <input
         type="number"
-        value={value}
+        value={text}
         step={step}
         min={min}
         disabled={readOnly}
+        onFocus={() => {
+          editingRef.current = true
+        }}
         onChange={(e) => {
-          const next = Number(e.target.value)
-          if (Number.isNaN(next)) return
-          if (min !== undefined && next < min) {
-            onChange(min)
-            return
+          editingRef.current = true
+          setText(e.target.value)
+        }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault()
+            commit()
+            ;(e.target as HTMLInputElement).blur()
           }
-          onChange(next)
         }}
         className="h-6 rounded border border-border/40 bg-muted/30 px-1.5 text-[11px] outline-none focus-visible:border-border focus-visible:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-60"
       />
@@ -722,6 +888,636 @@ function NumberField({
 // stays compact. Opening the picker on a theme value starts at white
 // and the first click commits a real hex, overriding the theme link.
 const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
+
+// MediaBackgroundPicker — popover grid of every imported media item.
+// Renders thumbnails (image/video poster), supports search, lets the
+// user pick fit-mode (cover/contain). The chosen mediaId is what gets
+// persisted on the template's background; the renderer pulls bytes via
+// /media-asset/:id at render time.
+function MediaBackgroundPicker({
+  value,
+  readOnly,
+  onChange,
+}: {
+  value: { type: "media"; mediaId: number; mode?: "cover" | "contain" | "loop" }
+  readOnly: boolean
+  onChange: (next: { type: "media"; mediaId: number; mode?: "cover" | "contain" | "loop" }) => void
+}) {
+  const { data: media, isLoading } = useQuery({
+    queryKey: ["media", "list"],
+    queryFn: () => Media.ListMedia() as unknown as Promise<Medium[]>,
+  })
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const list = useMemo(() => {
+    const all = media ?? []
+    const q = query.trim().toLowerCase()
+    if (!q) return all
+    return all.filter(
+      (m) =>
+        m.title.toLowerCase().includes(q) ||
+        m.original_filename.toLowerCase().includes(q)
+    )
+  }, [media, query])
+  const selected = (media ?? []).find((m) => m.id === value.mediaId)
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            disabled={readOnly}
+            className="flex items-center gap-2 rounded border border-border/50 bg-background px-2 py-1.5 text-left text-[11px] outline-none transition-colors hover:border-border focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+          >
+            <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded bg-muted/40 ring-1 ring-border/40">
+              {selected?.type === "image" ? (
+                <img
+                  src={`/media-asset/${selected.id}`}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
+              ) : selected?.type === "video" ? (
+                <video
+                  src={`/media-asset/${selected.id}`}
+                  className="h-full w-full object-cover"
+                  muted
+                  preload="metadata"
+                />
+              ) : (
+                <ImageIcon className="size-3 text-muted-foreground/50" />
+              )}
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-foreground">
+                {selected?.title || "Pick media…"}
+              </span>
+              <span className="truncate text-[10px] text-muted-foreground/60">
+                {selected?.type ?? (value.mediaId === 0 ? "—" : "missing")}
+              </span>
+            </span>
+            <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground/60" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-72 p-0">
+          <div className="flex items-center gap-1.5 border-b border-border/40 bg-muted/20 px-2 py-1.5">
+            <SearchIcon className="size-3 text-muted-foreground/60" />
+            <Input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search media…"
+              className="h-6 flex-1 border-0 bg-transparent px-0 text-[11px] focus-visible:ring-0"
+            />
+          </div>
+          <div className="max-h-72 overflow-y-auto p-1.5">
+            {isLoading ? (
+              <div className="grid h-32 place-items-center text-[11px] text-muted-foreground/50">
+                Loading…
+              </div>
+            ) : list.length === 0 ? (
+              <div className="grid h-32 place-items-center px-3 text-center text-[11px] text-muted-foreground/50">
+                {!media || media.length === 0
+                  ? "No media yet. Import in the Media tab first."
+                  : "No matches."}
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-1">
+                {list.map((m) => {
+                  const isSelected = m.id === value.mediaId
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        onChange({ type: "media", mediaId: m.id, mode: value.mode ?? "cover" })
+                        setOpen(false)
+                      }}
+                      title={m.title}
+                      className={cn(
+                        "group flex flex-col overflow-hidden rounded border bg-background text-left transition-colors hover:border-border",
+                        isSelected ? "border-foreground/60 ring-1 ring-foreground/30" : "border-border/40"
+                      )}
+                    >
+                      <div className="relative aspect-video w-full overflow-hidden bg-muted/40">
+                        {m.type === "image" ? (
+                          <img
+                            src={`/media-asset/${m.id}`}
+                            alt=""
+                            className="h-full w-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : m.type === "video" ? (
+                          <video
+                            src={`/media-asset/${m.id}`}
+                            className="h-full w-full object-cover"
+                            muted
+                            preload="metadata"
+                          />
+                        ) : (
+                          <div className="grid h-full place-items-center text-muted-foreground/40">
+                            <ImageIcon className="size-3" />
+                          </div>
+                        )}
+                      </div>
+                      <span className="truncate px-1 py-0.5 text-[9px] text-muted-foreground group-hover:text-foreground">
+                        {m.title}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+      <FieldLabel>Fit mode</FieldLabel>
+      <select
+        value={value.mode ?? "cover"}
+        disabled={readOnly}
+        onChange={(e) =>
+          onChange({
+            type: "media",
+            mediaId: value.mediaId,
+            mode: e.target.value as "cover" | "contain" | "loop",
+          })
+        }
+        className="h-7 rounded border border-border/50 bg-background px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+      >
+        <option value="cover">Cover (fill, crop overflow)</option>
+        <option value="contain">Contain (fit, letterbox)</option>
+      </select>
+      {value.mediaId === 0 && (
+        <div className="text-[10px] text-amber-400/80">
+          No media chosen — background will render black.
+        </div>
+      )}
+    </div>
+  )
+}
+
+// GradflowEditor — per-template animated WebGL gradient. Exposes the
+// library's full config (3 colors, type, speed, scale, noise) plus a
+// preset menu that swaps every field in one click.
+const GRADFLOW_TYPES: { value: GradflowType; label: string }[] = [
+  { value: "silk", label: "Silk" },
+  { value: "smoke", label: "Smoke" },
+  { value: "stripe", label: "Stripe" },
+  { value: "wave", label: "Wave" },
+  { value: "conic", label: "Conic" },
+  { value: "linear", label: "Linear" },
+  { value: "animated", label: "Animated" },
+]
+
+const GRADFLOW_PRESETS: Record<string, GradflowConfig> = {
+  Plasma: {
+    color1: { r: 163, g: 106, b: 242 },
+    color2: { r: 0, g: 0, b: 0 },
+    color3: { r: 234, g: 130, b: 106 },
+    speed: 0.6, scale: 1.2, gradientType: "silk", noise: 0.18,
+  },
+  Cosmic: {
+    color1: { r: 85, g: 4, b: 129 },
+    color2: { r: 0, g: 145, b: 255 },
+    color3: { r: 0, g: 4, b: 5 },
+    speed: 0.4, scale: 1.2, gradientType: "silk", noise: 0.1,
+  },
+  Matrix: {
+    color1: { r: 34, g: 54, b: 145 },
+    color2: { r: 0, g: 0, b: 0 },
+    color3: { r: 147, g: 251, b: 173 },
+    speed: 0.8, scale: 1, gradientType: "wave", noise: 0.1,
+  },
+  Electric: {
+    color1: { r: 5, g: 65, b: 245 },
+    color2: { r: 178, g: 224, b: 209 },
+    color3: { r: 87, g: 229, b: 149 },
+    speed: 0.9, scale: 2, gradientType: "smoke", noise: 0.18,
+  },
+  Inferno: {
+    color1: { r: 77, g: 0, b: 0 },
+    color2: { r: 0, g: 0, b: 0 },
+    color3: { r: 255, g: 187, b: 0 },
+    speed: 0.9, scale: 1.1, gradientType: "silk", noise: 0.18,
+  },
+  Mystic: {
+    color1: { r: 192, g: 155, b: 197 },
+    color2: { r: 0, g: 0, b: 0 },
+    color3: { r: 53, g: 0, b: 97 },
+    speed: 0.9, scale: 2, gradientType: "smoke", noise: 0.18,
+  },
+  Cyber: {
+    color1: { r: 102, g: 237, b: 255 },
+    color2: { r: 0, g: 0, b: 0 },
+    color3: { r: 0, g: 255, b: 110 },
+    speed: 0.9, scale: 2, gradientType: "stripe", noise: 0.18,
+  },
+  Neon: {
+    color1: { r: 102, g: 237, b: 255 },
+    color2: { r: 0, g: 0, b: 0 },
+    color3: { r: 0, g: 255, b: 110 },
+    speed: 0.6, scale: 2, gradientType: "wave", noise: 0.18,
+  },
+}
+
+function rgbToHex(rgb: { r: number; g: number; b: number }): string {
+  const h = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0")
+  return `#${h(rgb.r)}${h(rgb.g)}${h(rgb.b)}`
+}
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim())
+  if (!m) return { r: 0, g: 0, b: 0 }
+  const n = parseInt(m[1], 16)
+  return { r: (n >> 16) & 0xff, g: (n >> 8) & 0xff, b: n & 0xff }
+}
+
+const GRADFLOW_USER_PRESETS_KEY = "np.gradflow.userPresets"
+
+function loadUserPresets(): Record<string, GradflowConfig> {
+  try {
+    const raw = window.localStorage.getItem(GRADFLOW_USER_PRESETS_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === "object" ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+function saveUserPresets(map: Record<string, GradflowConfig>): void {
+  try {
+    window.localStorage.setItem(GRADFLOW_USER_PRESETS_KEY, JSON.stringify(map))
+    window.dispatchEvent(new Event("np:gradflow-presets-changed"))
+  } catch { /* quota / private-mode — non-fatal */ }
+}
+
+function GradflowEditor({
+  value,
+  readOnly,
+  onChange,
+}: {
+  value: GradflowConfig
+  readOnly: boolean
+  onChange: (next: GradflowConfig) => void
+}) {
+  const [userPresets, setUserPresets] = useState<Record<string, GradflowConfig>>(() => loadUserPresets())
+  const [presetName, setPresetName] = useState("")
+  useEffect(() => {
+    const handler = () => setUserPresets(loadUserPresets())
+    window.addEventListener("np:gradflow-presets-changed", handler)
+    window.addEventListener("storage", handler)
+    return () => {
+      window.removeEventListener("np:gradflow-presets-changed", handler)
+      window.removeEventListener("storage", handler)
+    }
+  }, [])
+
+  function savePreset() {
+    const name = presetName.trim()
+    if (!name) return
+    const next = { ...userPresets, [name]: { ...value } }
+    setUserPresets(next)
+    saveUserPresets(next)
+    setPresetName("")
+  }
+  function deletePreset(name: string) {
+    const next = { ...userPresets }
+    delete next[name]
+    setUserPresets(next)
+    saveUserPresets(next)
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <FieldLabel>Preset</FieldLabel>
+      <select
+        disabled={readOnly}
+        value=""
+        onChange={(e) => {
+          const v = e.target.value
+          const builtin = GRADFLOW_PRESETS[v]
+          if (builtin) {
+            onChange({ ...builtin })
+            return
+          }
+          if (v.startsWith("user:")) {
+            const name = v.slice(5)
+            const custom = userPresets[name]
+            if (custom) onChange({ ...custom })
+          }
+        }}
+        className="h-7 rounded border border-border/50 bg-background px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+      >
+        <option value="">Choose preset…</option>
+        <optgroup label="Built-in">
+          {Object.keys(GRADFLOW_PRESETS).map((k) => (
+            <option key={k} value={k}>
+              {k}
+            </option>
+          ))}
+        </optgroup>
+        {Object.keys(userPresets).length > 0 && (
+          <optgroup label="Saved">
+            {Object.keys(userPresets).map((k) => (
+              <option key={k} value={`user:${k}`}>
+                {k}
+              </option>
+            ))}
+          </optgroup>
+        )}
+      </select>
+
+      {/* Save current as preset */}
+      <div className="flex items-stretch gap-1">
+        <Input
+          value={presetName}
+          readOnly={readOnly}
+          onChange={(e) => setPresetName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault()
+              savePreset()
+            }
+          }}
+          placeholder="Preset name"
+          className="h-7 flex-1 text-[11px]"
+        />
+        <Button
+          size="xs"
+          variant="outline"
+          disabled={readOnly || presetName.trim() === ""}
+          onClick={savePreset}
+        >
+          Save
+        </Button>
+      </div>
+
+      {/* Saved-preset chip list with delete */}
+      {Object.keys(userPresets).length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {Object.keys(userPresets).map((k) => (
+            <span
+              key={k}
+              className="inline-flex items-center gap-1 rounded-full bg-muted/40 px-2 py-0.5 text-[10px] text-muted-foreground"
+            >
+              <button
+                type="button"
+                onClick={() => onChange({ ...userPresets[k] })}
+                disabled={readOnly}
+                className="transition-colors hover:text-foreground disabled:cursor-not-allowed"
+              >
+                {k}
+              </button>
+              <button
+                type="button"
+                onClick={() => deletePreset(k)}
+                disabled={readOnly}
+                aria-label={`Delete preset ${k}`}
+                className="text-muted-foreground/50 transition-colors hover:text-destructive disabled:cursor-not-allowed"
+              >
+                <XIcon className="size-2.5" />
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+
+      <FieldLabel>Type</FieldLabel>
+      <select
+        value={value.gradientType}
+        disabled={readOnly}
+        onChange={(e) =>
+          onChange({ ...value, gradientType: e.target.value as GradflowType })
+        }
+        className="h-7 rounded border border-border/50 bg-background px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+      >
+        {GRADFLOW_TYPES.map((t) => (
+          <option key={t.value} value={t.value}>
+            {t.label}
+          </option>
+        ))}
+      </select>
+
+      <ColorField
+        label="Color 1"
+        value={rgbToHex(value.color1)}
+        readOnly={readOnly}
+        onChange={(v) => onChange({ ...value, color1: hexToRgb(v) })}
+      />
+      <ColorField
+        label="Color 2"
+        value={rgbToHex(value.color2)}
+        readOnly={readOnly}
+        onChange={(v) => onChange({ ...value, color2: hexToRgb(v) })}
+      />
+      <ColorField
+        label="Color 3"
+        value={rgbToHex(value.color3)}
+        readOnly={readOnly}
+        onChange={(v) => onChange({ ...value, color3: hexToRgb(v) })}
+      />
+      <GradflowSlider
+        label="Speed"
+        value={value.speed}
+        min={0}
+        max={2}
+        step={0.05}
+        readOnly={readOnly}
+        onChange={(n) => onChange({ ...value, speed: n })}
+      />
+      <GradflowSlider
+        label="Scale"
+        value={value.scale}
+        min={0.1}
+        max={4}
+        step={0.05}
+        readOnly={readOnly}
+        onChange={(n) => onChange({ ...value, scale: n })}
+      />
+      <GradflowSlider
+        label="Noise"
+        value={value.noise}
+        min={0}
+        max={10}
+        step={0.05}
+        readOnly={readOnly}
+        onChange={(n) => onChange({ ...value, noise: n })}
+      />
+      <GradflowSlider
+        label="Blur"
+        value={value.blur ?? 0}
+        min={0}
+        max={80}
+        step={1}
+        readOnly={readOnly}
+        onChange={(n) =>
+          onChange({ ...value, blur: n === 0 ? undefined : n })
+        }
+      />
+    </div>
+  )
+}
+
+function GradflowSlider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  readOnly,
+  onChange,
+}: {
+  label: string
+  value: number
+  min: number
+  max: number
+  step: number
+  readOnly: boolean
+  onChange: (n: number) => void
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between">
+        <FieldLabel>{label}</FieldLabel>
+        <span className="text-[10px] tabular-nums text-muted-foreground/70">
+          {value.toFixed(2)}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={readOnly}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="h-1.5 w-full cursor-pointer accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+      />
+    </div>
+  )
+}
+
+// BackdropFilterFields — legibility helper. CSS backdrop-filter blurs/
+// dims/desaturates whatever sits behind the box. Common combo: blur=12,
+// brightness=0.6, with a translucent bgColor for a frosted-glass card.
+function BackdropFilterFields({
+  box,
+  readOnly,
+  onChange,
+}: {
+  box: Box
+  readOnly: boolean
+  onChange: (patch: Partial<Box>) => void
+}) {
+  const blur = box.backdropBlur ?? 0
+  const brightness = box.backdropBrightness ?? 1
+  const saturate = box.backdropSaturate ?? 1
+  const anyOn = blur > 0 || brightness !== 1 || saturate !== 1
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded border border-border/30 bg-muted/10 p-2">
+      <div className="flex items-center justify-between">
+        <FieldLabel>Backdrop filter</FieldLabel>
+        {anyOn && (
+          <button
+            type="button"
+            onClick={() =>
+              onChange({
+                backdropBlur: undefined,
+                backdropBrightness: undefined,
+                backdropSaturate: undefined,
+              })
+            }
+            disabled={readOnly}
+            className="text-[10px] uppercase tracking-wider text-muted-foreground/60 transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+      <div className="text-[10px] leading-snug text-muted-foreground/60">
+        Blurs and tints whatever sits behind the box — makes text on a
+        busy gradient or image legible. Pair with a translucent box
+        background for a frosted-glass look.
+      </div>
+      <SliderField
+        label="Blur"
+        value={blur}
+        min={0}
+        max={48}
+        step={1}
+        unit="px"
+        readOnly={readOnly}
+        onChange={(v) => onChange({ backdropBlur: v === 0 ? undefined : v })}
+      />
+      <SliderField
+        label="Brightness"
+        value={brightness}
+        min={0}
+        max={2}
+        step={0.05}
+        unit="×"
+        readOnly={readOnly}
+        onChange={(v) =>
+          onChange({ backdropBrightness: v === 1 ? undefined : v })
+        }
+      />
+      <SliderField
+        label="Saturation"
+        value={saturate}
+        min={0}
+        max={3}
+        step={0.05}
+        unit="×"
+        readOnly={readOnly}
+        onChange={(v) =>
+          onChange({ backdropSaturate: v === 1 ? undefined : v })
+        }
+      />
+    </div>
+  )
+}
+
+function SliderField({
+  label,
+  value,
+  min,
+  max,
+  step,
+  unit,
+  readOnly,
+  onChange,
+}: {
+  label: string
+  value: number
+  min: number
+  max: number
+  step: number
+  unit?: string
+  readOnly: boolean
+  onChange: (n: number) => void
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between">
+        <FieldLabel>{label}</FieldLabel>
+        <span className="text-[10px] tabular-nums text-muted-foreground/70">
+          {value.toFixed(2)}
+          {unit ? unit : ""}
+        </span>
+      </div>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={readOnly}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="h-1.5 w-full cursor-pointer accent-foreground disabled:cursor-not-allowed disabled:opacity-50"
+      />
+    </div>
+  )
+}
 
 function ColorField({
   label = "Color",
@@ -1062,17 +1858,21 @@ function SlotSelect({
     { value: "media", label: "Media" },
   ]
   return (
-    <select
+    <Select
       value={value}
       disabled={readOnly}
-      onChange={(e) => onChange(e.target.value as SlotName)}
-      className="h-7 rounded border border-border/40 bg-muted/30 px-1.5 text-[11px] outline-none focus-visible:border-border disabled:cursor-not-allowed disabled:opacity-60"
+      onValueChange={(v) => onChange(v as SlotName)}
     >
-      {slots.map((s) => (
-        <option key={s.value} value={s.value}>
-          {s.label}
-        </option>
-      ))}
-    </select>
+      <SelectTrigger className="h-7 border-border/40 bg-muted/30 px-1.5 text-[11px]">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {slots.map((s) => (
+          <SelectItem key={s.value} value={s.value} className="text-[11px]">
+            {s.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }

@@ -23,6 +23,16 @@ export type TemplateBody = {
   // as "per-slide only", which matches user-visible behavior in
   // every non-lower-thirds default.
   crossSlideUniform?: boolean
+  /**
+   * Per-template raw CSS. Injected into a <style> block scoped to this
+   * template's root via CSS nesting — selectors the user writes only
+   * touch elements rendered by THIS template, not the rest of the app.
+   * Boxes get `data-slot` and `data-box-index` attributes, plus an
+   * optional per-box className, so users can target them precisely
+   * (e.g. `[data-slot="primary"] { animation: ...; }`).
+   * Empty/undefined = no extra styles.
+   */
+  customCSS?: string
 }
 
 export type TemplateTransition = {
@@ -45,6 +55,40 @@ export type Background =
   | { type: "color"; value: string }
   | { type: "transparent" }
   | { type: "media"; mediaId: number; mode?: "cover" | "contain" | "loop" }
+  | { type: "gradflow"; config: GradflowConfig }
+
+export type GradflowType =
+  | "linear"
+  | "animated"
+  | "conic"
+  | "wave"
+  | "silk"
+  | "smoke"
+  | "stripe"
+
+export type GradflowConfig = {
+  color1: { r: number; g: number; b: number }
+  color2: { r: number; g: number; b: number }
+  color3: { r: number; g: number; b: number }
+  speed: number
+  scale: number
+  // Renamed from gradflow's own `type` field so it doesn't collide
+  // with the outer Background discriminator. Mapped back at render.
+  gradientType: GradflowType
+  noise: number
+  /** CSS filter: blur(Npx) applied to the gradient surface only. 0 = off. */
+  blur?: number
+}
+
+export const DEFAULT_GRADFLOW: GradflowConfig = {
+  color1: { r: 163, g: 106, b: 242 },
+  color2: { r: 0, g: 0, b: 0 },
+  color3: { r: 234, g: 130, b: 106 },
+  speed: 0.6,
+  scale: 1.2,
+  gradientType: "silk",
+  noise: 0.18,
+}
 
 export type SlotName =
   | "primary"
@@ -92,6 +136,17 @@ export type Box = {
    * animated-video background.
    */
   defaultContent?: SlotFill[keyof SlotFill]
+  /** Optional CSS class for use with template.customCSS targeting. */
+  className?: string
+  /** Backdrop blur in px applied behind the box — legibility booster
+   *  for text sitting on busy backgrounds (animated gradients, video,
+   *  images). 0 = off. */
+  backdropBlur?: number
+  /** Multiplier on backdrop brightness (1 = unchanged, 0.5 = darken).
+   *  Combined with bgColor for a frosted-glass look. */
+  backdropBrightness?: number
+  /** Multiplier on backdrop saturation (1 = unchanged). */
+  backdropSaturate?: number
 }
 
 // SlotFill is what an item kind's fill() function produces. Renderer
@@ -164,6 +219,8 @@ export function parseTemplateBody(json: string): TemplateBody {
       boxes: Array.isArray(parsed.boxes) ? parsed.boxes : [],
       transition: parsed.transition ?? DEFAULT_TRANSITION,
       crossSlideUniform: parsed.crossSlideUniform === true,
+      customCSS:
+        typeof parsed.customCSS === "string" ? parsed.customCSS : undefined,
     }
   } catch {
     return EMPTY_BODY

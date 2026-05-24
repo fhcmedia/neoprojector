@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react"
 import { useQuery } from "@tanstack/react-query"
+import { GradFlow } from "gradflow"
 import {
   DEFAULT_TRANSITION,
   parseTemplateBody,
@@ -157,6 +158,7 @@ export function TemplateCanvas({
   return (
     <div
       onMouseDown={handleCanvasMouseDown}
+      data-template-id={template.id}
       style={{
         position: "relative",
         width: template.viewport_w,
@@ -164,6 +166,14 @@ export function TemplateCanvas({
         overflow: "hidden",
       }}
     >
+      {/* Scoped user CSS. Wrapping the rule body in
+          [data-template-id="X"] { ... } and relying on native CSS
+          nesting ensures selectors only match elements inside this
+          canvas. @keyframes declared by the user end up global, which
+          is fine — they're scoped by name. */}
+      {body.customCSS && body.customCSS.trim() !== "" && (
+        <style>{`[data-template-id="${template.id}"] { ${body.customCSS} }`}</style>
+      )}
       <BackgroundLayer
         background={body.background}
         fill={fill}
@@ -174,6 +184,7 @@ export function TemplateCanvas({
         <BoxRenderer
           key={i}
           box={box}
+          boxIndex={i}
           value={resolveSlot(box, fill)}
           measure={measure}
           fontSizeOverride={effectiveOverride}
@@ -551,6 +562,66 @@ function BackgroundLayer({
       />
     )
   }
+  if (background.type === "gradflow") {
+    // Animated WebGL gradient. The library renders a full-canvas <canvas>;
+    // a positioned wrapper pins it to the template's viewport so it
+    // stays behind every box but inside the canvas clip. Map our
+    // gradientType field back onto the library's `type` key.
+    //
+    // Blur softens the gradient via CSS `filter: blur()`. The naive
+    // approach (just slap blur on the canvas) leaves a transparent
+    // ring at every edge that the blur kernel fades into — visually,
+    // a dark vignette. Two-step fix:
+    //   1. The blurred wrapper is sized to match the viewport but
+    //      transform: scale()-d UP so the canvas content extends past
+    //      the visible edge by the same number of pixels the blur
+    //      kernel can reach. The outer `overflow:hidden` clips.
+    //   2. Scale factor is computed from blur radius vs the template's
+    //      viewport so the overshoot is always proportional to the
+    //      shortest side — `1 + 4 * blur / minSide` covers a
+    //      Gaussian's effective radius (≈2σ) with margin to spare.
+    const cfg = background.config
+    const blur = cfg.blur && cfg.blur > 0 ? cfg.blur : 0
+    // Scale factor sized against the on-screen canvas: `scale` here is
+    // the template viewport → screen scale, so dividing blur by it
+    // converts blur from screen px to canvas-native px, then we add
+    // ~4× that as a fraction of an assumed 1080-line reference. Caps
+    // at 1.5× so a runaway blur doesn't stretch into a thumbnail-sized
+    // ant. Always covers more than the blur radius can fade.
+    const scaleFactor =
+      blur > 0 ? 1 + Math.min(0.5, (blur * 4) / 1080 / Math.max(0.1, scale)) : 1
+    return (
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            filter: blur > 0 ? `blur(${blur}px)` : undefined,
+            transform: blur > 0 ? `scale(${scaleFactor})` : undefined,
+            transformOrigin: "center",
+          }}
+        >
+          <GradFlow
+            config={{
+              color1: cfg.color1,
+              color2: cfg.color2,
+              color3: cfg.color3,
+              speed: cfg.speed,
+              scale: cfg.scale,
+              type: cfg.gradientType,
+              noise: cfg.noise,
+            }}
+          />
+        </div>
+      </div>
+    )
+  }
   // Transparent on the live output: actually transparent — let the
   // output window's black canvas (or whatever sits underneath in the
   // editor preview chain) show through. The checker is an editor
@@ -783,6 +854,29 @@ function ControlledAudio({
   return <audio ref={ref} src={src} autoPlay={playing} muted={muted} loop={loop} />
 }
 
+// Combine optional per-box backdrop filter knobs into a single CSS
+// expression. Returns undefined when all knobs are at identity so we
+// don't trigger compositor work on boxes that don't use the feature.
+function buildBackdropFilter(box: Box): string | undefined {
+  const parts: string[] = []
+  if (box.backdropBlur && box.backdropBlur > 0) {
+    parts.push(`blur(${box.backdropBlur}px)`)
+  }
+  if (
+    box.backdropBrightness !== undefined &&
+    box.backdropBrightness !== 1
+  ) {
+    parts.push(`brightness(${box.backdropBrightness})`)
+  }
+  if (
+    box.backdropSaturate !== undefined &&
+    box.backdropSaturate !== 1
+  ) {
+    parts.push(`saturate(${box.backdropSaturate})`)
+  }
+  return parts.length === 0 ? undefined : parts.join(" ")
+}
+
 function pickCleanPatternSize(targetScreen: number, scale: number): number {
   // Divisors of gcd(1920, 1080) = 120, so every candidate produces
   // an integer count of pattern cells in both axes — clean tiling on
@@ -829,6 +923,7 @@ function pickCleanPatternSize(targetScreen: number, scale: number): number {
 
 function BoxRenderer({
   box,
+  boxIndex,
   value,
   measure,
   fontSizeOverride,
@@ -838,6 +933,7 @@ function BoxRenderer({
   onSelect,
 }: {
   box: Box
+  boxIndex?: number
   value: SlotValue | undefined
   measure: boolean
   // When set, skip the entire fit-to-box pass and just render at this
@@ -1045,6 +1141,9 @@ function BoxRenderer({
             }
           : undefined
       }
+      data-slot={box.slot}
+      data-box-index={boxIndex}
+      className={box.className || undefined}
       style={{
         position: "absolute",
         left: box.x,
@@ -1058,6 +1157,8 @@ function BoxRenderer({
         textAlign: box.align,
         cursor: isInteractive ? "pointer" : undefined,
         opacity: box.opacity,
+        backdropFilter: buildBackdropFilter(box),
+        WebkitBackdropFilter: buildBackdropFilter(box),
         backgroundColor: box.bgColor,
         padding:
           box.paddingX || box.paddingY

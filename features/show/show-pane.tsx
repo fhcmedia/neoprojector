@@ -58,6 +58,19 @@ type Props = {
 export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
   const qc = useQueryClient()
 
+  // Subscribe to schedule items cache updates so a song/title/label edit
+  // refreshes the previewed row without waiting for an unmount/remount.
+  const [cacheTick, setCacheTick] = useState(0)
+  useEffect(() => {
+    const unsub = qc.getQueryCache().subscribe((evt) => {
+      const key = evt.query.queryKey
+      if (Array.isArray(key) && key[0] === "schedule" && key[1] === "items") {
+        setCacheTick((t) => t + 1)
+      }
+    })
+    return unsub
+  }, [qc])
+
   const item = useMemo<ListServiceItemsWithContentRow | null>(() => {
     if (adHocBibleRef !== undefined) return null
     if (activeItemId === undefined) return null
@@ -70,7 +83,8 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
       if (found) return found
     }
     return null
-  }, [qc, activeItemId, adHocBibleRef])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qc, activeItemId, adHocBibleRef, cacheTick])
 
   const itemSlides = useItemSlides(item)
   const adHocSlides = useAdHocBibleSlides(
