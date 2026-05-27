@@ -7,6 +7,11 @@ import type { AuthError } from "@supabase/supabase-js"
 
 export type LoginResult = { ok: true } | { ok: false; error: string }
 
+export type BrandingProfile = {
+  orgName: string | null
+  orgLogo: string | null
+}
+
 export type KickReason =
   | { kind: "banned"; message: string }
   | { kind: "suspended"; message: string }
@@ -20,6 +25,11 @@ type AuthContextValue = {
   fingerprint: FingerprintInfo | null
   isAuthenticated: boolean
   kick: KickReason | null
+  profile: BrandingProfile | null
+  // True the moment a brand-new account signs up (trial or license).
+  // Drives the post-signup onboarding flow that lets the operator pick
+  // their org name + logo before the app shell mounts.
+  isFreshSignup: boolean
   login: (email: string, password: string) => Promise<LoginResult>
   signupTrial: (email: string, password: string) => Promise<LoginResult>
   signupWithLicense: (email: string, password: string, license: string) => Promise<LoginResult>
@@ -27,6 +37,8 @@ type AuthContextValue = {
   redeemLicenseExisting: (license: string) => Promise<LoginResult>
   logout: () => Promise<void>
   refreshAccount: () => Promise<void>
+  updateBranding: (patch: { orgName?: string | null; orgLogo?: string | null }) => Promise<LoginResult>
+  acknowledgeOnboarding: () => void
 }
 
 const Ctx = createContext<AuthContextValue | null>(null)
@@ -37,6 +49,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [account, setAccount] = useState<AccountStatus | null>(null)
   const [fingerprint, setFingerprint] = useState<FingerprintInfo | null>(null)
   const [kick, setKick] = useState<KickReason | null>(null)
+  const [profile, setProfile] = useState<BrandingProfile | null>(null)
+  // Flips to true the moment login() / signupTrial() / signupWithLicense
+  // returns ok for a NEW signup. The auth.tsx page reads this to show
+  // the onboarding panel instead of bouncing straight to /. Acknowledge
+  // (skip or save) clears it and the redirect fires.
+  const [isFreshSignup, setIsFreshSignup] = useState(false)
   const appSessionId = useRef<string | null>(null)
 
   // 1. Pull the device fingerprint exactly once. The Go side caches the
@@ -162,6 +180,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user?.id, fingerprint?.fingerprint])
 
+  // 4b. Load branding profile whenever the user changes. Independent of
+  //     the license-status refresh because branding doesn't care about
+  //     fingerprint and shouldn't block the account gate.
+  useEffect(() => {
+    if (!session?.user) {
+      setProfile(null)
+      return
+    }
+    let cancelled = false
+    api
+      .getMe()
+      .then((me) => {
+        if (cancelled) return
+        setProfile({
+          orgName: me.profile?.org_name ?? null,
+          orgLogo: me.profile?.org_logo ?? null,
+        })
+      })
+      .catch(() => {
+        if (!cancelled) setProfile((prev) => prev ?? { orgName: null, orgLogo: null })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [session?.user?.id])
+
   // 5. Periodic re-check + fingerprint pulse. 60s cadence — short enough
   //    that admin actions land near-instantly, but not so chatty that we
   //    burn cycles on a quiet machine. The Realtime broadcast subscription
@@ -279,6 +323,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { ok: true }
   }
 
+  const updateBranding = async (patch: {
+    orgName?: string | null
+    orgLogo?: string | null
+  }): Promise<LoginResult> => {
+    if (!session?.user) return { ok: false, error: "not_signed_in" }
+    try {
+      const body: { org_name?: string | null; org_logo?: string | null } = {}
+      if (patch.orgName !== undefined) body.org_name = patch.orgName
+      if (patch.orgLogo !== undefined) body.org_logo = patch.orgLogo
+      const res = await api.updateProfile(body)
+      setProfile({
+        orgName: res.profile?.org_name ?? null,
+        orgLogo: res.profile?.org_logo ?? null,
+      })
+      return { ok: true }
+    } catch (e) {
+      const body = (e as { body?: { error?: string } })?.body
+      return { ok: false, error: body?.error ?? "update_failed" }
+    }
+  }
+
+  const acknowledgeOnboarding = () => setIsFreshSignup(false)
+
   const signupTrial = async (email: string, password: string): Promise<LoginResult> => {
     if (!fingerprint) return { ok: false, error: "fingerprint_unavailable" }
     let pre: { ok: boolean; reason?: string }
@@ -297,6 +364,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const body = (e as { body?: { error?: string } })?.body
       return { ok: false, error: body?.error ?? "trial_finalize_failed" }
     }
+    setIsFreshSignup(true)
     return { ok: true }
   }
 
@@ -322,6 +390,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { ok: false, error: body?.error ?? "redeem_failed" }
     }
     if (fingerprint) api.fingerprintPulse(fingerprint).catch(() => {})
+    setIsFreshSignup(true)
     return { ok: true }
   }
 
@@ -354,6 +423,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { ok: false, error: body?.error ?? "redeem_failed" }
     }
     await refreshAccount()
+    // First-time license redemption (post-trial upgrade, or any signed-in
+    // user activating a key) flips the same fresh-signup flag the original
+    // signup paths use. The auth route reads it and renders BrandingSetup
+    // so the operator can pick a name + logo before landing in the
+    // workspace. Without this, license upgrades silently bypassed the
+    // onboarding card and dropped users into a "Your church" default.
+    setIsFreshSignup(true)
     return { ok: true }
   }
 
@@ -363,6 +439,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (session?.user?.id) clearCachedAccount(session.user.id)
     setAccount(null)
     setSession(null)
+    setProfile(null)
+    setIsFreshSignup(false)
   }
 
   const value: AuthContextValue = useMemo(
@@ -374,6 +452,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       fingerprint,
       isAuthenticated: !!session?.user,
       kick,
+      profile,
+      isFreshSignup,
       login,
       signupTrial,
       signupWithLicense,
@@ -381,9 +461,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       redeemLicenseExisting,
       logout,
       refreshAccount,
+      updateBranding,
+      acknowledgeOnboarding,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [session, loading, account, fingerprint, kick]
+    [session, loading, account, fingerprint, kick, profile, isFreshSignup]
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
@@ -393,6 +475,14 @@ export function useAuth(): AuthContextValue {
   const ctx = useContext(Ctx)
   if (!ctx) throw new Error("useAuth outside AuthProvider")
   return ctx
+}
+
+// Non-throwing variant for components that can legitimately mount outside
+// the provider (e.g. a global error-recovery modal, dev StrictMode double-
+// render). Returns null instead of throwing so the caller can no-op rather
+// than crash the recovery tree.
+export function useTryAuth(): AuthContextValue | null {
+  return useContext(Ctx)
 }
 
 // Supabase signals an actually-bad refresh token with specific error names

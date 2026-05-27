@@ -1,13 +1,19 @@
 import { motion, AnimatePresence } from "motion/react"
 import { ShieldAlertIcon } from "lucide-react"
-import { useAuth } from "@/hooks/use-auth"
+import { useTryAuth } from "@/hooks/use-auth"
 
 // Full-screen, fully-blurred kick screen. Renders the moment an admin bans
 // the device, suspends the account, or otherwise revokes access. Auto-signs
 // out after a short delay (handled by use-auth) so the user can read the
 // message before the UI flips back to /auth.
+//
+// Uses `useTryAuth` (the no-throw variant) because during an error boundary
+// recovery cycle the modal can briefly re-render outside the provider tree;
+// throwing there would surface as an uncaught render error masking whatever
+// triggered the recovery in the first place.
 export function KickModal() {
-  const { kick } = useAuth()
+  const auth = useTryAuth()
+  const kick = auth?.kick
   return (
     <AnimatePresence>
       {kick && (

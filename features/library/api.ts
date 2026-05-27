@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Service as Songs } from "@/bindings/neoprojector/services/songs"
 import type { SongFull } from "@/bindings/neoprojector/services/songs"
 import type { Song } from "@/bindings/neoprojector/database"
+import { removeSong } from "@/lib/library-sync"
 
 export const libraryKeys = {
   songs: ["songs", "list"] as const,
@@ -26,9 +27,16 @@ export function useLibrarySong(id: number | null) {
 export function useDeleteSong() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => Songs.DeleteSong(id),
+    mutationFn: async (id: number) => {
+      // Delete locally first so the UI never lies about success even if the
+      // cloud call fails. The cloud delete is best-effort; phase-6 outbox
+      // will replay it on next sync if it does fail.
+      await Songs.DeleteSong(id)
+      await removeSong(id)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: libraryKeys.songs })
+      qc.invalidateQueries({ queryKey: ["dashboard", "library"] })
     },
   })
 }

@@ -14,6 +14,7 @@ import { Service as Songs } from "@/bindings/neoprojector/services/songs"
 import { SongSpec } from "@/bindings/neoprojector/services/songs"
 import type { SongFull } from "@/bindings/neoprojector/services/songs"
 import type { Song } from "@/bindings/neoprojector/database"
+import { pushSong } from "@/lib/library-sync"
 import { Input } from "@/components/input"
 import { Textarea } from "@/components/textarea"
 import {
@@ -235,6 +236,25 @@ export function SongEditor(props: Props) {
           qc.invalidateQueries({ queryKey: ["songs", "full", savedId] })
         }
         qc.invalidateQueries({ queryKey: ["schedule", "items"] })
+
+        // Phase-1 cloud sync. Fire-and-forget — the local write already
+        // succeeded; a failed push is non-fatal and gets retried next time
+        // the user touches the song. We refresh the cloud-library queries
+        // after a successful push so the dashboard tab in the desktop app
+        // (and the website on next visit) sees the new count immediately.
+        if (savedId !== undefined) {
+          void (async () => {
+            try {
+              const full = (await Songs.GetSong(savedId)) as unknown as SongFull
+              const result = await pushSong(full)
+              if (result.ok) {
+                qc.invalidateQueries({ queryKey: ["dashboard", "library"] })
+              }
+            } catch (err) {
+              console.warn("[song-editor] cloud sync skipped", err)
+            }
+          })()
+        }
       } catch (err) {
         console.error(err)
       }

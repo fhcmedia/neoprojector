@@ -145,4 +145,87 @@ export const api = {
       body: JSON.stringify({ key, user_id: userId }),
     })
   },
+  // /me returns the union of profile/settings/license/force_reset. We
+  // only consume profile here; the rest is fine to ignore client-side
+  // and isn't worth a separate endpoint.
+  async getMe(): Promise<{
+    profile: {
+      id: string
+      org_name: string | null
+      org_logo: string | null
+    } | null
+  }> {
+    return request("/api/user/me", { method: "GET", auth: true })
+  },
+  async updateProfile(patch: {
+    org_name?: string | null
+    org_logo?: string | null
+  }): Promise<{ profile: { org_name: string | null; org_logo: string | null } | null }> {
+    return request("/api/user/me/profile", {
+      method: "PATCH",
+      auth: true,
+      body: JSON.stringify(patch),
+    })
+  },
+
+  // ---- Cloud library sync ---------------------------------------------------
+  // Push or upsert a song / template / presentation. The server matches by
+  // (user_id, kind, body.local_id) when cloud_id isn't supplied. Caller
+  // should remember the returned cloud_id locally and pass it back on
+  // subsequent updates to avoid the lookup round-trip.
+  async libraryUpsert(payload: {
+    cloud_id?: string
+    kind: "song" | "template" | "presentation"
+    title: string
+    size_bytes: number
+    body: Record<string, unknown>
+    updated_at?: string
+  }): Promise<{
+    item: {
+      id: string
+      kind: string
+      title: string
+      size_bytes: number
+      last_sync_at: string
+      updated_at: string
+    }
+    created: boolean
+  }> {
+    return request("/api/user/me/library/items", {
+      method: "POST",
+      auth: true,
+      body: JSON.stringify(payload),
+    })
+  },
+
+  async libraryDelete(cloudId: string): Promise<{ ok: true }> {
+    return request(`/api/user/me/library/items/${encodeURIComponent(cloudId)}`, {
+      method: "DELETE",
+      auth: true,
+    })
+  },
+
+  // Phase-2 pull. Caller filters by kind and (optionally) ISO timestamp to
+  // skip already-seen rows. Returns full body so the app can hydrate
+  // local sqlite without a follow-up request per item.
+  async libraryList(opts: { kind?: "song" | "template" | "presentation"; since?: string } = {}): Promise<{
+    items: Array<{
+      id: string
+      kind: "song" | "template" | "presentation"
+      title: string
+      body: Record<string, unknown>
+      size_bytes: number
+      last_sync_at: string
+      updated_at: string
+    }>
+  }> {
+    const params = new URLSearchParams()
+    if (opts.kind) params.set("kind", opts.kind)
+    if (opts.since) params.set("since", opts.since)
+    const qs = params.toString()
+    return request(`/api/user/me/library/items${qs ? `?${qs}` : ""}`, {
+      method: "GET",
+      auth: true,
+    })
+  },
 }

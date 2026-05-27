@@ -3,8 +3,14 @@ import { AnimatePresence, motion } from "motion/react"
 import {
   BookOpenIcon,
   CopyIcon,
+  FileTextIcon,
+  HandIcon,
+  LayoutTemplateIcon,
   LockIcon,
+  MegaphoneIcon,
+  MicVocalIcon,
   MusicIcon,
+  QuoteIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react"
@@ -59,10 +65,17 @@ export function TemplatesTab({ search, onOpen }: Props) {
   // Fresh-template seed. Plain background, no boxes, default fade —
   // matches the editor's expectations and gives the user a blank
   // canvas to drop boxes onto. They name it later in the editor.
-  function createFresh(kind: "bible" | "song") {
+  //
+  // `kind` is stored as a plain string on the row. The show pane
+  // only routes live "bible" / "song" through templated slides
+  // today; the other kinds are organisational (used in
+  // presentations, lower thirds, announcements) and don't need
+  // a dedicated live source to be useful — operators reach them
+  // through presentations and direct-display.
+  function createFresh(kind: TemplateKind) {
     createMut.mutate(
       {
-        name: `Untitled ${kind} template`,
+        name: `Untitled ${TEMPLATE_KIND_LABEL[kind]} template`,
         kind,
         viewportW: 1920,
         viewportH: 1080,
@@ -118,28 +131,68 @@ export function TemplatesTab({ search, onOpen }: Props) {
   )
 }
 
+// Kinds the user can spawn from the "+" tile. Bible and Song are
+// the only kinds the live show pane routes today; the rest exist
+// as organisational categories — useful in presentations and as
+// stand-alone slides, even though they don't have a dedicated
+// live source. Adding entries here is safe: kind is just a string
+// column on the row, and any unknown value is treated as "other".
+type TemplateKind =
+  | "bible"
+  | "song"
+  | "announcement"
+  | "sermon"
+  | "welcome"
+  | "lower_third"
+  | "quote"
+  | "blank"
+
+const TEMPLATE_KIND_LABEL: Record<TemplateKind, string> = {
+  bible: "Bible",
+  song: "Song",
+  announcement: "Announcement",
+  sermon: "Sermon notes",
+  welcome: "Welcome",
+  lower_third: "Lower third",
+  quote: "Quote",
+  blank: "Blank",
+}
+
+const TEMPLATE_KIND_OPTIONS: { kind: TemplateKind; icon: React.ReactNode }[] = [
+  { kind: "bible", icon: <BookOpenIcon className="size-3.5" /> },
+  { kind: "song", icon: <MusicIcon className="size-3.5" /> },
+  { kind: "announcement", icon: <MegaphoneIcon className="size-3.5" /> },
+  { kind: "sermon", icon: <MicVocalIcon className="size-3.5" /> },
+  { kind: "welcome", icon: <HandIcon className="size-3.5" /> },
+  { kind: "lower_third", icon: <FileTextIcon className="size-3.5" /> },
+  { kind: "quote", icon: <QuoteIcon className="size-3.5" /> },
+  { kind: "blank", icon: <LayoutTemplateIcon className="size-3.5" /> },
+]
+
 // AddTemplateTile: same dashed "+" shell as the media + overlays
 // tabs (via AddTile), wrapped in a DropdownMenu so picking a kind
 // creates a fresh blank-body template of that kind and opens it.
 function AddTemplateTile({
   onPick,
 }: {
-  onPick: (kind: "bible" | "song") => void
+  onPick: (kind: TemplateKind) => void
 }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <AddTile label="Add template" sublabel="New" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={4} className="min-w-[180px]">
-        <DropdownMenuItem onSelect={() => onPick("bible")} className="gap-2">
-          <BookOpenIcon className="size-3.5" />
-          <span>Bible</span>
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onPick("song")} className="gap-2">
-          <MusicIcon className="size-3.5" />
-          <span>Song</span>
-        </DropdownMenuItem>
+      <DropdownMenuContent align="start" sideOffset={4} className="min-w-[200px]">
+        {TEMPLATE_KIND_OPTIONS.map(({ kind, icon }) => (
+          <DropdownMenuItem
+            key={kind}
+            onSelect={() => onPick(kind)}
+            className="gap-2"
+          >
+            {icon}
+            <span>{TEMPLATE_KIND_LABEL[kind]}</span>
+          </DropdownMenuItem>
+        ))}
       </DropdownMenuContent>
     </DropdownMenu>
   )

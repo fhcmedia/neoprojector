@@ -6,6 +6,7 @@ import {
   findDefaultTemplate,
   isDefaultTemplateId,
 } from "@/features/templates/defaults"
+import { pushTemplate, removeTemplate } from "@/lib/library-sync"
 
 export const templateKeys = {
   list: ["templates", "list"] as const,
@@ -54,8 +55,14 @@ export function useTemplate(id: number | undefined) {
 export function useDeleteTemplate() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) => Templates.DeleteTemplate(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: templateKeys.list }),
+    mutationFn: async (id: number) => {
+      await Templates.DeleteTemplate(id)
+      await removeTemplate(id)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: templateKeys.list })
+      qc.invalidateQueries({ queryKey: ["dashboard", "library"] })
+    },
   })
 }
 
@@ -84,6 +91,9 @@ export function useCreateTemplate() {
     onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: templateKeys.list })
       qc.setQueryData(templateKeys.one(created.id), created)
+      void pushTemplate(created).then(() => {
+        qc.invalidateQueries({ queryKey: ["dashboard", "library"] })
+      })
     },
   })
 }
@@ -96,7 +106,12 @@ export function useDuplicateTemplate() {
   return useMutation({
     mutationFn: (id: number) =>
       Templates.DuplicateTemplate(id) as unknown as Promise<Template>,
-    onSuccess: () => qc.invalidateQueries({ queryKey: templateKeys.list }),
+    onSuccess: (created) => {
+      qc.invalidateQueries({ queryKey: templateKeys.list })
+      void pushTemplate(created).then(() => {
+        qc.invalidateQueries({ queryKey: ["dashboard", "library"] })
+      })
+    },
   })
 }
 
@@ -124,6 +139,9 @@ export function useUpdateTemplate() {
     onSuccess: (saved) => {
       qc.invalidateQueries({ queryKey: templateKeys.list })
       qc.setQueryData(templateKeys.one(saved.id), saved)
+      void pushTemplate(saved).then(() => {
+        qc.invalidateQueries({ queryKey: ["dashboard", "library"] })
+      })
     },
   })
 }

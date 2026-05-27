@@ -125,33 +125,37 @@ export function TemplateCanvas({
   }
 
   // Per-slide coordinator: every fitToBox box reports its measured
-  // ownFit here. We take the min and feed it back to every box so the
-  // boxes on THIS slide share one fontSize — primary/secondary/
-  // tertiary translations stay aligned even when only one of them
-  // would have needed to shrink. Reset when the fill changes (a new
-  // slide is being rendered into this canvas) so a short slide
-  // doesn't stay locked at the previous long slide's floor.
+  // ownFit here. We take the min across the current snapshot of all
+  // boxes and feed it back so primary/secondary/tertiary translation
+  // boxes share one fontSize. Tracked as a per-box map (keyed by box
+  // index) rather than a single shrinking min, so when the operator
+  // raises a box's declared fontSize the min recomputes upward — a
+  // monotonic ratchet would lock the slide at the smallest size ever
+  // observed and the typed value would do nothing.
   //
-  // Independent of the external `fontSizeOverride` (cross-slide
-  // broadcast). When external is set, it wins — the show pane has
-  // already computed the cross-slide min, which is <= our internal
-  // min. When external is undefined, internal is what's used,
-  // giving per-slide auto-shrink without cross-slide coupling.
-  const [internalMin, setInternalMin] = useState<number | undefined>(undefined)
+  // Reset on fill / template change so a short slide following a long
+  // one doesn't stay pinned at the long slide's floor. Independent of
+  // the external `fontSizeOverride` (cross-slide broadcast): when
+  // external is set, it wins.
+  const [perBoxFit, setPerBoxFit] = useState<Record<number, number>>({})
   const fillSig = useMemo(() => JSON.stringify(fill), [fill])
   useEffect(() => {
-    setInternalMin(undefined)
+    setPerBoxFit({})
   }, [fillSig, template.id])
   const handleFitComputed = useCallback(
-    (slot: SlotName, fontSize: number) => {
-      setInternalMin((prev) => {
-        if (prev !== undefined && prev <= fontSize) return prev
-        return fontSize
+    (slot: SlotName, fontSize: number, boxIndex: number) => {
+      setPerBoxFit((prev) => {
+        if (prev[boxIndex] === fontSize) return prev
+        return { ...prev, [boxIndex]: fontSize }
       })
       onFitComputed?.(slot, fontSize)
     },
     [onFitComputed]
   )
+  const internalMin = useMemo(() => {
+    const vals = Object.values(perBoxFit)
+    return vals.length === 0 ? undefined : Math.min(...vals)
+  }, [perBoxFit])
 
   const effectiveOverride = fontSizeOverride ?? internalMin
 
@@ -942,7 +946,9 @@ function BoxRenderer({
   fontSizeOverride?: number
   // Reports the final fontSize this box landed on AFTER its own fit
   // (not called when fontSizeOverride is set — we didn't measure).
-  onFitComputed?: (slot: SlotName, fontSize: number) => void
+  // boxIndex lets the parent keep a per-box map of fits so the min
+  // can move up as well as down.
+  onFitComputed?: (slot: SlotName, fontSize: number, boxIndex: number) => void
   selected?: boolean
   interactive?: boolean
   onSelect?: () => void
@@ -1033,7 +1039,7 @@ function BoxRenderer({
       // Tell the parent what size this box needs unconstrained. The
       // show pane aggregates the per-template minimum across every
       // fitToBox box and every slide.
-      if (onFitComputed) onFitComputed(box.slot, ownFit)
+      if (onFitComputed) onFitComputed(box.slot, ownFit, boxIndex ?? -1)
     } else {
       ownFit = box.fontSize
     }
@@ -1086,7 +1092,15 @@ function BoxRenderer({
       wrapper.style.height = `${box.h + expand}px`
     }
 
-    if (valueChanged && typeof window !== "undefined") {
+    // Debug log gated behind `localStorage.np_debug_fit = "1"` so the
+    // console isn't flooded for normal users. Set the key in DevTools to
+    // re-enable when investigating fit-to-box layout issues.
+    if (
+      valueChanged &&
+      typeof window !== "undefined" &&
+      typeof localStorage !== "undefined" &&
+      localStorage.getItem("np_debug_fit") === "1"
+    ) {
       // eslint-disable-next-line no-console
       console.log("[Fit]", {
         slot: box.slot,
@@ -1116,6 +1130,19 @@ function BoxRenderer({
     box.slot,
     box.y,
     box.h,
+    // Typography props affect text metrics, which feed the overflow
+    // measurement — without them in deps the picker visually swaps
+    // the font but the auto-shrink loop keeps the previous family's
+    // ownFit, so the text looks oversized/undersized for the new
+    // family and the change reads as "nothing happened".
+    box.font,
+    box.weight,
+    box.italic,
+    box.lineHeight,
+    box.letterSpacing,
+    box.uppercase,
+    box.maxLines,
+    box.w,
     value,
     measure,
     fontSizeOverride,
@@ -1189,7 +1216,15 @@ function BoxRenderer({
             // report the squished size and overflow can't be detected.
             // The wrapper's overflow:hidden still clips visually.
             flexShrink: 0,
-            fontFamily: box.font,
+            // Quoted family name + generic fallback. Without the
+            // fallback, a font that fails to fetch (woff2 404 in dev,
+            // user picks a system-only family that isn't installed)
+            // would silently inherit the app shell's `Inter, ui-
+            // sans-serif` from body, but inside transformed canvases
+            // some webviews drop to a serif-ish display fallback that
+            // renders as squashed glyphs ("Hiiiiii" → bars + dots).
+            // Explicit chain keeps every fallback path sane.
+            fontFamily: buildFontStack(box.font),
             fontSize,
             fontWeight: box.weight,
             fontStyle: box.italic ? "italic" : "normal",
@@ -1225,6 +1260,31 @@ function BoxRenderer({
       ) : null}
     </div>
   )
+}
+
+// Generic-fallback aware font stack. Mono families get a mono fallback
+// so the auto-shrink loop doesn't measure against a sans-fallback's
+// narrower glyphs and over-fit. Serif families get a serif fallback
+// for the same reason. Everything else gets a sans chain.
+const MONO_HINTS = ["Mono", "Code", "Consolas", "Courier"]
+const SERIF_HINTS = [
+  "Serif",
+  "Garamond",
+  "Merriweather",
+  "Lora",
+  "Playfair",
+  "Georgia",
+  "Times",
+  "Crimson",
+]
+function buildFontStack(family: string | undefined): string {
+  if (!family) return 'ui-sans-serif, system-ui, "Segoe UI", sans-serif'
+  const f = family.replace(/"/g, '\\"')
+  const isMono = MONO_HINTS.some((h) => family.includes(h))
+  const isSerif = SERIF_HINTS.some((h) => family.includes(h))
+  if (isMono) return `"${f}", ui-monospace, Consolas, "Courier New", monospace`
+  if (isSerif) return `"${f}", ui-serif, Georgia, "Times New Roman", serif`
+  return `"${f}", ui-sans-serif, system-ui, "Segoe UI", sans-serif`
 }
 
 function renderSlotValue(value: SlotValue): React.ReactNode {

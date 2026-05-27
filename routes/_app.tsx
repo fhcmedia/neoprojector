@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { motion } from "motion/react"
+import { AnimatePresence, motion } from "motion/react"
 import {
   createFileRoute,
   Link,
@@ -43,6 +43,11 @@ import { LivePreviewWidget } from "@/features/live/live-preview-widget"
 import { useKeybinds } from "@/hooks/use-keybinds"
 import { CommandPalette } from "@/features/command-palette/command-palette"
 import { useAuth } from "@/hooks/use-auth"
+import { startSyncEngine } from "@/lib/library-sync"
+import {
+  Walkthrough,
+  isWalkthroughRequested,
+} from "@/features/walkthrough/walkthrough"
 import logo from "@/assets/logo.png"
 
 export const Route = createFileRoute("/_app")({
@@ -69,6 +74,11 @@ function AppShell() {
   const [startError, setStartError] = useState<string | null>(null)
   const [hasUnread, setHasUnread] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  // Walkthrough is gated on a localStorage flag the onboarding card
+  // writes (`np.walkthrough.requested`). Captured once at mount so the
+  // tour doesn't re-trigger mid-session when the user revisits this
+  // route or HMR re-runs the file.
+  const [tourOpen, setTourOpen] = useState(() => isWalkthroughRequested())
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -80,6 +90,20 @@ function AppShell() {
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [])
+
+  // Cloud-library sync engine. Owns the boot-time backfill, periodic pull,
+  // outbox drain, and online/visibility listeners. Returns a teardown the
+  // effect runs on sign-out / unmount. Re-keyed on auth so a logout-then-
+  // login cycle starts a fresh engine without stale closures.
+  useEffect(() => {
+    if (auth.loading || !auth.isAuthenticated) return
+    const stop = startSyncEngine((s) => {
+      if (s.pulled || s.pushed) {
+        console.info("[library-sync]", s)
+      }
+    })
+    return stop
+  }, [auth.loading, auth.isAuthenticated])
   const { user, logout, account } = auth
   const navigate = useNavigate()
 
@@ -117,14 +141,37 @@ function AppShell() {
       <header className="flex h-12 shrink-0 items-stretch justify-between border-b border-border/50">
         <Link
           to="/"
+          data-tour-id="brand"
           className="flex items-stretch outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
         >
-          <span className="grid w-12 place-items-center">
-            <img src={logo} alt="" className="h-10 w-10" />
+          <span className="grid w-12 place-items-center overflow-hidden">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.img
+                key={auth.profile?.orgLogo ?? "default"}
+                src={auth.profile?.orgLogo ?? logo}
+                alt=""
+                initial={{ opacity: 0, scale: 0.85 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 1.1 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+                className="h-10 w-10 object-contain"
+              />
+            </AnimatePresence>
           </span>
           <span className="w-px bg-border/60" />
           <span className="grid place-items-center px-4 text-sm font-medium tracking-tight">
-            Fathers House Church Media
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={auth.profile?.orgName ?? "default"}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.2 }}
+                className="block max-w-[260px] truncate"
+              >
+                {auth.profile?.orgName ?? "Fathers House Church Media"}
+              </motion.span>
+            </AnimatePresence>
           </span>
         </Link>
         <div className="flex items-stretch">
@@ -133,6 +180,7 @@ function AppShell() {
               <button
                 type="button"
                 aria-label="Account"
+                data-tour-id="account"
                 className="grid w-12 place-items-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
               >
                 <CircleUserIcon className="h-4 w-4" />
@@ -178,6 +226,7 @@ function AppShell() {
           <Link
             to="/presenter"
             aria-label="Presenter view"
+            data-tour-id="presenter"
             className="grid w-10 place-items-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
           >
             <MonitorIcon className="h-4 w-4" />
@@ -185,6 +234,7 @@ function AppShell() {
           <Link
             to={inSettings || inEditor ? "/" : "/settings"}
             aria-label={inSettings || inEditor ? "Back to projector" : "Settings"}
+            data-tour-id="settings"
             className="grid w-12 place-items-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
           >
             {inSettings || inEditor ? (
@@ -206,6 +256,7 @@ function AppShell() {
           <button
             type="button"
             aria-label={live ? "Stop live" : "Go live"}
+            data-tour-id="golive"
             disabled={startMut.isPending || stopMut.isPending}
             onClick={() => {
               if (live) setConfirmOffline(true)
@@ -288,6 +339,7 @@ function AppShell() {
           the schedule view already has the dedicated PREVIEW pane on
           the right, so the corner card would just duplicate it. */}
       {path.startsWith("/presentations") && <LivePreviewWidget />}
+      {tourOpen && <Walkthrough onClose={() => setTourOpen(false)} />}
     </motion.div>
   )
 }

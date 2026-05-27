@@ -6,6 +6,7 @@ import type {
   ListPresentationSlidesRow,
   PresentationSlide,
 } from "@/bindings/neoprojector/database"
+import { pushPresentation, removePresentation } from "@/lib/library-sync"
 
 // Stable query keys for presentation reads. Mutations invalidate the
 // specific keys they touched so unrelated views (e.g. library tab vs
@@ -53,6 +54,9 @@ export function useCreatePresentation() {
     onSuccess: (created) => {
       qc.invalidateQueries({ queryKey: presentationKeys.list })
       qc.setQueryData(presentationKeys.one(created.id), created)
+      void pushPresentation(created, 0).then(() => {
+        qc.invalidateQueries({ queryKey: ["dashboard", "library"] })
+      })
     },
   })
 }
@@ -65,6 +69,9 @@ export function useRenamePresentation() {
     onSuccess: (updated) => {
       qc.invalidateQueries({ queryKey: presentationKeys.list })
       qc.setQueryData(presentationKeys.one(updated.id), updated)
+      void pushPresentation(updated).then(() => {
+        qc.invalidateQueries({ queryKey: ["dashboard", "library"] })
+      })
     },
   })
 }
@@ -72,10 +79,13 @@ export function useRenamePresentation() {
 export function useDeletePresentation() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (id: number) =>
-      Presentations.DeletePresentation(id) as unknown as Promise<void>,
+    mutationFn: async (id: number) => {
+      await Presentations.DeletePresentation(id)
+      await removePresentation(id)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: presentationKeys.list })
+      qc.invalidateQueries({ queryKey: ["dashboard", "library"] })
     },
   })
 }
@@ -121,6 +131,9 @@ export function useUpdatePlayback(presentationId: number) {
     onSuccess: (updated) => {
       qc.invalidateQueries({ queryKey: presentationKeys.list })
       qc.setQueryData(presentationKeys.one(updated.id), updated)
+      void pushPresentation(updated).then(() => {
+        qc.invalidateQueries({ queryKey: ["dashboard", "library"] })
+      })
     },
   })
 }

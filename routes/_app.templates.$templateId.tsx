@@ -59,6 +59,7 @@ import {
   type Box,
   type GradflowConfig,
   type GradflowType,
+  type SlotFill,
   type SlotName,
   type TemplateBody,
   type TransitionKind,
@@ -297,10 +298,22 @@ function TemplateEditor() {
     )
   }
 
-  // Sample fill keyed to the template's declared kind. The sample
-  // switcher was a development affordance — users edit one template at
-  // a time and the relevant sample for that kind is enough.
-  const fill = sampleFor(template.kind)
+  // Editor preview fill: start from the kind's canned sample, then
+  // overlay every box's `defaultContent` so the operator sees their
+  // own typed text instead of the placeholder. Live-mode preserves
+  // its own priority order (live fill > defaultContent > undefined);
+  // overlaying in the editor only changes what the canvas previews,
+  // not what gets persisted or served at runtime.
+  const baseFill = sampleFor(template.kind)
+  const fill: SlotFill = { ...baseFill }
+  if (body) {
+    for (const b of body.boxes) {
+      if (b.slot === "media") continue
+      if (b.defaultContent !== undefined) {
+        ;(fill as Record<string, unknown>)[b.slot] = b.defaultContent
+      }
+    }
+  }
   const selectedBox =
     selectedIndex >= 0 ? body.boxes[selectedIndex] : undefined
 
@@ -500,6 +513,26 @@ function PropertyPanel({
 
       {!isMediaSlot && (
         <>
+          {/* Default content — shown in the editor preview and at
+             runtime whenever the live source doesn't fill this slot.
+             Live content (a bible verse, a song line) takes priority;
+             this is the fallback that ships with the template. */}
+          <Section title="Content">
+            <TextField
+              label="Default text"
+              value={
+                typeof box.defaultContent === "string"
+                  ? box.defaultContent
+                  : ""
+              }
+              readOnly={readOnly}
+              onChange={(v) =>
+                onChange({ defaultContent: v.length === 0 ? undefined : v })
+              }
+              placeholder="Text shown when no live content is set"
+            />
+          </Section>
+
           {/* Typography */}
           <Section title="Text">
             <FontPicker value={box.font} readOnly={readOnly} onChange={(v) => onChange({ font: v })} />
@@ -807,6 +840,34 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
+function TextField({
+  label,
+  value,
+  readOnly,
+  onChange,
+  placeholder,
+}: {
+  label: string
+  value: string
+  readOnly: boolean
+  onChange: (v: string) => void
+  placeholder?: string
+}) {
+  return (
+    <label className="flex flex-col gap-0.5">
+      <FieldLabel>{label}</FieldLabel>
+      <textarea
+        value={value}
+        disabled={readOnly}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={3}
+        className="min-h-[60px] resize-y rounded border border-border/40 bg-muted/30 px-1.5 py-1 text-[11px] outline-none focus-visible:border-border focus-visible:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-60"
+      />
+    </label>
+  )
+}
+
 function NumberField({
   label,
   value,
@@ -825,14 +886,22 @@ function NumberField({
   // Keep the input editable as plain text so the user can clear, type
   // a partial number ("8", "8."), or paste — without each keystroke
   // round-tripping through Number() (which turns "" into 0 and trips
-  // the min clamp, killing the edit mid-flow). Commit on blur / Enter;
-  // sync local state when the parent value changes from elsewhere.
+  // the min clamp, killing the edit mid-flow). For every keystroke
+  // that *does* parse to a finite number, fire onChange so the canvas
+  // updates live (the operator was confused when changes only landed
+  // after blur). Partial states ("", "-", "8.") keep the typed text
+  // but don't propagate. Blur / Enter normalises the text to the
+  // committed value so trailing junk gets cleaned up.
   const [text, setText] = useState(String(value))
   const editingRef = useRef(false)
   useEffect(() => {
     if (editingRef.current) return
     setText(String(value))
   }, [value])
+
+  function clamp(n: number): number {
+    return min !== undefined && n < min ? min : n
+  }
 
   function commit() {
     editingRef.current = false
@@ -846,7 +915,7 @@ function NumberField({
       setText(String(value))
       return
     }
-    const clamped = min !== undefined && parsed < min ? min : parsed
+    const clamped = clamp(parsed)
     if (clamped !== value) onChange(clamped)
     setText(String(clamped))
   }
@@ -865,7 +934,14 @@ function NumberField({
         }}
         onChange={(e) => {
           editingRef.current = true
-          setText(e.target.value)
+          const next = e.target.value
+          setText(next)
+          const trimmed = next.trim()
+          if (trimmed === "") return
+          const parsed = Number(trimmed)
+          if (!Number.isFinite(parsed)) return
+          const clamped = clamp(parsed)
+          if (clamped !== value) onChange(clamped)
         }}
         onBlur={commit}
         onKeyDown={(e) => {

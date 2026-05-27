@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "motion/react"
 import { useAuth } from "@/hooks/use-auth"
 import { Input } from "@/components/input"
 import { Label } from "@/components/label"
+import { BrandingSetup } from "@/features/branding/branding-setup"
 
 type Tab = "login" | "trial" | "license"
 type Search = { reason?: string; from?: string }
@@ -84,16 +85,36 @@ function AuthPage() {
   const [busy, setBusy] = useState(false)
   const [agreed, setAgreed] = useState(false)
 
-  // Auto-bounce once we have an authenticated session with a usable account.
+  // Auto-bounce once we have an authenticated session. We previously also
+  // waited for `auth.account` so we could check the status here, but that
+  // turned "Signed in. Loading workspace…" into a dead end whenever the
+  // license-server request failed or stalled — the user would sit forever
+  // because account never populated. The `_app` route already enforces all
+  // status checks (no_access / trial_expired / suspended / banned bounce
+  // back here with a reason), so it's safe to navigate as soon as we have
+  // a session. If account later reports a blocking status, the gate kicks
+  // us back here with the right reason.
+  //
+  // Brand-new accounts pause here on the onboarding card first — the
+  // `isFreshSignup` flag, set by signupTrial / signupWithLicense, holds
+  // off the redirect until the operator hits Skip or Save in the panel.
   useEffect(() => {
     if (auth.loading) return
     if (!auth.isAuthenticated) return
-    if (!auth.account) return
-    if (auth.account.status === "licensed" || auth.account.status === "trial") {
-      const dest = search.from ?? "/"
-      navigate({ to: dest, replace: true })
+    if (auth.isFreshSignup) return
+    if (
+      auth.account &&
+      (auth.account.status === "trial_expired" ||
+        auth.account.status === "suspended" ||
+        auth.account.status === "banned" ||
+        auth.account.status === "no_access")
+    ) {
+      // Stay on /auth so the upgrade panel can render.
+      return
     }
-  }, [auth.loading, auth.isAuthenticated, auth.account, navigate, search.from])
+    const dest = search.from ?? "/"
+    navigate({ to: dest, replace: true })
+  }, [auth.loading, auth.isAuthenticated, auth.isFreshSignup, auth.account, navigate, search.from])
 
   // Signed in but account has no usable access (no license, no trial, or
   // trial expired). Render an upgrade panel instead of the sign-in form so
@@ -176,7 +197,25 @@ function AuthPage() {
           className="w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-black/45 p-8 shadow-2xl backdrop-blur-xl"
         >
           <AnimatePresence mode="wait">
-            {busy ? (
+            {auth.isFreshSignup && !busy ? (
+              <BrandingSetup
+                key="branding"
+                initialName={auth.profile?.orgName ?? null}
+                initialLogo={auth.profile?.orgLogo ?? null}
+                defaultName="Your church"
+                email={auth.user?.email ?? undefined}
+                onSubmit={async (patch) => {
+                  // BrandingSetup owns the success-state delay via the
+                  // separate onSaved callback below. Acking the
+                  // onboarding flag here would unmount the card the
+                  // instant the save resolved, swallowing the
+                  // checkmark animation.
+                  return auth.updateBranding(patch)
+                }}
+                onSaved={() => auth.acknowledgeOnboarding()}
+                onSkip={() => auth.acknowledgeOnboarding()}
+              />
+            ) : busy ? (
               <motion.div
                 key="loading"
                 initial={{ opacity: 0, scale: 0.95 }}
