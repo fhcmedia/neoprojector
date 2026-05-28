@@ -2,6 +2,12 @@
 INSERT INTO song (title) VALUES (?)
 RETURNING *;
 
+-- name: UpdateSongMetadata :one
+UPDATE song
+SET author = ?, copyright = ?, publisher = ?, ccli_number = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING *;
+
 -- name: SongByID :one
 SELECT * FROM song WHERE id = ?;
 

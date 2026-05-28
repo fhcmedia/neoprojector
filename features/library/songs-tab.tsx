@@ -1,5 +1,6 @@
+import { useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { MusicIcon, PlayIcon, RadioIcon } from "lucide-react"
+import { CopyIcon, MusicIcon, PencilIcon, PlayIcon, RadioIcon, Trash2Icon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDebounce } from "@/hooks/use-debounce"
 import { useSessionState } from "@/hooks/use-session-state"
@@ -8,9 +9,34 @@ import {
   pickerContainerVariants,
   pickerRowVariants,
 } from "@/features/schedule/picker-anim"
-import { useLibrarySongs, useLibrarySong } from "@/features/library/api"
+import {
+  useDeleteSong,
+  useDuplicateSong,
+  useLibrarySong,
+  useLibrarySongs,
+  useRenameSong,
+} from "@/features/library/api"
 import { useLive } from "@/features/live/live-context"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/context-menu"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/alert-dialog"
+import { Input } from "@/components/input"
 import type { SongFull } from "@/bindings/neoprojector/services/songs"
+import type { Song } from "@/bindings/neoprojector/database"
 
 export function SongsTab({ search }: { search: string }) {
   const { data: songs, isLoading } = useLibrarySongs()
@@ -18,6 +44,15 @@ export function SongsTab({ search }: { search: string }) {
     "neoprojector.songSelectedId",
     null
   )
+  const duplicateMut = useDuplicateSong()
+  const deleteMut = useDeleteSong()
+  const renameMut = useRenameSong()
+  // Pending intents — pop a confirm / rename dialog before mutating.
+  // Captures the whole song so the dialog can show the title even
+  // after the row scrolls out of view.
+  const [confirmDelete, setConfirmDelete] = useState<Song | null>(null)
+  const [renaming, setRenaming] = useState<Song | null>(null)
+  const [renameDraft, setRenameDraft] = useState("")
 
   const debounced = useDebounce(search, 200)
 
@@ -54,22 +89,54 @@ export function SongsTab({ search }: { search: string }) {
                 {filtered.map((song) => {
                   const isActive = song.id === selectedId
                   return (
-                    <motion.button
-                      key={song.id}
-                      type="button"
-                      layout
-                      variants={songItemVariants}
-                      onClick={() => setSelectedId(song.id)}
-                      className={cn(
-                        "flex w-full items-center gap-2 border-b border-border/40 px-3 py-1.5 text-left text-xs transition-colors",
-                        isActive
-                          ? "bg-muted text-foreground"
-                          : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                      )}
-                    >
-                      <MusicIcon className="size-3.5 shrink-0 opacity-70" />
-                      <span className="truncate">{song.title}</span>
-                    </motion.button>
+                    <ContextMenu key={song.id}>
+                      <ContextMenuTrigger asChild>
+                        <motion.button
+                          type="button"
+                          layout
+                          variants={songItemVariants}
+                          onClick={() => setSelectedId(song.id)}
+                          className={cn(
+                            "flex w-full items-center gap-2 border-b border-border/40 px-3 py-1.5 text-left text-xs transition-colors",
+                            isActive
+                              ? "bg-muted text-foreground"
+                              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                          )}
+                        >
+                          <MusicIcon className="size-3.5 shrink-0 opacity-70" />
+                          <span className="truncate">{song.title}</span>
+                        </motion.button>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent className="w-48">
+                        <ContextMenuItem
+                          onSelect={() => {
+                            duplicateMut.mutate(song.id, {
+                              onSuccess: (copy) => setSelectedId(copy.id),
+                            })
+                          }}
+                        >
+                          <CopyIcon className="mr-2 size-3.5" />
+                          Duplicate
+                        </ContextMenuItem>
+                        <ContextMenuItem
+                          onSelect={() => {
+                            setRenaming(song)
+                            setRenameDraft(song.title)
+                          }}
+                        >
+                          <PencilIcon className="mr-2 size-3.5" />
+                          Rename
+                        </ContextMenuItem>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem
+                          onSelect={() => setConfirmDelete(song)}
+                          className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                        >
+                          <Trash2Icon className="mr-2 size-3.5" />
+                          Delete
+                        </ContextMenuItem>
+                      </ContextMenuContent>
+                    </ContextMenu>
                   )
                 })}
               </AnimatePresence>
@@ -81,6 +148,84 @@ export function SongsTab({ search }: { search: string }) {
       <motion.div variants={pickerRowVariants} className="flex h-full flex-1">
         <SongPreview songId={selectedId} />
       </motion.div>
+
+      <AlertDialog
+        open={!!confirmDelete}
+        onOpenChange={(o) => !o && setConfirmDelete(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this song?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDelete?.title} and all its sections will be removed.
+              Schedule items referencing it will break.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!confirmDelete) return
+                const id = confirmDelete.id
+                deleteMut.mutate(id, {
+                  onSuccess: () => {
+                    if (selectedId === id) setSelectedId(null)
+                  },
+                })
+                setConfirmDelete(null)
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={!!renaming}
+        onOpenChange={(o) => !o && setRenaming(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Rename song</AlertDialogTitle>
+            <AlertDialogDescription>
+              Pick a new title for "{renaming?.title}".
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Input
+            autoFocus
+            value={renameDraft}
+            onChange={(e) => setRenameDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault()
+                if (!renaming) return
+                const title = renameDraft.trim()
+                if (title && title !== renaming.title) {
+                  renameMut.mutate({ id: renaming.id, title })
+                }
+                setRenaming(null)
+              }
+            }}
+            className="h-8 text-sm"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!renaming) return
+                const title = renameDraft.trim()
+                if (title && title !== renaming.title) {
+                  renameMut.mutate({ id: renaming.id, title })
+                }
+                setRenaming(null)
+              }}
+            >
+              Save
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </motion.div>
   )
 }

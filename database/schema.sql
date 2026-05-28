@@ -60,6 +60,10 @@ CREATE TABLE IF NOT EXISTS bible_translation_map (
 CREATE TABLE IF NOT EXISTS song (
   id INTEGER PRIMARY KEY,
   title TEXT NOT NULL,
+  author TEXT,
+  copyright TEXT,
+  publisher TEXT,
+  ccli_number TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

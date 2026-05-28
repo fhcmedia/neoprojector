@@ -1,11 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router"
 import { useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
+import { Dialogs } from "@wailsio/runtime"
 import {
+  AlertTriangleIcon,
   CheckIcon,
   ChevronDownIcon,
+  FolderOpenIcon,
   ImagePlusIcon,
   Loader2Icon,
+  SearchIcon,
   Trash2Icon,
 } from "lucide-react"
 import { Switch } from "@/components/switch"
@@ -48,6 +52,12 @@ import {
 } from "@/lib/library-sync"
 import { useEffect } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { Service as ProImport } from "@/bindings/neoprojector/services/proimport"
+import type { ScanItem as ProScanItem, ImportSummary as ProImportSummary } from "@/bindings/neoprojector/services/proimport"
+import { ConflictPolicy as ProConflictPolicy } from "@/bindings/neoprojector/services/proimport"
+import { Service as EWImport } from "@/bindings/neoprojector/services/ewimport"
+import type { ScanItem as EWScanItem, ImportSummary as EWImportSummary } from "@/bindings/neoprojector/services/ewimport"
+import { ConflictPolicy as EWConflictPolicy } from "@/bindings/neoprojector/services/ewimport"
 
 export const Route = createFileRoute("/_app/settings")({
   component: Settings,
@@ -61,6 +71,7 @@ const sections = [
   { id: "audio", label: "Audio" },
   { id: "bibles", label: "Bibles" },
   { id: "songs", label: "Songs" },
+  { id: "import", label: "Import" },
   { id: "cloud", label: "Cloud sync" },
   { id: "hotkeys", label: "Hotkeys" },
   { id: "advanced", label: "Advanced" },
@@ -977,9 +988,11 @@ function Settings() {
                     ? "Configured outputs and their template bindings."
                     : active === "bibles"
                       ? "Pick which translations fill the slots in multi-translation templates."
-                      : active === "cloud"
-                        ? "Force-push your entire local library to the cloud dashboard."
-                        : `${current.label} settings will live here.`
+                      : active === "import"
+                        ? "Pull songs, templates, and media from ProPresenter and other tools into NeoProjector."
+                        : active === "cloud"
+                          ? "Force-push your entire local library to the cloud dashboard."
+                          : `${current.label} settings will live here.`
             }
           />
           {active === "general" ? (
@@ -992,6 +1005,8 @@ function Settings() {
             <DisplaySettings />
           ) : active === "bibles" ? (
             <BiblesPanel />
+          ) : active === "import" ? (
+            <ImportPanel key="import-panel" />
           ) : active === "cloud" ? (
             <CloudSyncPanel />
           ) : (
@@ -999,6 +1014,611 @@ function Settings() {
           )}
         </div>
       </section>
+    </div>
+  )
+}
+
+// ─── Import panel ─────────────────────────────────────────────────────────
+//
+// Settings → Import wraps one tabbed UI around every source-specific
+// importer (ProPresenter, EasyWorship, …). Each source registers a
+// scan + import function pair plus a per-item row renderer; the panel
+// handles state, conflict policy, and summary rendering generically.
+
+// CommonScanItem is the subset of fields every importer's ScanItem
+// type shares. We narrow per-source render-callbacks to read the
+// format-specific extras (CCLI, theme, etc.) via casts.
+type CommonScanItem = {
+  path: string
+  format: string
+  title: string
+  supported: boolean
+  reason: string
+}
+
+// CommonSummary likewise. ImportSummary in each binding is identical
+// shape; declaring the alias here keeps the panel free of any direct
+// reference to one source's enum.
+type CommonSummary = {
+  imported: number
+  renamed: number
+  overwrote: number
+  skipped: number
+  failed: number
+  warnings: string[]
+}
+
+type ImportSource = "propresenter" | "easyworship"
+
+function ImportPanel() {
+  const [tab, setTab] = useState<ImportSource>("propresenter")
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="flex items-stretch gap-1 border-b border-border/40">
+        {([
+          { id: "propresenter", label: "ProPresenter" },
+          { id: "easyworship", label: "EasyWorship" },
+        ] as const).map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={cn(
+              "-mb-px border-b-2 px-3 py-1.5 text-xs font-medium transition-colors",
+              tab === t.id
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tab === "propresenter" ? <ProPresenterImportPanel /> : <EasyWorshipImportPanel />}
+    </div>
+  )
+}
+
+function ProPresenterImportPanel() {
+  return (
+    <LibraryImportPanel
+      sourceTitle="From ProPresenter"
+      sourceDescription="Point at the folder that contains your ProPresenter song library. ProPresenter 4/5/6 (.pro6) songs import directly; ProPresenter 7 (.pro) files are detected and listed but won't import in this build."
+      pathPlaceholder="C:\Users\you\Documents\ProPresenter\Library"
+      dialogTitle="Choose ProPresenter library folder"
+      autoDetect={async () => (await ProImport.AutoDetectProPresenter()) ?? []}
+      fullScan={async () => (await ProImport.FullScanProPresenter()) ?? []}
+      scan={async (dir) => (await ProImport.ScanProPresenter(dir)) as unknown as ProScanItem[]}
+      importAction={async (paths, policy) =>
+        (await ProImport.ImportProPresenter(paths, policy as ProConflictPolicy)) as unknown as ProImportSummary
+      }
+      policyValues={{
+        skip: ProConflictPolicy.ConflictSkip,
+        rename: ProConflictPolicy.ConflictRename,
+        overwrite: ProConflictPolicy.ConflictOverwrite,
+      }}
+      renderRow={(it) => {
+        const i = it as ProScanItem
+        return (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="truncate text-xs font-medium">{i.title}</span>
+              <span className="rounded bg-muted/60 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-muted-foreground">
+                {i.format}
+              </span>
+              {i.ccli_number && (
+                <span className="rounded bg-muted/40 px-1.5 py-0.5 text-[9px] font-mono uppercase text-muted-foreground/80">
+                  CCLI #{i.ccli_number}
+                </span>
+              )}
+            </div>
+            <span className="truncate text-[10px] text-muted-foreground/70">
+              {i.author && <>{i.author} · </>}
+              {i.supported ? (
+                <>{i.sections} sections · {i.slides} slides · {i.lines} lines</>
+              ) : (
+                <span className="text-amber-300">{i.reason}</span>
+              )}
+            </span>
+            <span className="truncate text-[9px] text-muted-foreground/40">{i.path}</span>
+          </>
+        )
+      }}
+    />
+  )
+}
+
+function EasyWorshipImportPanel() {
+  // Per-slide label stripping is an EW-specific quirk. Operators
+  // commonly type a section header ("Verse 1", song title, slide
+  // number, …) as the first line of each slide; toggling this on
+  // discards that line so only sung lyric reaches NP.
+  const [stripFirstLine, setStripFirstLine] = useState(false)
+  return (
+    <LibraryImportPanel
+      sourceTitle="From EasyWorship"
+      sourceDescription="Point at the EasyWorship library folder (look for one with Songs.db + SongWords.db inside) or pick the parent of one. EW 6 / 7 / 8 import directly. .ews export bundles are unzipped automatically. EW 2009 (Paradox .DB) is detected but not yet imported — open the library in EW 7+ to upgrade."
+      pathPlaceholder="C:\Users\you\Documents\Softouch\Easyworship\Default\Databases\Data"
+      dialogTitle="Choose EasyWorship library folder"
+      autoDetect={async () => (await EWImport.AutoDetectEasyWorship()) ?? []}
+      fullScan={async () => (await EWImport.FullScanEasyWorship()) ?? []}
+      scan={async (dir) => (await EWImport.ScanEasyWorship(dir)) as unknown as EWScanItem[]}
+      importAction={async (paths, policy) =>
+        (await EWImport.ImportEasyWorship(
+          paths,
+          policy as EWConflictPolicy,
+          { StripFirstLine: stripFirstLine },
+        )) as unknown as EWImportSummary
+      }
+      extraOptions={
+        <label className="flex cursor-pointer items-start gap-2 rounded border border-border/40 p-2 transition-colors hover:bg-muted/20">
+          <input
+            type="checkbox"
+            checked={stripFirstLine}
+            onChange={(e) => setStripFirstLine(e.target.checked)}
+            className="mt-0.5 size-3.5 cursor-pointer accent-foreground"
+          />
+          <div className="flex flex-col">
+            <span className="text-xs font-medium">Strip slide labels</span>
+            <span className="text-[10px] text-muted-foreground/70">
+              Drop the first non-empty line of every slide (titles, labels like "Verse 1", slide numbers). Use when operators in EW typed headers above the lyric.
+            </span>
+          </div>
+        </label>
+      }
+      policyValues={{
+        skip: EWConflictPolicy.ConflictSkip,
+        rename: EWConflictPolicy.ConflictRename,
+        overwrite: EWConflictPolicy.ConflictOverwrite,
+      }}
+      renderRow={(it) => {
+        const i = it as EWScanItem
+        return (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="truncate text-xs font-medium">{i.title}</span>
+              <span className="rounded bg-muted/60 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-muted-foreground">
+                {i.format.replace("ew_", "ew·")}
+              </span>
+              {i.ccli_number && (
+                <span className="rounded bg-muted/40 px-1.5 py-0.5 text-[9px] font-mono uppercase text-muted-foreground/80">
+                  CCLI #{i.ccli_number}
+                </span>
+              )}
+              {i.theme_name && (
+                <span className="rounded bg-muted/40 px-1.5 py-0.5 text-[9px] text-muted-foreground/80">
+                  theme: {i.theme_name}
+                </span>
+              )}
+            </div>
+            <span className="truncate text-[10px] text-muted-foreground/70">
+              {i.author && <>{i.author} · </>}
+              {i.administrator && <>{i.administrator} · </>}
+              {i.supported ? (
+                <>{i.sections} sections · {i.slides} slides · {i.lines} lines</>
+              ) : (
+                <span className="text-amber-300">{i.reason}</span>
+              )}
+            </span>
+            <span className="truncate text-[9px] text-muted-foreground/40">{i.path}</span>
+          </>
+        )
+      }}
+    />
+  )
+}
+
+type LibraryImportPanelProps = {
+  sourceTitle: string
+  sourceDescription: string
+  pathPlaceholder: string
+  dialogTitle: string
+  autoDetect: () => Promise<string[]>
+  fullScan: () => Promise<string[]>
+  scan: (dir: string) => Promise<CommonScanItem[]>
+  importAction: (paths: string[], policy: string) => Promise<CommonSummary>
+  policyValues: { skip: string; rename: string; overwrite: string }
+  renderRow: (item: CommonScanItem) => React.ReactNode
+  // extraOptions slot — per-source toggle widgets rendered above the
+  // conflict-policy section. Source panel keeps its own state and
+  // closes over it via importAction.
+  extraOptions?: React.ReactNode
+}
+
+function LibraryImportPanel(props: LibraryImportPanelProps) {
+  const [dir, setDir] = useState("")
+  const [scanning, setScanning] = useState(false)
+  const [scanError, setScanError] = useState<string | null>(null)
+  const [items, setItems] = useState<CommonScanItem[] | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [policy, setPolicy] = useState<string>(props.policyValues.skip)
+  const [importing, setImporting] = useState(false)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [summary, setSummary] = useState<CommonSummary | null>(null)
+  const [autodetecting, setAutodetecting] = useState(false)
+  const [autodetectCandidates, setAutodetectCandidates] = useState<string[] | null>(null)
+
+  // Counts split by supported/skipped so the preview header reads
+  // "12 songs, 3 unsupported" rather than "15 items" — operators
+  // need to know what they're actually getting before clicking.
+  const counts = useMemo(() => {
+    const all = items ?? []
+    const supported = all.filter((i) => i.supported).length
+    const unsupported = all.length - supported
+    const selectedCount = all.filter((i) => i.supported && selected.has(i.path)).length
+    return { all: all.length, supported, unsupported, selectedCount }
+  }, [items, selected])
+
+  async function pickFolder() {
+    try {
+      const picked = await Dialogs.OpenFile({
+        Title: props.dialogTitle,
+        CanChooseFiles: false,
+        CanChooseDirectories: true,
+        AllowsMultipleSelection: false,
+      })
+      const path = Array.isArray(picked) ? picked[0] : picked
+      if (typeof path === "string" && path) setDir(path)
+    } catch (e) {
+      setScanError(e instanceof Error ? e.message : String(e))
+    }
+  }
+
+  async function runScan(overrideDir?: string) {
+    const target = (overrideDir ?? dir).trim()
+    if (!target) return
+    setScanning(true)
+    setScanError(null)
+    setItems(null)
+    setSummary(null)
+    try {
+      const list = (await props.scan(target)) ?? []
+      setItems(list)
+      setSelected(new Set(list.filter((i) => i.supported).map((i) => i.path)))
+    } catch (e) {
+      setScanError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setScanning(false)
+    }
+  }
+
+  // Auto-detect: first try the known-location quick check (instant —
+  // ~6 stat() syscalls). If nothing turns up, escalate to a full
+  // drive walk that short-circuits subtrees on marker hits. The walk
+  // is interruption-tolerant; we keep the spinner up until it's done.
+  async function runAutoDetect() {
+    setAutodetecting(true)
+    setScanError(null)
+    setAutodetectCandidates(null)
+    try {
+      let found = await props.autoDetect()
+      if (found.length === 0) {
+        // Fall back to the drive-wide walk.
+        found = await props.fullScan()
+      }
+      if (found.length === 0) {
+        setScanError(
+          "No library found on this machine. Use Browse to pick one manually."
+        )
+        return
+      }
+      if (found.length === 1) {
+        setDir(found[0])
+        setAutodetectCandidates(null)
+        await runScan(found[0])
+        return
+      }
+      setAutodetectCandidates(found)
+    } catch (e) {
+      setScanError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setAutodetecting(false)
+    }
+  }
+
+  async function runImport() {
+    if (!items || selected.size === 0) return
+    setImporting(true)
+    setImportError(null)
+    setSummary(null)
+    try {
+      const paths = items.filter((i) => i.supported && selected.has(i.path)).map((i) => i.path)
+      const s = await props.importAction(paths, policy)
+      setSummary(s)
+    } catch (e) {
+      setImportError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  function toggle(path: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
+
+  function selectAll(supportedOnly: boolean) {
+    const all = items ?? []
+    setSelected(new Set(all.filter((i) => !supportedOnly || i.supported).map((i) => i.path)))
+  }
+
+  function selectNone() {
+    setSelected(new Set())
+  }
+
+  return (
+    <div className="flex flex-col gap-8">
+      {/* Step 1: pick + scan */}
+      <section className="flex flex-col gap-3">
+        <div>
+          <h3 className="text-sm font-semibold">{props.sourceTitle}</h3>
+          <p className="mt-0.5 text-xs text-muted-foreground/70">{props.sourceDescription}</p>
+        </div>
+        <div className="flex items-stretch gap-2">
+          <Input
+            value={dir}
+            onChange={(e) => setDir(e.target.value)}
+            placeholder={props.pathPlaceholder}
+            className="h-8 flex-1 font-mono text-[11px]"
+          />
+          <button
+            type="button"
+            onClick={runAutoDetect}
+            disabled={autodetecting || scanning}
+            className="flex h-8 items-center gap-1.5 rounded border border-border/50 px-3 text-[11px] transition-colors hover:bg-muted disabled:opacity-50"
+            title="Look in the usual install locations"
+          >
+            {autodetecting ? (
+              <Loader2Icon className="size-3 animate-spin" />
+            ) : (
+              <SearchIcon className="size-3.5" />
+            )}
+            Auto-detect
+          </button>
+          <button
+            type="button"
+            onClick={pickFolder}
+            className="flex h-8 items-center gap-1.5 rounded border border-border/50 px-3 text-[11px] transition-colors hover:bg-muted"
+          >
+            <FolderOpenIcon className="size-3.5" />
+            Browse…
+          </button>
+          <button
+            type="button"
+            onClick={() => runScan()}
+            disabled={!dir.trim() || scanning}
+            className="flex h-8 items-center gap-1.5 rounded bg-foreground px-3 text-[11px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {scanning && <Loader2Icon className="size-3 animate-spin" />}
+            {scanning ? "Scanning…" : "Scan folder"}
+          </button>
+        </div>
+        {autodetectCandidates && autodetectCandidates.length > 1 && (
+          <div className="flex flex-col gap-1 rounded border border-border/40 bg-muted/20 p-2">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
+              Found {autodetectCandidates.length} possible libraries — pick one
+            </span>
+            {autodetectCandidates.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => {
+                  setDir(p)
+                  setAutodetectCandidates(null)
+                  void runScan(p)
+                }}
+                className="truncate rounded border border-border/40 bg-background/60 px-2 py-1 text-left font-mono text-[10px] transition-colors hover:bg-muted"
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        )}
+        {scanError && (
+          <div className="flex items-start gap-2 rounded border border-destructive/30 bg-destructive/10 p-2 text-[11px] text-destructive">
+            <AlertTriangleIcon className="size-3.5 shrink-0" />
+            <span>{scanError}</span>
+          </div>
+        )}
+      </section>
+
+      {/* Step 2: preview */}
+      {items && (
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-1 flex-col gap-2">
+              <div>
+                <h3 className="text-sm font-semibold">Preview</h3>
+                <p className="mt-0.5 text-xs text-muted-foreground/70">
+                  {counts.all === 0
+                    ? "Nothing recognisable in that folder. Try a different path or search the whole PC."
+                    : `${counts.supported} importable · ${counts.unsupported} unsupported · ${counts.selectedCount} selected`}
+                </p>
+              </div>
+              {counts.all === 0 && (
+                <button
+                  type="button"
+                  onClick={runAutoDetect}
+                  disabled={autodetecting}
+                  className="self-start flex items-center gap-1.5 rounded border border-border/50 px-3 py-1.5 text-[11px] transition-colors hover:bg-muted disabled:opacity-50"
+                >
+                  {autodetecting ? (
+                    <Loader2Icon className="size-3 animate-spin" />
+                  ) : (
+                    <SearchIcon className="size-3.5" />
+                  )}
+                  Search whole PC
+                </button>
+              )}
+            </div>
+            {counts.supported > 0 && (
+              <div className="flex items-stretch gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => selectAll(true)}
+                  className="rounded border border-border/40 px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  Select all
+                </button>
+                <button
+                  type="button"
+                  onClick={selectNone}
+                  className="rounded border border-border/40 px-2 py-1 text-[10px] uppercase tracking-wider text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  None
+                </button>
+              </div>
+            )}
+          </div>
+          {items.length > 0 && (
+            <div className="flex flex-col divide-y divide-border/30 overflow-hidden rounded border border-border/40 bg-background/40">
+              {items.map((it) => {
+                const isSel = selected.has(it.path)
+                return (
+                  <label
+                    key={it.path}
+                    className={cn(
+                      "flex cursor-pointer items-start gap-3 p-2.5 transition-colors hover:bg-muted/30",
+                      !it.supported && "opacity-60"
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      disabled={!it.supported}
+                      checked={isSel}
+                      onChange={() => toggle(it.path)}
+                      className="mt-0.5 size-3.5 cursor-pointer accent-foreground"
+                    />
+                    <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                      {props.renderRow(it)}
+                    </div>
+                  </label>
+                )
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Step 3: conflict policy + import */}
+      {items && counts.supported > 0 && (
+        <section className="flex flex-col gap-3">
+          {props.extraOptions && (
+            <>
+              <h3 className="text-sm font-semibold">Cleanup options</h3>
+              {props.extraOptions}
+            </>
+          )}
+          <h3 className="text-sm font-semibold">When a song already exists</h3>
+          <div className="grid gap-1.5">
+            {([
+              { value: props.policyValues.skip, label: "Skip", desc: "Leave the existing song untouched." },
+              { value: props.policyValues.rename, label: "Rename", desc: "Import as a new song with a numeric suffix (e.g. \"Title (2)\")." },
+              { value: props.policyValues.overwrite, label: "Overwrite", desc: "Replace the existing song's lyrics with the imported version. Schedule references keep working." },
+            ] as const).map((opt) => (
+              <label
+                key={opt.value}
+                className={cn(
+                  "flex cursor-pointer items-start gap-2 rounded border p-2 transition-colors",
+                  policy === opt.value
+                    ? "border-foreground/60 bg-muted/40"
+                    : "border-border/40 hover:bg-muted/20"
+                )}
+              >
+                <input
+                  type="radio"
+                  name="policy"
+                  checked={policy === opt.value}
+                  onChange={() => setPolicy(opt.value)}
+                  className="mt-0.5 size-3.5 cursor-pointer accent-foreground"
+                />
+                <div className="flex flex-col">
+                  <span className="text-xs font-medium">{opt.label}</span>
+                  <span className="text-[10px] text-muted-foreground/70">{opt.desc}</span>
+                </div>
+              </label>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={runImport}
+            disabled={importing || counts.selectedCount === 0}
+            className="flex h-9 items-center justify-center gap-2 rounded bg-foreground text-sm font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {importing && <Loader2Icon className="size-3.5 animate-spin" />}
+            {importing
+              ? "Importing…"
+              : counts.selectedCount === 0
+                ? "Pick at least one item"
+                : `Import ${counts.selectedCount} item${counts.selectedCount === 1 ? "" : "s"}`}
+          </button>
+          {importError && (
+            <div className="flex items-start gap-2 rounded border border-destructive/30 bg-destructive/10 p-2 text-[11px] text-destructive">
+              <AlertTriangleIcon className="size-3.5 shrink-0" />
+              <span>{importError}</span>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Step 4: summary */}
+      {summary && (
+        <section className="flex flex-col gap-2 rounded border border-border/40 bg-muted/20 p-4">
+          <div className="flex items-center gap-2">
+            <CheckIcon className="size-4 text-emerald-400" />
+            <h3 className="text-sm font-semibold">Import complete</h3>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+            <Stat label="Imported" value={summary.imported} />
+            <Stat label="Renamed" value={summary.renamed} />
+            <Stat label="Overwrote" value={summary.overwrote} />
+            <Stat label="Skipped" value={summary.skipped} />
+            {summary.failed > 0 && (
+              <Stat label="Failed" value={summary.failed} accent="destructive" />
+            )}
+          </div>
+          {summary.warnings && summary.warnings.length > 0 && (
+            <details className="mt-1">
+              <summary className="cursor-pointer text-[11px] text-muted-foreground/80 hover:text-foreground">
+                {summary.warnings.length} warning{summary.warnings.length === 1 ? "" : "s"}
+              </summary>
+              <ul className="mt-1.5 flex flex-col gap-1 pl-3 text-[10px] text-muted-foreground/80">
+                {summary.warnings.map((w, i) => (
+                  <li key={i} className="list-disc">{w}</li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </section>
+      )}
+    </div>
+  )
+}
+
+function Stat({
+  label,
+  value,
+  accent,
+}: {
+  label: string
+  value: number
+  accent?: "destructive"
+}) {
+  return (
+    <div className="flex flex-col rounded border border-border/40 bg-background/40 px-2.5 py-1.5">
+      <span className="text-[9px] uppercase tracking-wider text-muted-foreground/60">{label}</span>
+      <span
+        className={cn(
+          "text-base font-semibold tabular-nums",
+          accent === "destructive" && "text-destructive"
+        )}
+      >
+        {value}
+      </span>
     </div>
   )
 }

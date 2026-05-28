@@ -24,6 +24,31 @@ export function useLibrarySong(id: number | null) {
   })
 }
 
+export function useDuplicateSong() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: number) => {
+      return (await Songs.DuplicateSong(id)) as unknown as Song
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: libraryKeys.songs })
+      qc.invalidateQueries({ queryKey: ["dashboard", "library"] })
+    },
+  })
+}
+
+export function useRenameSong() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, title }: { id: number; title: string }) => {
+      return (await Songs.UpdateSongTitle(id, title)) as unknown as Song
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: libraryKeys.songs })
+    },
+  })
+}
+
 export function useDeleteSong() {
   const qc = useQueryClient()
   return useMutation({

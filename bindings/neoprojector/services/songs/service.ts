@@ -43,6 +43,18 @@ export function DeleteSongSection(id: number): $CancellablePromise<void> {
 }
 
 /**
+ * DuplicateSong copies a song's title, every section, and every line
+ * into a fresh row. Title suffix walks " (copy)", " (copy 2)", … until
+ * a free slot is found so the NOCASE-unique title index doesn't
+ * reject the insert. Returns the new song row.
+ */
+export function DuplicateSong(id: number): $CancellablePromise<database$0.Song> {
+    return $Call.ByID(4238094890, id).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+/**
  * GetSong returns the full song tree in one call to keep the editor simple.
  */
 export function GetSong(id: number): $CancellablePromise<$models.SongFull> {

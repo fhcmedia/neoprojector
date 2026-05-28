@@ -3,7 +3,9 @@ package songs
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
+	"time"
 
 	"neoprojector/database"
 )
@@ -199,6 +201,94 @@ func (s *Service) CreateSongFromSpec(ctx context.Context, spec SongSpec) (databa
 		return nil
 	})
 	return out, err
+}
+
+// DuplicateSong copies a song's title, every section, and every line
+// into a fresh row. Title suffix walks " (copy)", " (copy 2)", … until
+// a free slot is found so the NOCASE-unique title index doesn't
+// reject the insert. Returns the new song row.
+func (s *Service) DuplicateSong(ctx context.Context, id int64) (database.Song, error) {
+	src, err := s.q.SongByID(ctx, id)
+	if err != nil {
+		return database.Song{}, err
+	}
+	newTitle := s.uniqueCopyTitle(ctx, src.Title)
+
+	var out database.Song
+	err = s.inTx(ctx, func(q *database.Queries) error {
+		song, err := q.CreateSong(ctx, newTitle)
+		if err != nil {
+			return err
+		}
+		// Copy metadata that the importer / editor may have populated.
+		if src.Author.Valid || src.Copyright.Valid || src.Publisher.Valid || src.CcliNumber.Valid {
+			if _, err := q.UpdateSongMetadata(ctx, database.UpdateSongMetadataParams{
+				Author:     src.Author,
+				Copyright:  src.Copyright,
+				Publisher:  src.Publisher,
+				CcliNumber: src.CcliNumber,
+				ID:         song.ID,
+			}); err != nil {
+				return err
+			}
+		}
+		secs, err := q.ListSongSections(ctx, id)
+		if err != nil {
+			return err
+		}
+		for i, sec := range secs {
+			newSec, err := q.CreateSongSection(ctx, database.CreateSongSectionParams{
+				SongID:   song.ID,
+				Type:     sec.Type,
+				Position: int64(i),
+			})
+			if err != nil {
+				return err
+			}
+			lines, err := q.ListSongLines(ctx, sec.ID)
+			if err != nil {
+				return err
+			}
+			for j, ln := range lines {
+				if _, err := q.CreateSongLine(ctx, database.CreateSongLineParams{
+					SectionID: newSec.ID,
+					Position:  int64(j),
+					Text:      ln.Text,
+				}); err != nil {
+					return err
+				}
+			}
+		}
+		out = song
+		return nil
+	})
+	return out, err
+}
+
+// uniqueCopyTitle finds a free " (copy)" suffix for the given base
+// title. " (copy)" first; then " (copy 2)", " (copy 3)", … up to a
+// safety cap. Cap exists so a broken DB can't loop forever.
+func (s *Service) uniqueCopyTitle(ctx context.Context, base string) string {
+	candidate := base + " (copy)"
+	if !s.titleTaken(ctx, candidate) {
+		return candidate
+	}
+	for i := 2; i < 100; i++ {
+		candidate = fmt.Sprintf("%s (copy %d)", base, i)
+		if !s.titleTaken(ctx, candidate) {
+			return candidate
+		}
+	}
+	return fmt.Sprintf("%s (copy %d)", base, time.Now().UnixNano())
+}
+
+func (s *Service) titleTaken(ctx context.Context, title string) bool {
+	row := s.db.QueryRowContext(ctx,
+		"SELECT 1 FROM song WHERE title = ? COLLATE NOCASE LIMIT 1",
+		title,
+	)
+	var n int
+	return row.Scan(&n) == nil
 }
 
 // --- lines ---

@@ -162,10 +162,14 @@ type ServiceSection struct {
 }
 
 type Song struct {
-	ID        int64  `json:"id"`
-	Title     string `json:"title"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID         int64          `json:"id"`
+	Title      string         `json:"title"`
+	Author     sql.NullString `json:"author"`
+	Copyright  sql.NullString `json:"copyright"`
+	Publisher  sql.NullString `json:"publisher"`
+	CcliNumber sql.NullString `json:"ccli_number"`
+	CreatedAt  string         `json:"created_at"`
+	UpdatedAt  string         `json:"updated_at"`
 }
 
 type SongLine struct {

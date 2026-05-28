@@ -588,6 +588,10 @@ export class ServiceSection {
 export class Song {
     "id": number;
     "title": string;
+    "author": sql$0.NullString;
+    "copyright": sql$0.NullString;
+    "publisher": sql$0.NullString;
+    "ccli_number": sql$0.NullString;
     "created_at": string;
     "updated_at": string;
 
@@ -598,6 +602,18 @@ export class Song {
         }
         if (!("title" in $$source)) {
             this["title"] = "";
+        }
+        if (!("author" in $$source)) {
+            this["author"] = (new sql$0.NullString());
+        }
+        if (!("copyright" in $$source)) {
+            this["copyright"] = (new sql$0.NullString());
+        }
+        if (!("publisher" in $$source)) {
+            this["publisher"] = (new sql$0.NullString());
+        }
+        if (!("ccli_number" in $$source)) {
+            this["ccli_number"] = (new sql$0.NullString());
         }
         if (!("created_at" in $$source)) {
             this["created_at"] = "";
@@ -613,7 +629,23 @@ export class Song {
      * Creates a new Song instance from a string or object.
      */
     static createFrom($$source: any = {}): Song {
+        const $$createField2_0 = $$createType1;
+        const $$createField3_0 = $$createType1;
+        const $$createField4_0 = $$createType1;
+        const $$createField5_0 = $$createType1;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("author" in $$parsedSource) {
+            $$parsedSource["author"] = $$createField2_0($$parsedSource["author"]);
+        }
+        if ("copyright" in $$parsedSource) {
+            $$parsedSource["copyright"] = $$createField3_0($$parsedSource["copyright"]);
+        }
+        if ("publisher" in $$parsedSource) {
+            $$parsedSource["publisher"] = $$createField4_0($$parsedSource["publisher"]);
+        }
+        if ("ccli_number" in $$parsedSource) {
+            $$parsedSource["ccli_number"] = $$createField5_0($$parsedSource["ccli_number"]);
+        }
         return new Song($$parsedSource as Partial<Song>);
     }
 }

@@ -1,3 +1,5 @@
+import type { Background } from "@/features/templates/types"
+
 // Overlay shape: one widget instance (countdown, clock, …) with a
 // default visual layout plus optional per-display overrides. The Go
 // side stores config_json and layouts_json as opaque blobs — this
@@ -30,9 +32,14 @@ export type OverlayLayout = {
 // OverlayLayouts: "default" is the fallback used by any display that
 // doesn't have its own override. `displays` maps display.id (as a
 // stringified number — JSON object keys are strings) to an override.
+// `background` (optional) renders full-canvas behind the widget on
+// every display showing this overlay — same Background union as
+// templates so countdowns / pre-service screens can own the canvas
+// (color, transparent, image/video, animated gradient).
 export type OverlayLayouts = {
   default: OverlayLayout
   displays: Record<string, OverlayLayout>
+  background?: Background
 }
 
 // OverlayRules: behavior flags that aren't visual or widget-content.
@@ -92,13 +99,17 @@ export function parseLayouts(
   try {
     const parsed = JSON.parse(json)
     if (!parsed || typeof parsed !== "object") return empty
-    return {
+    const out: OverlayLayouts = {
       default: { ...fallbackDefault, ...(parsed.default ?? {}) },
       displays:
         parsed.displays && typeof parsed.displays === "object"
           ? (parsed.displays as Record<string, OverlayLayout>)
           : {},
     }
+    if (parsed.background && typeof parsed.background === "object") {
+      out.background = parsed.background as Background
+    }
+    return out
   } catch {
     return empty
   }

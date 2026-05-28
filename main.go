@@ -14,9 +14,11 @@ import (
 	authsvc "neoprojector/services/auth"
 	"neoprojector/services/bible"
 	"neoprojector/services/displays"
+	"neoprojector/services/ewimport"
 	"neoprojector/services/media"
 	"neoprojector/services/overlays"
 	"neoprojector/services/presentations"
+	"neoprojector/services/proimport"
 	"neoprojector/services/schedule"
 	"neoprojector/services/songs"
 	"neoprojector/services/templates"
@@ -34,6 +36,24 @@ import (
 // wrapper: the wails3 dev command proxies to the vite dev server,
 // which already does SPA routing AND needs the original path for
 // HMR to work — rewriting would break hot reload.
+
+// wailsCustomJSMiddleware short-circuits GET /wails/custom.js with an empty
+// 200. Wails v3 desktop mode hard-codes this path to 404 (custom.js is a
+// server-mode feature), which the runtime's loadOptionalScript treats as
+// "skip" — functionally fine, but it prints a 404 in DevTools on every
+// window open. Returning an empty script keeps the console clean. Must run
+// before the wails3 framework middleware, i.e. via Assets.Middleware.
+func wailsCustomJSMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/wails/custom.js" {
+			w.Header().Set("Content-Type", "text/javascript")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(";(function(){})();\n"))
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
 
 // mediaAssetMiddleware intercepts GET /media-asset/{id} and serves the
 // corresponding media file from disk. This lets the frontend render real
@@ -117,11 +137,13 @@ func main() {
 			application.NewService(overlays.New(db)),
 			application.NewService(presentations.New(db)),
 			application.NewService(authsvc.New()),
+			application.NewService(proimport.New(db)),
+			application.NewService(ewimport.New(db)),
 		},
 		Assets: application.AssetOptions{
 			Handler: spaFallback(application.AssetFileServerFS(assets)),
 			Middleware: func(next http.Handler) http.Handler {
-				return mediaAssetMiddleware(db, next)
+				return wailsCustomJSMiddleware(mediaAssetMiddleware(db, next))
 			},
 		},
 		Mac: application.MacOptions{

@@ -12,7 +12,7 @@ import (
 
 const createSong = `-- name: CreateSong :one
 INSERT INTO song (title) VALUES (?)
-RETURNING id, title, created_at, updated_at
+RETURNING id, title, author, copyright, publisher, ccli_number, created_at, updated_at
 `
 
 func (q *Queries) CreateSong(ctx context.Context, title string) (Song, error) {
@@ -21,6 +21,10 @@ func (q *Queries) CreateSong(ctx context.Context, title string) (Song, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
+		&i.Author,
+		&i.Copyright,
+		&i.Publisher,
+		&i.CcliNumber,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -37,7 +41,7 @@ func (q *Queries) DeleteSong(ctx context.Context, id int64) error {
 }
 
 const listSongs = `-- name: ListSongs :many
-SELECT id, title, created_at, updated_at FROM song ORDER BY title
+SELECT id, title, author, copyright, publisher, ccli_number, created_at, updated_at FROM song ORDER BY title
 `
 
 func (q *Queries) ListSongs(ctx context.Context) ([]Song, error) {
@@ -52,6 +56,10 @@ func (q *Queries) ListSongs(ctx context.Context) ([]Song, error) {
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
+			&i.Author,
+			&i.Copyright,
+			&i.Publisher,
+			&i.CcliNumber,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -69,7 +77,7 @@ func (q *Queries) ListSongs(ctx context.Context) ([]Song, error) {
 }
 
 const searchSongsByTitle = `-- name: SearchSongsByTitle :many
-SELECT id, title, created_at, updated_at FROM song
+SELECT id, title, author, copyright, publisher, ccli_number, created_at, updated_at FROM song
 WHERE title LIKE '%' || ? || '%'
 ORDER BY title
 `
@@ -86,6 +94,10 @@ func (q *Queries) SearchSongsByTitle(ctx context.Context, dollar_1 sql.NullStrin
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
+			&i.Author,
+			&i.Copyright,
+			&i.Publisher,
+			&i.CcliNumber,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -103,7 +115,7 @@ func (q *Queries) SearchSongsByTitle(ctx context.Context, dollar_1 sql.NullStrin
 }
 
 const songByID = `-- name: SongByID :one
-SELECT id, title, created_at, updated_at FROM song WHERE id = ?
+SELECT id, title, author, copyright, publisher, ccli_number, created_at, updated_at FROM song WHERE id = ?
 `
 
 func (q *Queries) SongByID(ctx context.Context, id int64) (Song, error) {
@@ -112,6 +124,10 @@ func (q *Queries) SongByID(ctx context.Context, id int64) (Song, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
+		&i.Author,
+		&i.Copyright,
+		&i.Publisher,
+		&i.CcliNumber,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -122,7 +138,7 @@ const updateSongTitle = `-- name: UpdateSongTitle :one
 UPDATE song
 SET title = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, title, created_at, updated_at
+RETURNING id, title, author, copyright, publisher, ccli_number, created_at, updated_at
 `
 
 type UpdateSongTitleParams struct {
@@ -136,6 +152,47 @@ func (q *Queries) UpdateSongTitle(ctx context.Context, arg UpdateSongTitleParams
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
+		&i.Author,
+		&i.Copyright,
+		&i.Publisher,
+		&i.CcliNumber,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateSongMetadata = `-- name: UpdateSongMetadata :one
+UPDATE song
+SET author = ?, copyright = ?, publisher = ?, ccli_number = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING id, title, author, copyright, publisher, ccli_number, created_at, updated_at
+`
+
+type UpdateSongMetadataParams struct {
+	Author     sql.NullString `json:"author"`
+	Copyright  sql.NullString `json:"copyright"`
+	Publisher  sql.NullString `json:"publisher"`
+	CcliNumber sql.NullString `json:"ccli_number"`
+	ID         int64          `json:"id"`
+}
+
+func (q *Queries) UpdateSongMetadata(ctx context.Context, arg UpdateSongMetadataParams) (Song, error) {
+	row := q.db.QueryRowContext(ctx, updateSongMetadata,
+		arg.Author,
+		arg.Copyright,
+		arg.Publisher,
+		arg.CcliNumber,
+		arg.ID,
+	)
+	var i Song
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Author,
+		&i.Copyright,
+		&i.Publisher,
+		&i.CcliNumber,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react"
 import { createFileRoute, useNavigate } from "@tanstack/react-router"
-import { ArrowLeftIcon, CopyIcon, LockIcon } from "lucide-react"
+import { ArrowLeftIcon, ChevronDownIcon, CopyIcon, ImageIcon, LockIcon, SearchIcon } from "lucide-react"
+import { HexColorPicker } from "react-colorful"
+import { useQuery } from "@tanstack/react-query"
 import { cn } from "@/lib/utils"
 import {
   useOverlay,
@@ -26,8 +28,16 @@ import {
 } from "@/features/overlays/types"
 import { useDisplays } from "@/features/displays/api"
 import { Input } from "@/components/input"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/popover"
 import { ANIM_KINDS, type AnimKind } from "@/features/animations/variants"
-import type { Display } from "@/bindings/neoprojector/database"
+import { DEFAULT_GRADFLOW, type Background, type GradflowConfig } from "@/features/templates/types"
+import { BackgroundLayer } from "@/features/templates/renderer"
+import { Service as Media } from "@/bindings/neoprojector/services/media"
+import type { Display, Medium } from "@/bindings/neoprojector/database"
 
 export const Route = createFileRoute("/_app/overlays/$overlayId")({
   component: OverlayEditor,
@@ -161,6 +171,7 @@ function OverlayEditor() {
             renderer={def.Renderer}
             config={config}
             layout={layouts.default}
+            background={layouts.background}
           />
         </div>
         <aside className="flex flex-col overflow-y-auto border-l border-border/50">
@@ -198,6 +209,18 @@ function OverlayEditor() {
               </span>
             </label>
           </Section>
+          <Section
+            title="Background"
+            help="Renders behind the widget on every display. Works with 'Cover slide content' so countdowns and pre-service screens own the canvas."
+          >
+            <BackgroundEditor
+              value={layouts.background}
+              readOnly={readOnly}
+              onChange={(next) =>
+                commitLayouts({ ...layouts, background: next })
+              }
+            />
+          </Section>
           <Section title="Default layout">
             <LayoutEditor
               layout={layouts.default}
@@ -230,10 +253,12 @@ function PreviewCanvas({
   renderer: Renderer,
   config,
   layout,
+  background,
 }: {
   renderer: ReturnType<typeof widgetDef>["Renderer"]
   config: Record<string, unknown>
   layout: OverlayLayout
+  background?: Background
 }) {
   // Locks to 16:9 so the preview maps cleanly to a typical output
   // window. The widget wrapper marks itself as a size query container
@@ -242,6 +267,13 @@ function PreviewCanvas({
   return (
     <div className="absolute inset-0 grid place-items-center p-6">
       <div className="relative aspect-video w-full max-w-[720px] overflow-hidden border border-border/30 bg-black">
+        {background && (
+          <BackgroundLayer
+            background={background}
+            fill={{}}
+            scale={1}
+          />
+        )}
         <div
           className="absolute"
           style={{
@@ -496,3 +528,339 @@ function clamp01(n: number): number {
 // the renderer/output pipeline elsewhere; importing it here keeps the
 // module surface tight when E4 wires output rendering.
 void resolveLayout
+
+// --- background editor ----------------------------------------------------
+//
+// Slimmed-down counterpart to TemplatePanel's Background section. Same
+// Background union, same renderer (BackgroundLayer), but the gradflow
+// editor surface is preset-only here — overlays own a background only
+// when they cover the slide, so per-color tuning lives in templates
+// where it belongs. Operators who need fine control build a template.
+
+const GRADFLOW_PRESETS: Record<string, GradflowConfig> = {
+  Plasma: {
+    color1: { r: 163, g: 106, b: 242 },
+    color2: { r: 0, g: 0, b: 0 },
+    color3: { r: 234, g: 130, b: 106 },
+    speed: 0.6, scale: 1.2, gradientType: "silk", noise: 0.18,
+  },
+  Cosmic: {
+    color1: { r: 85, g: 4, b: 129 },
+    color2: { r: 0, g: 145, b: 255 },
+    color3: { r: 0, g: 4, b: 5 },
+    speed: 0.4, scale: 1.2, gradientType: "silk", noise: 0.1,
+  },
+  Matrix: {
+    color1: { r: 34, g: 54, b: 145 },
+    color2: { r: 0, g: 0, b: 0 },
+    color3: { r: 147, g: 251, b: 173 },
+    speed: 0.8, scale: 1, gradientType: "wave", noise: 0.1,
+  },
+  Inferno: {
+    color1: { r: 77, g: 0, b: 0 },
+    color2: { r: 0, g: 0, b: 0 },
+    color3: { r: 255, g: 187, b: 0 },
+    speed: 0.9, scale: 1.1, gradientType: "silk", noise: 0.18,
+  },
+  Mystic: {
+    color1: { r: 192, g: 155, b: 197 },
+    color2: { r: 0, g: 0, b: 0 },
+    color3: { r: 53, g: 0, b: 97 },
+    speed: 0.9, scale: 2, gradientType: "smoke", noise: 0.18,
+  },
+  Neon: {
+    color1: { r: 102, g: 237, b: 255 },
+    color2: { r: 0, g: 0, b: 0 },
+    color3: { r: 0, g: 255, b: 110 },
+    speed: 0.6, scale: 2, gradientType: "wave", noise: 0.18,
+  },
+}
+
+const HEX_RE = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
+
+function BackgroundEditor({
+  value,
+  readOnly,
+  onChange,
+}: {
+  value: Background | undefined
+  readOnly?: boolean
+  onChange: (next: Background | undefined) => void
+}) {
+  const type = value?.type ?? "none"
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">Type</span>
+      <select
+        value={type}
+        disabled={readOnly}
+        onChange={(e) => {
+          const t = e.target.value as "none" | Background["type"]
+          if (t === "none") onChange(undefined)
+          else if (t === "color")
+            onChange({ type: "color", value: value?.type === "color" ? value.value : "#000000" })
+          else if (t === "transparent") onChange({ type: "transparent" })
+          else if (t === "media")
+            onChange({
+              type: "media",
+              mediaId: value?.type === "media" ? value.mediaId : 0,
+              mode: value?.type === "media" ? (value.mode ?? "cover") : "cover",
+            })
+          else if (t === "gradflow")
+            onChange({
+              type: "gradflow",
+              config: value?.type === "gradflow" ? value.config : DEFAULT_GRADFLOW,
+            })
+        }}
+        className="h-7 rounded border border-border/50 bg-background px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+      >
+        <option value="none">None (no background)</option>
+        <option value="color">Solid color</option>
+        <option value="transparent">Transparent</option>
+        <option value="media">Image / Video</option>
+        <option value="gradflow">Animated gradient</option>
+      </select>
+      {value?.type === "color" && (
+        <BgColorField
+          value={value.value}
+          readOnly={readOnly}
+          onChange={(v) => onChange({ type: "color", value: v })}
+        />
+      )}
+      {value?.type === "transparent" && (
+        <div className="text-[10px] text-muted-foreground/60">
+          The canvas shows through. Useful when the overlay is meant to layer over the bound template.
+        </div>
+      )}
+      {value?.type === "media" && (
+        <BgMediaPicker
+          value={value}
+          readOnly={readOnly}
+          onChange={(next) => onChange(next)}
+        />
+      )}
+      {value?.type === "gradflow" && (
+        <BgGradflowPresetPicker
+          value={value.config}
+          readOnly={readOnly}
+          onChange={(cfg) => onChange({ type: "gradflow", config: cfg })}
+        />
+      )}
+    </div>
+  )
+}
+
+function BgColorField({
+  value,
+  readOnly,
+  onChange,
+}: {
+  value: string
+  readOnly?: boolean
+  onChange: (v: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const isHex = HEX_RE.test(value)
+  const pickerStart = isHex ? value : "#000000"
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={readOnly}
+          className="flex h-7 items-center gap-2 rounded border border-border/40 bg-muted/30 px-1.5 text-left text-[11px] transition-colors hover:border-border focus-visible:border-border focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          <span
+            aria-hidden
+            className="size-4 shrink-0 rounded border border-border/40"
+            style={{ background: value }}
+          />
+          <span className={cn("truncate font-mono uppercase", !isHex && "italic text-muted-foreground")}>
+            {isHex ? value.toUpperCase() : value || "—"}
+          </span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="end" sideOffset={6} className="w-auto p-2">
+        <HexColorPicker color={pickerStart} onChange={(c) => onChange(c)} />
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="mt-2 h-6 w-full rounded border border-border/40 bg-muted/30 px-1.5 font-mono text-[11px] uppercase outline-none focus-visible:border-border focus-visible:bg-muted/50"
+        />
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function BgMediaPicker({
+  value,
+  readOnly,
+  onChange,
+}: {
+  value: { type: "media"; mediaId: number; mode?: "cover" | "contain" | "loop" }
+  readOnly?: boolean
+  onChange: (next: { type: "media"; mediaId: number; mode?: "cover" | "contain" | "loop" }) => void
+}) {
+  const { data: media, isLoading } = useQuery({
+    queryKey: ["media", "list"],
+    queryFn: () => Media.ListMedia() as unknown as Promise<Medium[]>,
+  })
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState("")
+  const list = useMemo(() => {
+    const all = media ?? []
+    const q = query.trim().toLowerCase()
+    if (!q) return all
+    return all.filter(
+      (m) =>
+        m.title.toLowerCase().includes(q) ||
+        m.original_filename.toLowerCase().includes(q)
+    )
+  }, [media, query])
+  const selected = (media ?? []).find((m) => m.id === value.mediaId)
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            disabled={readOnly}
+            className="flex items-center gap-2 rounded border border-border/50 bg-background px-2 py-1.5 text-left text-[11px] outline-none transition-colors hover:border-border focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+          >
+            <span className="grid size-8 shrink-0 place-items-center overflow-hidden rounded bg-muted/40 ring-1 ring-border/40">
+              {selected?.type === "image" ? (
+                <img src={`/media-asset/${selected.id}`} alt="" className="h-full w-full object-cover" />
+              ) : selected?.type === "video" ? (
+                <video src={`/media-asset/${selected.id}`} className="h-full w-full object-cover" muted preload="metadata" />
+              ) : (
+                <ImageIcon className="size-3 text-muted-foreground/50" />
+              )}
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-foreground">{selected?.title || "Pick media…"}</span>
+              <span className="truncate text-[10px] text-muted-foreground/60">
+                {selected?.type ?? (value.mediaId === 0 ? "—" : "missing")}
+              </span>
+            </span>
+            <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground/60" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-72 p-0">
+          <div className="flex items-center gap-1.5 border-b border-border/40 bg-muted/20 px-2 py-1.5">
+            <SearchIcon className="size-3 text-muted-foreground/60" />
+            <Input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search media…"
+              className="h-6 flex-1 border-0 bg-transparent px-0 text-[11px] focus-visible:ring-0"
+            />
+          </div>
+          <div className="max-h-72 overflow-y-auto p-1.5">
+            {isLoading ? (
+              <div className="grid h-32 place-items-center text-[11px] text-muted-foreground/50">Loading…</div>
+            ) : list.length === 0 ? (
+              <div className="grid h-32 place-items-center px-3 text-center text-[11px] text-muted-foreground/50">
+                {!media || media.length === 0 ? "No media yet. Import in the Media tab first." : "No matches."}
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-1">
+                {list.map((m) => {
+                  const isSelected = m.id === value.mediaId
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        onChange({ type: "media", mediaId: m.id, mode: value.mode ?? "cover" })
+                        setOpen(false)
+                      }}
+                      title={m.title}
+                      className={cn(
+                        "group flex flex-col overflow-hidden rounded border bg-background text-left transition-colors hover:border-border",
+                        isSelected ? "border-foreground/60 ring-1 ring-foreground/30" : "border-border/40"
+                      )}
+                    >
+                      <div className="relative aspect-video w-full overflow-hidden bg-muted/40">
+                        {m.type === "image" ? (
+                          <img src={`/media-asset/${m.id}`} alt="" className="h-full w-full object-cover" loading="lazy" />
+                        ) : m.type === "video" ? (
+                          <video src={`/media-asset/${m.id}`} className="h-full w-full object-cover" muted preload="metadata" />
+                        ) : (
+                          <div className="grid h-full place-items-center text-muted-foreground/40">
+                            <ImageIcon className="size-3" />
+                          </div>
+                        )}
+                      </div>
+                      <span className="truncate px-1 py-0.5 text-[9px] text-muted-foreground group-hover:text-foreground">
+                        {m.title}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">Fit mode</span>
+      <select
+        value={value.mode ?? "cover"}
+        disabled={readOnly}
+        onChange={(e) =>
+          onChange({
+            type: "media",
+            mediaId: value.mediaId,
+            mode: e.target.value as "cover" | "contain" | "loop",
+          })
+        }
+        className="h-7 rounded border border-border/50 bg-background px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+      >
+        <option value="cover">Cover (fill, crop overflow)</option>
+        <option value="contain">Contain (fit, letterbox)</option>
+      </select>
+      {value.mediaId === 0 && (
+        <div className="text-[10px] text-amber-400/80">
+          No media chosen — background will render black.
+        </div>
+      )}
+    </div>
+  )
+}
+
+function BgGradflowPresetPicker({
+  value,
+  readOnly,
+  onChange,
+}: {
+  value: GradflowConfig
+  readOnly?: boolean
+  onChange: (cfg: GradflowConfig) => void
+}) {
+  const currentMatch = Object.entries(GRADFLOW_PRESETS).find(
+    ([, cfg]) => JSON.stringify(cfg) === JSON.stringify(value)
+  )?.[0]
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">Preset</span>
+      <select
+        disabled={readOnly}
+        value={currentMatch ?? ""}
+        onChange={(e) => {
+          const cfg = GRADFLOW_PRESETS[e.target.value]
+          if (cfg) onChange({ ...cfg })
+        }}
+        className="h-7 rounded border border-border/50 bg-background px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
+      >
+        {!currentMatch && <option value="">Custom (template-only tweaks)</option>}
+        {Object.keys(GRADFLOW_PRESETS).map((k) => (
+          <option key={k} value={k}>{k}</option>
+        ))}
+      </select>
+      <div className="text-[10px] text-muted-foreground/60">
+        Per-color tuning, blur, and saved user presets live in template editor. Pick a preset here, or build a full template if you need more.
+      </div>
+    </div>
+  )
+}

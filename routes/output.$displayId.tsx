@@ -10,7 +10,7 @@ import type {
 } from "@/bindings/neoprojector/services/displays"
 import type { Display } from "@/bindings/neoprojector/database"
 import { useTemplates } from "@/features/library/templates-api"
-import { LiveTemplateView } from "@/features/templates/renderer"
+import { BackgroundLayer, LiveTemplateView } from "@/features/templates/renderer"
 import { widgetDef } from "@/features/overlays/widgets"
 import {
   parseConfig,
@@ -179,7 +179,39 @@ function OutputWindow() {
         transitionOverride={transitionOverride}
         liveTransparency
       />
+      <OverlayBackgroundsLayer overlays={slot?.active_overlays ?? []} />
       <OverlayLayer displayId={id} overlays={slot?.active_overlays ?? []} />
+    </div>
+  )
+}
+
+// OverlayBackgroundsLayer paints each active overlay's optional
+// layouts.background as a full-canvas surface beneath the widget
+// pane. Stacked in activation order — when multiple overlays declare
+// a background, the later one wins visually. Most commonly there is
+// only one cover_slide overlay active at a time.
+function OverlayBackgroundsLayer({
+  overlays,
+}: {
+  overlays: OverlayActivation[]
+}) {
+  return (
+    <div className="pointer-events-none absolute inset-0">
+      {overlays.map((o) => {
+        const def = widgetDef(o.kind as WidgetKind)
+        const layouts = parseLayouts(o.layouts_json, def.defaultLayout)
+        if (!layouts.background) return null
+        return (
+          <div key={o.schedule_item_id} className="absolute inset-0">
+            <BackgroundLayer
+              background={layouts.background}
+              fill={{}}
+              scale={1}
+              liveTransparency
+            />
+          </div>
+        )
+      })}
     </div>
   )
 }

@@ -519,7 +519,7 @@ function CrossfadeLayer({
 // Background
 // ─────────────────────────────────────────────────────────────────────────────
 
-function BackgroundLayer({
+export function BackgroundLayer({
   background,
   fill,
   scale,
