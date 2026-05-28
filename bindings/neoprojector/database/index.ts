@@ -4,6 +4,9 @@
 export {
     Bible,
     BibleBook,
+    Deck,
+    DeckBlock,
+    DeckSlide,
     Display,
     ListPresentationSlidesRow,
     ListServiceItemsWithContentRow,

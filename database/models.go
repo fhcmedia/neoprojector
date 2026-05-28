@@ -40,6 +40,45 @@ type BibleVerse struct {
 	Text        string `json:"text"`
 }
 
+type Deck struct {
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	Source     string `json:"source"`
+	SourcePath string `json:"source_path"`
+	Width      int64  `json:"width"`
+	Height     int64  `json:"height"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
+type DeckBlock struct {
+	ID           int64          `json:"id"`
+	SlideID      int64          `json:"slide_id"`
+	ZIndex       int64          `json:"z_index"`
+	Kind         string         `json:"kind"`
+	X            float64        `json:"x"`
+	Y            float64        `json:"y"`
+	W            float64        `json:"w"`
+	H            float64        `json:"h"`
+	TextJson     sql.NullString `json:"text_json"`
+	ImageMediaID sql.NullInt64  `json:"image_media_id"`
+	ShapeJson    sql.NullString `json:"shape_json"`
+	TableJson    sql.NullString `json:"table_json"`
+	StyleJson    string         `json:"style_json"`
+	CreatedAt    string         `json:"created_at"`
+	UpdatedAt    string         `json:"updated_at"`
+}
+
+type DeckSlide struct {
+	ID             int64  `json:"id"`
+	DeckID         int64  `json:"deck_id"`
+	Position       int64  `json:"position"`
+	BackgroundJson string `json:"background_json"`
+	Notes          string `json:"notes"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
+}
+
 type Display struct {
 	ID              int64          `json:"id"`
 	Name            string         `json:"name"`
@@ -117,6 +156,13 @@ type ServiceItemBible struct {
 	VerseEnd   int64  `json:"verse_end"`
 	CreatedAt  string `json:"created_at"`
 	UpdatedAt  string `json:"updated_at"`
+}
+
+type ServiceItemDeck struct {
+	ItemID    int64  `json:"item_id"`
+	DeckID    int64  `json:"deck_id"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 type ServiceItemMedium struct {

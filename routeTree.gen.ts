@@ -19,6 +19,7 @@ import { Route as AppPresenterRouteImport } from './routes/_app.presenter'
 import { Route as AppTemplatesTemplateIdRouteImport } from './routes/_app.templates.$templateId'
 import { Route as AppPresentationsPresentationIdRouteImport } from './routes/_app.presentations.$presentationId'
 import { Route as AppOverlaysOverlayIdRouteImport } from './routes/_app.overlays.$overlayId'
+import { Route as AppDecksDeckIdRouteImport } from './routes/_app.decks.$deckId'
 
 const SplashRoute = SplashRouteImport.update({
   id: '/splash',
@@ -70,6 +71,11 @@ const AppOverlaysOverlayIdRoute = AppOverlaysOverlayIdRouteImport.update({
   path: '/overlays/$overlayId',
   getParentRoute: () => AppRoute,
 } as any)
+const AppDecksDeckIdRoute = AppDecksDeckIdRouteImport.update({
+  id: '/decks/$deckId',
+  path: '/decks/$deckId',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -81,6 +87,7 @@ export interface FileRoutesByFullPath {
   '/overlays/$overlayId': typeof AppOverlaysOverlayIdRoute
   '/presentations/$presentationId': typeof AppPresentationsPresentationIdRoute
   '/templates/$templateId': typeof AppTemplatesTemplateIdRoute
+  '/decks/$deckId': typeof AppDecksDeckIdRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
@@ -92,6 +99,7 @@ export interface FileRoutesByTo {
   '/overlays/$overlayId': typeof AppOverlaysOverlayIdRoute
   '/presentations/$presentationId': typeof AppPresentationsPresentationIdRoute
   '/templates/$templateId': typeof AppTemplatesTemplateIdRoute
+  '/decks/$deckId': typeof AppDecksDeckIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -105,6 +113,7 @@ export interface FileRoutesById {
   '/_app/overlays/$overlayId': typeof AppOverlaysOverlayIdRoute
   '/_app/presentations/$presentationId': typeof AppPresentationsPresentationIdRoute
   '/_app/templates/$templateId': typeof AppTemplatesTemplateIdRoute
+  '/_app/decks/$deckId': typeof AppDecksDeckIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -118,6 +127,7 @@ export interface FileRouteTypes {
     | '/overlays/$overlayId'
     | '/presentations/$presentationId'
     | '/templates/$templateId'
+    | '/decks/$deckId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/auth'
@@ -129,6 +139,7 @@ export interface FileRouteTypes {
     | '/overlays/$overlayId'
     | '/presentations/$presentationId'
     | '/templates/$templateId'
+    | '/decks/$deckId'
   id:
     | '__root__'
     | '/_app'
@@ -141,6 +152,7 @@ export interface FileRouteTypes {
     | '/_app/overlays/$overlayId'
     | '/_app/presentations/$presentationId'
     | '/_app/templates/$templateId'
+    | '/_app/decks/$deckId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -222,6 +234,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOverlaysOverlayIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/decks/$deckId': {
+      id: '/_app/decks/$deckId'
+      path: '/decks/$deckId'
+      fullPath: '/decks/$deckId'
+      preLoaderRoute: typeof AppDecksDeckIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
@@ -232,6 +251,7 @@ interface AppRouteChildren {
   AppOverlaysOverlayIdRoute: typeof AppOverlaysOverlayIdRoute
   AppPresentationsPresentationIdRoute: typeof AppPresentationsPresentationIdRoute
   AppTemplatesTemplateIdRoute: typeof AppTemplatesTemplateIdRoute
+  AppDecksDeckIdRoute: typeof AppDecksDeckIdRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -241,6 +261,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppOverlaysOverlayIdRoute: AppOverlaysOverlayIdRoute,
   AppPresentationsPresentationIdRoute: AppPresentationsPresentationIdRoute,
   AppTemplatesTemplateIdRoute: AppTemplatesTemplateIdRoute,
+  AppDecksDeckIdRoute: AppDecksDeckIdRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

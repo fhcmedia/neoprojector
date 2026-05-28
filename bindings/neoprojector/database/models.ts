@@ -75,6 +75,193 @@ export class BibleBook {
     }
 }
 
+export class Deck {
+    "id": number;
+    "name": string;
+    "source": string;
+    "source_path": string;
+    "width": number;
+    "height": number;
+    "created_at": string;
+    "updated_at": string;
+
+    /** Creates a new Deck instance. */
+    constructor($$source: Partial<Deck> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = 0;
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("source" in $$source)) {
+            this["source"] = "";
+        }
+        if (!("source_path" in $$source)) {
+            this["source_path"] = "";
+        }
+        if (!("width" in $$source)) {
+            this["width"] = 0;
+        }
+        if (!("height" in $$source)) {
+            this["height"] = 0;
+        }
+        if (!("created_at" in $$source)) {
+            this["created_at"] = "";
+        }
+        if (!("updated_at" in $$source)) {
+            this["updated_at"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Deck instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Deck {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new Deck($$parsedSource as Partial<Deck>);
+    }
+}
+
+export class DeckBlock {
+    "id": number;
+    "slide_id": number;
+    "z_index": number;
+    "kind": string;
+    "x": number;
+    "y": number;
+    "w": number;
+    "h": number;
+    "text_json": sql$0.NullString;
+    "image_media_id": sql$0.NullInt64;
+    "shape_json": sql$0.NullString;
+    "table_json": sql$0.NullString;
+    "style_json": string;
+    "created_at": string;
+    "updated_at": string;
+
+    /** Creates a new DeckBlock instance. */
+    constructor($$source: Partial<DeckBlock> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = 0;
+        }
+        if (!("slide_id" in $$source)) {
+            this["slide_id"] = 0;
+        }
+        if (!("z_index" in $$source)) {
+            this["z_index"] = 0;
+        }
+        if (!("kind" in $$source)) {
+            this["kind"] = "";
+        }
+        if (!("x" in $$source)) {
+            this["x"] = 0;
+        }
+        if (!("y" in $$source)) {
+            this["y"] = 0;
+        }
+        if (!("w" in $$source)) {
+            this["w"] = 0;
+        }
+        if (!("h" in $$source)) {
+            this["h"] = 0;
+        }
+        if (!("text_json" in $$source)) {
+            this["text_json"] = (new sql$0.NullString());
+        }
+        if (!("image_media_id" in $$source)) {
+            this["image_media_id"] = (new sql$0.NullInt64());
+        }
+        if (!("shape_json" in $$source)) {
+            this["shape_json"] = (new sql$0.NullString());
+        }
+        if (!("table_json" in $$source)) {
+            this["table_json"] = (new sql$0.NullString());
+        }
+        if (!("style_json" in $$source)) {
+            this["style_json"] = "";
+        }
+        if (!("created_at" in $$source)) {
+            this["created_at"] = "";
+        }
+        if (!("updated_at" in $$source)) {
+            this["updated_at"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DeckBlock instance from a string or object.
+     */
+    static createFrom($$source: any = {}): DeckBlock {
+        const $$createField8_0 = $$createType0;
+        const $$createField9_0 = $$createType1;
+        const $$createField10_0 = $$createType0;
+        const $$createField11_0 = $$createType0;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("text_json" in $$parsedSource) {
+            $$parsedSource["text_json"] = $$createField8_0($$parsedSource["text_json"]);
+        }
+        if ("image_media_id" in $$parsedSource) {
+            $$parsedSource["image_media_id"] = $$createField9_0($$parsedSource["image_media_id"]);
+        }
+        if ("shape_json" in $$parsedSource) {
+            $$parsedSource["shape_json"] = $$createField10_0($$parsedSource["shape_json"]);
+        }
+        if ("table_json" in $$parsedSource) {
+            $$parsedSource["table_json"] = $$createField11_0($$parsedSource["table_json"]);
+        }
+        return new DeckBlock($$parsedSource as Partial<DeckBlock>);
+    }
+}
+
+export class DeckSlide {
+    "id": number;
+    "deck_id": number;
+    "position": number;
+    "background_json": string;
+    "notes": string;
+    "created_at": string;
+    "updated_at": string;
+
+    /** Creates a new DeckSlide instance. */
+    constructor($$source: Partial<DeckSlide> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = 0;
+        }
+        if (!("deck_id" in $$source)) {
+            this["deck_id"] = 0;
+        }
+        if (!("position" in $$source)) {
+            this["position"] = 0;
+        }
+        if (!("background_json" in $$source)) {
+            this["background_json"] = "";
+        }
+        if (!("notes" in $$source)) {
+            this["notes"] = "";
+        }
+        if (!("created_at" in $$source)) {
+            this["created_at"] = "";
+        }
+        if (!("updated_at" in $$source)) {
+            this["updated_at"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DeckSlide instance from a string or object.
+     */
+    static createFrom($$source: any = {}): DeckSlide {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new DeckSlide($$parsedSource as Partial<DeckSlide>);
+    }
+}
+
 export class Display {
     "id": number;
     "name": string;
@@ -123,9 +310,9 @@ export class Display {
      * Creates a new Display instance from a string or object.
      */
     static createFrom($$source: any = {}): Display {
-        const $$createField4_0 = $$createType0;
-        const $$createField5_0 = $$createType0;
-        const $$createField6_0 = $$createType1;
+        const $$createField4_0 = $$createType1;
+        const $$createField5_0 = $$createType1;
+        const $$createField6_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("bible_template_id" in $$parsedSource) {
             $$parsedSource["bible_template_id"] = $$createField4_0($$parsedSource["bible_template_id"]);
@@ -184,8 +371,8 @@ export class ListPresentationSlidesRow {
      * Creates a new ListPresentationSlidesRow instance from a string or object.
      */
     static createFrom($$source: any = {}): ListPresentationSlidesRow {
-        const $$createField6_0 = $$createType1;
-        const $$createField7_0 = $$createType1;
+        const $$createField6_0 = $$createType0;
+        const $$createField7_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("media_title" in $$parsedSource) {
             $$parsedSource["media_title"] = $$createField6_0($$parsedSource["media_title"]);
@@ -629,10 +816,10 @@ export class Song {
      * Creates a new Song instance from a string or object.
      */
     static createFrom($$source: any = {}): Song {
-        const $$createField2_0 = $$createType1;
-        const $$createField3_0 = $$createType1;
-        const $$createField4_0 = $$createType1;
-        const $$createField5_0 = $$createType1;
+        const $$createField2_0 = $$createType0;
+        const $$createField3_0 = $$createType0;
+        const $$createField4_0 = $$createType0;
+        const $$createField5_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("author" in $$parsedSource) {
             $$parsedSource["author"] = $$createField2_0($$parsedSource["author"]);
@@ -782,5 +969,5 @@ export class Template {
 }
 
 // Private type creation functions
-const $$createType0 = sql$0.NullInt64.createFrom;
-const $$createType1 = sql$0.NullString.createFrom;
+const $$createType0 = sql$0.NullString.createFrom;
+const $$createType1 = sql$0.NullInt64.createFrom;

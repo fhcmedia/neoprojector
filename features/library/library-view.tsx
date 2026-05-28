@@ -21,6 +21,8 @@ import { MediaTab } from "@/features/library/media-tab"
 import { TemplatesTab } from "@/features/library/templates-tab"
 import { OverlaysTab } from "@/features/library/overlays-tab"
 import { PresentationsTab } from "@/features/library/presentations-tab"
+import { DecksTab } from "@/features/library/decks-tab"
+import { ImportDialog } from "@/features/docimport/import-dialog"
 import { parseBibleRef } from "@/features/schedule/bible-ref"
 import { formatBibleRef } from "@/features/bible/categories"
 
@@ -29,6 +31,7 @@ type Tab =
   | "songs"
   | "media"
   | "presentations"
+  | "decks"
   | "templates"
   | "overlays"
 
@@ -37,6 +40,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "songs", label: "Songs" },
   { key: "media", label: "Media" },
   { key: "presentations", label: "Presentations" },
+  { key: "decks", label: "Decks" },
   { key: "templates", label: "Templates" },
   { key: "overlays", label: "Overlays" },
 ]
@@ -94,6 +98,11 @@ export function LibraryView({
     "neoprojector.presentationSearch",
     ""
   )
+  const [deckSearch, setDeckSearch] = useSessionState<string>(
+    "neoprojector.deckSearch",
+    ""
+  )
+  const [importOpen, setImportOpen] = useState(false)
 
   // Media import is also lifted so the "+" button can live in the
   // header. The drop-event handler stays here too — drops can land on
@@ -283,6 +292,18 @@ export function LibraryView({
                 />
               </motion.div>
             )}
+            {active === "decks" && (
+              <motion.div
+                key="decks-controls"
+                initial={{ opacity: 0, x: 6 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -6 }}
+                transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
+                className="flex h-full w-full items-center gap-2"
+              >
+                <DeckSearchInput value={deckSearch} onChange={setDeckSearch} />
+              </motion.div>
+            )}
           </AnimatePresence>
         </div>
       </div>
@@ -345,9 +366,31 @@ export function LibraryView({
                 }
               />
             )}
+            {active === "decks" && (
+              <DecksTab
+                search={deckSearch}
+                onOpen={(d) =>
+                  navigate({
+                    to: "/decks/$deckId",
+                    params: { deckId: String(d.id) },
+                  })
+                }
+                onImportClick={() => setImportOpen(true)}
+              />
+            )}
           </motion.div>
         </AnimatePresence>
       </div>
+      <ImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImported={(deckId) =>
+          navigate({
+            to: "/decks/$deckId",
+            params: { deckId: String(deckId) },
+          })
+        }
+      />
     </div>
   )
 }
@@ -649,6 +692,27 @@ function PresentationSearchInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Search presentations"
+        data-library-search
+        className="h-6 rounded-none border-0 bg-transparent pl-7 pr-2 py-0 text-xs shadow-none focus-visible:ring-0 dark:bg-transparent"
+      />
+    </div>
+  )
+}
+
+function DeckSearchInput({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <div className="relative h-6 w-full max-w-[260px]">
+      <SearchIcon className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Search decks"
         data-library-search
         className="h-6 rounded-none border-0 bg-transparent pl-7 pr-2 py-0 text-xs shadow-none focus-visible:ring-0 dark:bg-transparent"
       />

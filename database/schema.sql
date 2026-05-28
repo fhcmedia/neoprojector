@@ -201,3 +201,58 @@ CREATE TABLE IF NOT EXISTS service_item_presentation (
   created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS deck (
+  id          INTEGER PRIMARY KEY,
+  name        TEXT NOT NULL,
+  source      TEXT NOT NULL DEFAULT 'native',
+  source_path TEXT NOT NULL DEFAULT '',
+  width       INTEGER NOT NULL DEFAULT 1920,
+  height      INTEGER NOT NULL DEFAULT 1080,
+  created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS deck_name_unique
+  ON deck(name COLLATE NOCASE);
+
+CREATE TABLE IF NOT EXISTS deck_slide (
+  id              INTEGER PRIMARY KEY,
+  deck_id         INTEGER NOT NULL REFERENCES deck(id) ON DELETE CASCADE,
+  position        INTEGER NOT NULL DEFAULT 0,
+  background_json TEXT NOT NULL DEFAULT '{}',
+  notes           TEXT NOT NULL DEFAULT '',
+  created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_deck_slide_deck
+  ON deck_slide(deck_id, position);
+
+CREATE TABLE IF NOT EXISTS deck_block (
+  id             INTEGER PRIMARY KEY,
+  slide_id       INTEGER NOT NULL REFERENCES deck_slide(id) ON DELETE CASCADE,
+  z_index        INTEGER NOT NULL DEFAULT 0,
+  kind           TEXT NOT NULL,
+  x              REAL NOT NULL DEFAULT 0,
+  y              REAL NOT NULL DEFAULT 0,
+  w              REAL NOT NULL DEFAULT 1,
+  h              REAL NOT NULL DEFAULT 1,
+  text_json      TEXT,
+  image_media_id INTEGER REFERENCES media(id) ON DELETE CASCADE,
+  shape_json     TEXT,
+  table_json     TEXT,
+  style_json     TEXT NOT NULL DEFAULT '{}',
+  created_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_deck_block_slide
+  ON deck_block(slide_id, z_index);
+
+CREATE TABLE IF NOT EXISTS service_item_deck (
+  item_id     INTEGER PRIMARY KEY REFERENCES service_item(id) ON DELETE CASCADE,
+  deck_id     INTEGER NOT NULL REFERENCES deck(id) ON DELETE CASCADE,
+  created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
