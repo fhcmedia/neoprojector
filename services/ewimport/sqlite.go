@@ -301,6 +301,7 @@ func (s *Service) importSQLiteSong(
 		}
 		txt := rtf.Strip(raw.String)
 		secType, body := splitSectionLabel(txt)
+		body = dropTitleLine(body, npTitle)
 		if opts.StripFirstLine {
 			body = dropFirstNonEmptyLine(body)
 		}
@@ -413,6 +414,31 @@ func (s *Service) importSQLiteSong(
 		return 0, "", fmt.Errorf("commit: %w", err)
 	}
 	return npSong.ID, action, nil
+}
+
+// dropTitleLine removes the first non-empty line of body when it
+// matches the song title. EW persists the song title at the top of
+// every slide's RTF; without this it lands on stage above the lyric.
+// Match is case-insensitive + whitespace-trimmed; blank lines before
+// the title are tolerated but anything else as the first non-empty
+// line means the slide doesn't lead with the title and body is kept.
+func dropTitleLine(body, title string) string {
+	t := strings.TrimSpace(strings.ToLower(title))
+	if t == "" {
+		return body
+	}
+	lines := strings.Split(body, "\n")
+	for i, ln := range lines {
+		s := strings.TrimSpace(ln)
+		if s == "" {
+			continue
+		}
+		if strings.ToLower(s) == t {
+			return strings.TrimSpace(strings.Join(lines[i+1:], "\n"))
+		}
+		return body
+	}
+	return body
 }
 
 // dropFirstNonEmptyLine returns body with its first non-empty line

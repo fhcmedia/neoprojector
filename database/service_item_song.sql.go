@@ -41,6 +41,15 @@ func (q *Queries) DeleteServiceItemSong(ctx context.Context, itemID int64) error
 	return err
 }
 
+const deleteServiceItemSongsForSong = `-- name: DeleteServiceItemSongsForSong :exec
+DELETE FROM service_item_song WHERE song_id = ?
+`
+
+func (q *Queries) DeleteServiceItemSongsForSong(ctx context.Context, songID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteServiceItemSongsForSong, songID)
+	return err
+}
+
 const serviceItemSongByItemID = `-- name: ServiceItemSongByItemID :one
 SELECT item_id, song_id, created_at, updated_at FROM service_item_song WHERE item_id = ?
 `

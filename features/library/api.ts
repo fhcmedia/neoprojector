@@ -63,6 +63,13 @@ export function useDeleteSong() {
       qc.invalidateQueries({ queryKey: libraryKeys.songs })
       qc.invalidateQueries({ queryKey: ["dashboard", "library"] })
     },
+    onError: (err) => {
+      // Was swallowed silently before — a failed delete (DB constraint,
+      // etc.) now at least shows in the console instead of looking like
+      // the button did nothing.
+      // eslint-disable-next-line no-console
+      console.error("Delete song failed:", err)
+    },
   })
 }
 

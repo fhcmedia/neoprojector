@@ -76,7 +76,18 @@ func (s *Service) UpdateSongTitle(ctx context.Context, id int64, title string) (
 }
 
 func (s *Service) DeleteSong(ctx context.Context, id int64) error {
-	return s.q.DeleteSong(ctx, id)
+	// service_item_song.song_id has no ON DELETE CASCADE, so deleting a song
+	// that a schedule item references fails outright. Drop the join rows
+	// first, then the song, in one transaction. The parent service_item
+	// rows are intentionally left behind: they degrade to a kind="" item
+	// the schedule UI renders as a removable "broken" row — exactly what
+	// the delete dialog warns ("schedule items referencing it will break").
+	return s.inTx(ctx, func(q *database.Queries) error {
+		if err := q.DeleteServiceItemSongsForSong(ctx, id); err != nil {
+			return err
+		}
+		return q.DeleteSong(ctx, id)
+	})
 }
 
 // --- section CRUD ---

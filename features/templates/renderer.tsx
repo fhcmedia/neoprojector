@@ -1239,6 +1239,12 @@ function BoxRenderer({
             textShadow: box.shadow
               ? "0 2px 8px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.7)"
               : undefined,
+            WebkitTextStroke: box.outline
+              ? `${box.outlineWidth ?? 6}px ${box.outlineColor ?? "#000000"}`
+              : undefined,
+            // Paint the stroke UNDER the fill so the outline hugs the outer
+            // glyph edge instead of eroding the letter fill.
+            paintOrder: box.outline ? "stroke fill" : undefined,
           }}
         >
           {renderSlotValue(value)}

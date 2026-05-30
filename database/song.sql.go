@@ -134,34 +134,6 @@ func (q *Queries) SongByID(ctx context.Context, id int64) (Song, error) {
 	return i, err
 }
 
-const updateSongTitle = `-- name: UpdateSongTitle :one
-UPDATE song
-SET title = ?, updated_at = CURRENT_TIMESTAMP
-WHERE id = ?
-RETURNING id, title, author, copyright, publisher, ccli_number, created_at, updated_at
-`
-
-type UpdateSongTitleParams struct {
-	Title string `json:"title"`
-	ID    int64  `json:"id"`
-}
-
-func (q *Queries) UpdateSongTitle(ctx context.Context, arg UpdateSongTitleParams) (Song, error) {
-	row := q.db.QueryRowContext(ctx, updateSongTitle, arg.Title, arg.ID)
-	var i Song
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Author,
-		&i.Copyright,
-		&i.Publisher,
-		&i.CcliNumber,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const updateSongMetadata = `-- name: UpdateSongMetadata :one
 UPDATE song
 SET author = ?, copyright = ?, publisher = ?, ccli_number = ?, updated_at = CURRENT_TIMESTAMP
@@ -185,6 +157,34 @@ func (q *Queries) UpdateSongMetadata(ctx context.Context, arg UpdateSongMetadata
 		arg.CcliNumber,
 		arg.ID,
 	)
+	var i Song
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Author,
+		&i.Copyright,
+		&i.Publisher,
+		&i.CcliNumber,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateSongTitle = `-- name: UpdateSongTitle :one
+UPDATE song
+SET title = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING id, title, author, copyright, publisher, ccli_number, created_at, updated_at
+`
+
+type UpdateSongTitleParams struct {
+	Title string `json:"title"`
+	ID    int64  `json:"id"`
+}
+
+func (q *Queries) UpdateSongTitle(ctx context.Context, arg UpdateSongTitleParams) (Song, error) {
+	row := q.db.QueryRowContext(ctx, updateSongTitle, arg.Title, arg.ID)
 	var i Song
 	err := row.Scan(
 		&i.ID,

@@ -14,3 +14,6 @@ RETURNING *;
 
 -- name: DeleteServiceItemSong :exec
 DELETE FROM service_item_song WHERE item_id = ?;
+
+-- name: DeleteServiceItemSongsForSong :exec
+DELETE FROM service_item_song WHERE song_id = ?;

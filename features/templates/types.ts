@@ -124,6 +124,14 @@ export type Box = {
   underline?: boolean
   /** Adds a strong drop-shadow so text pops on any background. */
   shadow?: boolean
+  /** Draws an outline (stroke) around each glyph for legibility on busy
+   *  or light backgrounds. Off when absent. */
+  outline?: boolean
+  /** Outline color, CSS string. Default #000000. */
+  outlineColor?: string
+  /** Outline thickness in native viewport px (scales with the canvas).
+   *  Default 6. */
+  outlineWidth?: number
   /** Background fill for the box. CSS color string, default transparent. */
   bgColor?: string
   /** Horizontal inner padding in native viewport px. */

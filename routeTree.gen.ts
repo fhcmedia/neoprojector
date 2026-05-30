@@ -84,10 +84,10 @@ export interface FileRoutesByFullPath {
   '/presenter': typeof AppPresenterRoute
   '/settings': typeof AppSettingsRoute
   '/output/$displayId': typeof OutputDisplayIdRoute
+  '/decks/$deckId': typeof AppDecksDeckIdRoute
   '/overlays/$overlayId': typeof AppOverlaysOverlayIdRoute
   '/presentations/$presentationId': typeof AppPresentationsPresentationIdRoute
   '/templates/$templateId': typeof AppTemplatesTemplateIdRoute
-  '/decks/$deckId': typeof AppDecksDeckIdRoute
 }
 export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
@@ -96,10 +96,10 @@ export interface FileRoutesByTo {
   '/settings': typeof AppSettingsRoute
   '/output/$displayId': typeof OutputDisplayIdRoute
   '/': typeof AppIndexRoute
+  '/decks/$deckId': typeof AppDecksDeckIdRoute
   '/overlays/$overlayId': typeof AppOverlaysOverlayIdRoute
   '/presentations/$presentationId': typeof AppPresentationsPresentationIdRoute
   '/templates/$templateId': typeof AppTemplatesTemplateIdRoute
-  '/decks/$deckId': typeof AppDecksDeckIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -110,10 +110,10 @@ export interface FileRoutesById {
   '/_app/settings': typeof AppSettingsRoute
   '/output/$displayId': typeof OutputDisplayIdRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/decks/$deckId': typeof AppDecksDeckIdRoute
   '/_app/overlays/$overlayId': typeof AppOverlaysOverlayIdRoute
   '/_app/presentations/$presentationId': typeof AppPresentationsPresentationIdRoute
   '/_app/templates/$templateId': typeof AppTemplatesTemplateIdRoute
-  '/_app/decks/$deckId': typeof AppDecksDeckIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -124,10 +124,10 @@ export interface FileRouteTypes {
     | '/presenter'
     | '/settings'
     | '/output/$displayId'
+    | '/decks/$deckId'
     | '/overlays/$overlayId'
     | '/presentations/$presentationId'
     | '/templates/$templateId'
-    | '/decks/$deckId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/auth'
@@ -136,10 +136,10 @@ export interface FileRouteTypes {
     | '/settings'
     | '/output/$displayId'
     | '/'
+    | '/decks/$deckId'
     | '/overlays/$overlayId'
     | '/presentations/$presentationId'
     | '/templates/$templateId'
-    | '/decks/$deckId'
   id:
     | '__root__'
     | '/_app'
@@ -149,10 +149,10 @@ export interface FileRouteTypes {
     | '/_app/settings'
     | '/output/$displayId'
     | '/_app/'
+    | '/_app/decks/$deckId'
     | '/_app/overlays/$overlayId'
     | '/_app/presentations/$presentationId'
     | '/_app/templates/$templateId'
-    | '/_app/decks/$deckId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -248,20 +248,20 @@ interface AppRouteChildren {
   AppPresenterRoute: typeof AppPresenterRoute
   AppSettingsRoute: typeof AppSettingsRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppDecksDeckIdRoute: typeof AppDecksDeckIdRoute
   AppOverlaysOverlayIdRoute: typeof AppOverlaysOverlayIdRoute
   AppPresentationsPresentationIdRoute: typeof AppPresentationsPresentationIdRoute
   AppTemplatesTemplateIdRoute: typeof AppTemplatesTemplateIdRoute
-  AppDecksDeckIdRoute: typeof AppDecksDeckIdRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppPresenterRoute: AppPresenterRoute,
   AppSettingsRoute: AppSettingsRoute,
   AppIndexRoute: AppIndexRoute,
+  AppDecksDeckIdRoute: AppDecksDeckIdRoute,
   AppOverlaysOverlayIdRoute: AppOverlaysOverlayIdRoute,
   AppPresentationsPresentationIdRoute: AppPresentationsPresentationIdRoute,
   AppTemplatesTemplateIdRoute: AppTemplatesTemplateIdRoute,
-  AppDecksDeckIdRoute: AppDecksDeckIdRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

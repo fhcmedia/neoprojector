@@ -40,6 +40,7 @@ import {
 import { useIsMutating } from "@tanstack/react-query"
 import { useLive } from "@/features/live/live-context"
 import { LivePreviewWidget } from "@/features/live/live-preview-widget"
+import { RemoteListener } from "@/features/live/remote-listener"
 import { useKeybinds } from "@/hooks/use-keybinds"
 import { CommandPalette } from "@/features/command-palette/command-palette"
 import { useAuth } from "@/hooks/use-auth"
@@ -138,6 +139,7 @@ function AppShell() {
       transition={{ duration: 0.8, ease: "easeOut" }}
       className="flex h-screen flex-col bg-background text-foreground"
     >
+      <RemoteListener />
       <header className="flex h-12 shrink-0 items-stretch justify-between border-b border-border/50">
         <Link
           to="/"

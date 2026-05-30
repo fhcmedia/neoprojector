@@ -25,6 +25,7 @@ import {
   Layers2Icon,
   Trash2Icon,
   TypeIcon,
+  TypeOutlineIcon,
   UnderlineIcon,
   XIcon,
 } from "lucide-react"
@@ -551,7 +552,27 @@ function PropertyPanel({
               <ToggleButton aria-label="Text shadow" pressed={box.shadow ?? false} readOnly={readOnly} onPressedChange={(v) => onChange({ shadow: v })}>
                 <Layers2Icon className="size-3.5" />
               </ToggleButton>
+              <ToggleButton aria-label="Outline" pressed={box.outline ?? false} readOnly={readOnly} onPressedChange={(v) => onChange({ outline: v })}>
+                <TypeOutlineIcon className="size-3.5" />
+              </ToggleButton>
             </div>
+            {box.outline && (
+              <Grid2>
+                <ColorField
+                  label="Outline color"
+                  value={box.outlineColor ?? "#000000"}
+                  readOnly={readOnly}
+                  onChange={(v) => onChange({ outlineColor: v })}
+                />
+                <NumberField
+                  label="Outline width"
+                  value={box.outlineWidth ?? 6}
+                  min={0}
+                  readOnly={readOnly}
+                  onChange={(v) => onChange({ outlineWidth: v })}
+                />
+              </Grid2>
+            )}
             <NumberField
               label="Letter spacing (em)"
               value={box.letterSpacing ?? 0}
