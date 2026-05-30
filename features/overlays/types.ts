@@ -13,6 +13,7 @@ export type WidgetKind =
   | "preacher_name"
   | "message"
   | "qr"
+  | "transcription"
 
 // OverlayLayout: where and how the widget renders on a given display.
 // Coordinates and sizes are 0..1 normalized so the same overlay

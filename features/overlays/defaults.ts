@@ -45,4 +45,5 @@ export const DEFAULT_OVERLAYS: Overlay[] = [
   buildDefault(-4, "Name card", "preacher_name"),
   buildDefault(-5, "Message", "message"),
   buildDefault(-6, "QR code", "qr"),
+  buildDefault(-7, "Live captions", "transcription"),
 ]

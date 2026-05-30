@@ -277,6 +277,7 @@ export function useMoveItem() {
 // appears above "Scripture from Library" so the two have a stable
 // relative position regardless of which one was created first.
 export const MEDIA_FROM_LIBRARY_SECTION = "Media from Library"
+export const OVERLAYS_FROM_LIBRARY_SECTION = "Overlays from Library"
 export const SCRIPTURE_FROM_LIBRARY_SECTION = "Scripture from Library"
 // Legacy: very early builds shipped "Previous verses" instead. We
 // keep accepting that name on lookup so an existing service's items
@@ -288,6 +289,7 @@ const LEGACY_SCRIPTURE_SECTION = "Previous verses"
 // [user sections] [media] [scripture]
 const AUTO_SECTION_ORDER = [
   MEDIA_FROM_LIBRARY_SECTION,
+  OVERLAYS_FROM_LIBRARY_SECTION,
   SCRIPTURE_FROM_LIBRARY_SECTION,
   LEGACY_SCRIPTURE_SECTION,
 ]
@@ -445,6 +447,40 @@ export function useAppendMediaFromLibrary(serviceId: number | undefined) {
       const item = (await Schedule.AddMediaItem(
         section.id,
         mediaId
+      )) as unknown as { id: number }
+      qc.invalidateQueries({ queryKey: scheduleKeys.items(section.id) })
+      return item.id
+    },
+    [qc, serviceId]
+  )
+}
+
+export function useAppendOverlayFromLibrary(serviceId: number | undefined) {
+  const qc = useQueryClient()
+  return useCallback(
+    async (overlay: {
+      kind: string
+      name: string
+      config_json: string
+      layouts_json: string
+      rules_json: string
+    }): Promise<number | null> => {
+      if (!serviceId) return null
+      const section = await findOrCreateAutoSection(
+        qc,
+        serviceId,
+        OVERLAYS_FROM_LIBRARY_SECTION
+      )
+      const spec: OverlayItemSpec = {
+        kind: overlay.kind,
+        name: overlay.name,
+        config_json: overlay.config_json,
+        layouts_json: overlay.layouts_json,
+        rules_json: overlay.rules_json,
+      }
+      const item = (await Schedule.AddOverlayItem(
+        section.id,
+        spec
       )) as unknown as { id: number }
       qc.invalidateQueries({ queryKey: scheduleKeys.items(section.id) })
       return item.id

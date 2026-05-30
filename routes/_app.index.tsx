@@ -22,7 +22,11 @@ import { ShowPane, type AdHocBibleRef } from "@/features/show/show-pane"
 import {
   useAppendPreviousVerse,
   useAppendMediaFromLibrary,
+  useAppendOverlayFromLibrary,
 } from "@/features/schedule/api"
+import type { Overlay } from "@/bindings/neoprojector/database"
+import { useLive } from "@/features/live/live-context"
+import { overlayActivationPayload } from "@/lib/overlay-schedule"
 
 type Search = {
   service?: number
@@ -133,6 +137,8 @@ function Projector() {
   // service. No merge / dedupe: clicking the same media twice creates
   // two rows so the operator can build a sequence.
   const appendMediaFromLibrary = useAppendMediaFromLibrary(activeServiceId)
+  const appendOverlayFromLibrary = useAppendOverlayFromLibrary(activeServiceId)
+  const { toggleOverlay } = useLive()
 
   // Library Enter sets the ad-hoc ref AND clears active item so the
   // show pane swaps over cleanly.
@@ -155,6 +161,16 @@ function Projector() {
     if (newItemId !== null && newItemId !== undefined) {
       setActiveItemId(newItemId)
     }
+  }
+
+  const handleOverlayAddToService = async (overlay: Overlay) => {
+    await appendOverlayFromLibrary(overlay)
+  }
+
+  const handleOverlayGoLive = async (overlay: Overlay) => {
+    const itemId = await appendOverlayFromLibrary(overlay)
+    if (itemId == null) return
+    toggleOverlay(overlayActivationPayload(itemId, overlay))
   }
 
   // Persisted "last opened" service id. Survives back-out so the service
@@ -316,6 +332,11 @@ function Projector() {
         <LibraryView
           onAdHocBibleRef={submitAdHocBibleRef}
           onMediaPick={handleMediaPick}
+          serviceOpen={!!activeServiceId}
+          onOverlayAddToService={
+            activeServiceId ? handleOverlayAddToService : undefined
+          }
+          onOverlayGoLive={activeServiceId ? handleOverlayGoLive : undefined}
         />
       </ResizablePanel>
     </ResizablePanelGroup>

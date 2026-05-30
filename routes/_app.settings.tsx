@@ -25,6 +25,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu"
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/native-select"
+import { useTranscriptionSettings } from "@/features/transcription/settings"
+import {
+  LATENCY_PRESETS,
+  NOISE_REDUCTION_OPTIONS,
+  TRANSCRIPTION_MODELS,
+  type LatencyPreset,
+  type NoiseReduction,
+  type TranscriptionModel,
+} from "@/features/transcription/settings"
+import { TRANSCRIPTION_LANGUAGES } from "@/features/transcription/languages"
 import { cn } from "@/lib/utils"
 
 export const Route = createFileRoute("/_app/settings")({
@@ -36,6 +50,7 @@ const sections = [
   { id: "output", label: "Output" },
   { id: "display", label: "Display" },
   { id: "audio", label: "Audio" },
+  { id: "transcription", label: "Transcription" },
   { id: "bibles", label: "Bibles" },
   { id: "songs", label: "Songs" },
   { id: "hotkeys", label: "Hotkeys" },
@@ -180,6 +195,149 @@ function OutputPanel() {
           aria-label="Bypass display requirement"
         />
       </Row>
+    </div>
+  )
+}
+
+function TranscriptionPanel() {
+  const { settings, update } = useTranscriptionSettings()
+  const [showKey, setShowKey] = useState(false)
+  const keySet = settings.apiKey.trim().length > 0
+
+  return (
+    <div className="divide-y divide-border/40">
+      <div className="space-y-2 py-3">
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-medium">OpenAI API key</div>
+          <span
+            className={cn(
+              "text-[10px] uppercase tracking-wider",
+              keySet ? "text-emerald-500" : "text-muted-foreground/60"
+            )}
+          >
+            {keySet ? "Set" : "Not set"}
+          </span>
+        </div>
+        <div className="text-[11px] text-muted-foreground">
+          Used for real-time transcription over the OpenAI realtime websocket.
+          Stored locally on this machine only.
+        </div>
+        <div className="flex items-center gap-2 pt-1">
+          <Input
+            type={showKey ? "text" : "password"}
+            value={settings.apiKey}
+            onChange={(e) => update({ apiKey: e.target.value })}
+            placeholder="sk-..."
+            spellCheck={false}
+            autoComplete="off"
+            className="h-8 w-96 max-w-full font-mono text-xs"
+          />
+          <button
+            type="button"
+            onClick={() => setShowKey((v) => !v)}
+            className="rounded-md border border-border/50 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted"
+          >
+            {showKey ? "Hide" : "Show"}
+          </button>
+        </div>
+      </div>
+
+      <Row
+        label="Default model"
+        description="Streaming models update the caption word-by-word; whisper-1 commits whole utterances."
+      >
+        <NativeSelect
+          size="sm"
+          value={settings.model}
+          onChange={(e) =>
+            update({ model: e.target.value as TranscriptionModel })
+          }
+          className="min-w-[260px] text-xs"
+        >
+          {TRANSCRIPTION_MODELS.map((m) => (
+            <NativeSelectOption key={m.value} value={m.value}>
+              {m.label}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+      </Row>
+
+      <Row
+        label="Default language"
+        description="Auto-detect works well, but pinning the language improves accuracy and latency."
+      >
+        <NativeSelect
+          size="sm"
+          value={settings.language}
+          onChange={(e) => update({ language: e.target.value })}
+          className="min-w-[200px] text-xs"
+        >
+          {TRANSCRIPTION_LANGUAGES.map((l) => (
+            <NativeSelectOption key={l.code || "auto"} value={l.code}>
+              {l.name}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+      </Row>
+
+      <Row
+        label="Default latency"
+        description="How long the model waits for a pause before finalising a line."
+      >
+        <NativeSelect
+          size="sm"
+          value={settings.latency}
+          onChange={(e) =>
+            update({ latency: e.target.value as LatencyPreset })
+          }
+          className="min-w-[200px] text-xs"
+        >
+          {LATENCY_PRESETS.map((p) => (
+            <NativeSelectOption key={p.value} value={p.value}>
+              {p.label}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+      </Row>
+
+      <Row
+        label="Noise reduction"
+        description="Server-side audio cleanup before transcription."
+      >
+        <NativeSelect
+          size="sm"
+          value={settings.noiseReduction}
+          onChange={(e) =>
+            update({ noiseReduction: e.target.value as NoiseReduction })
+          }
+          className="min-w-[220px] text-xs"
+        >
+          {NOISE_REDUCTION_OPTIONS.map((n) => (
+            <NativeSelectOption key={n.value} value={n.value}>
+              {n.label}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+      </Row>
+
+      <div className="space-y-2 py-3">
+        <div className="text-xs font-medium">Vocabulary hint</div>
+        <div className="text-[11px] text-muted-foreground">
+          Optional. Names, places, or terms to bias the transcription toward.
+        </div>
+        <Input
+          value={settings.prompt}
+          onChange={(e) => update({ prompt: e.target.value })}
+          placeholder="e.g. Pastor names, ministry terms"
+          className="h-8 w-96 max-w-full text-xs"
+        />
+      </div>
+
+      <p className="py-3 text-[11px] text-muted-foreground/80">
+        These are defaults for new <span className="font-medium">Live captions</span>{" "}
+        overlays. Language, model, latency and the on-screen look are editable
+        per overlay in the overlay editor.
+      </p>
     </div>
   )
 }
@@ -344,7 +502,9 @@ function Settings() {
                   ? "Configured outputs and their template bindings."
                   : active === "bibles"
                     ? "Pick which translations fill the slots in multi-translation templates."
-                    : `${current.label} settings will live here.`
+                    : active === "transcription"
+                      ? "Live captions: OpenAI key, language and latency defaults."
+                      : `${current.label} settings will live here.`
             }
           />
           {active === "general" ? (
@@ -355,6 +515,8 @@ function Settings() {
             <DisplaySettings />
           ) : active === "bibles" ? (
             <BiblesPanel />
+          ) : active === "transcription" ? (
+            <TranscriptionPanel />
           ) : (
             <Placeholder label={current.label} />
           )}

@@ -40,6 +40,7 @@ import {
 import { useIsMutating } from "@tanstack/react-query"
 import { useLive } from "@/features/live/live-context"
 import { useKeybinds } from "@/hooks/use-keybinds"
+import { useTranscriptionEngine } from "@/features/transcription/use-transcription"
 import { CommandPalette } from "@/features/command-palette/command-palette"
 import { useAuth } from "@/hooks/use-auth"
 import logo from "@/assets/logo.png"
@@ -63,6 +64,10 @@ function AppShell() {
   const stopMut = useStopLive()
   const { republish } = useLive()
   useKeybinds()
+  // Operator-side mic + OpenAI realtime websocket. Runs only here (the
+  // _app shell mounts in the operator window, not output windows) and
+  // broadcasts transcript cues to every output via the Wails event bus.
+  useTranscriptionEngine()
   const isSaving = useIsMutating() > 0
   const [confirmOffline, setConfirmOffline] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)

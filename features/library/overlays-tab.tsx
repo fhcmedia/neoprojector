@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import {
+  ArrowUpIcon,
   CopyIcon,
   LockIcon,
+  PencilIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react"
@@ -36,13 +38,24 @@ import {
 type Props = {
   search: string
   onOpen: (overlay: Overlay) => void
+  /** Append to the active service only (double-click). */
+  onAddToService?: (overlay: Overlay) => void
+  /** Append (if needed) and toggle on air. Requires an open service. */
+  onGoLive?: (overlay: Overlay) => void
+  serviceOpen?: boolean
 }
 
 // OverlaysTab — tile grid mirroring the Templates tab. Defaults are
 // the locked rows up front (duplicate to edit); user-created overlays
 // follow. A live preview tile renders the widget's actual output so
 // the operator can spot the right one at a glance.
-export function OverlaysTab({ search, onOpen }: Props) {
+export function OverlaysTab({
+  search,
+  onOpen,
+  onAddToService,
+  onGoLive,
+  serviceOpen = false,
+}: Props) {
   const { data: overlays, isLoading } = useOverlays()
   const createMut = useCreateOverlay()
   const deleteMut = useDeleteOverlay()
@@ -71,7 +84,12 @@ export function OverlaysTab({ search, onOpen }: Props) {
             <OverlayTile
               key={o.id}
               overlay={o}
-              onOpen={() => onOpen(o)}
+              serviceOpen={serviceOpen}
+              onEdit={() => onOpen(o)}
+              onGoLive={onGoLive ? () => onGoLive(o) : undefined}
+              onAddToService={
+                onAddToService ? () => onAddToService(o) : undefined
+              }
               onDuplicate={() =>
                 createMut.mutate(buildCreateInputFromOverlay(o), {
                   onSuccess: onOpen,
@@ -102,12 +120,18 @@ export function OverlaysTab({ search, onOpen }: Props) {
 
 function OverlayTile({
   overlay,
-  onOpen,
+  serviceOpen,
+  onEdit,
+  onGoLive,
+  onAddToService,
   onDuplicate,
   onDelete,
 }: {
   overlay: Overlay
-  onOpen: () => void
+  serviceOpen: boolean
+  onEdit: () => void
+  onGoLive?: () => void
+  onAddToService?: () => void
   onDuplicate: () => void
   onDelete: () => void
 }) {
@@ -142,15 +166,19 @@ function OverlayTile({
       transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
       className="group flex flex-col overflow-hidden rounded border border-border/50 bg-background transition-colors hover:border-border"
     >
-      <button
-        type="button"
-        onClick={onOpen}
-        className="relative block aspect-video w-full bg-black text-left"
+      <div
+        className="relative aspect-video w-full bg-black"
+        onDoubleClick={(e) => {
+          if (!onAddToService) return
+          e.preventDefault()
+          onAddToService()
+        }}
+        title={
+          onAddToService
+            ? "Double-click to add to the active service"
+            : undefined
+        }
       >
-        {/* Mini canvas mirroring the output. Layout coords are 0..1
-            normalized; the wrapper applies them as percentages and
-            marks itself as a query container so widgets can size
-            their inner text in cqh units (consistent at any scale). */}
         <div className="absolute inset-0">
           <div
             className="absolute"
@@ -175,32 +203,41 @@ function OverlayTile({
           </span>
         )}
         <div className="absolute right-1.5 top-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-          <span
-            role="button"
-            aria-label="Duplicate"
-            tabIndex={0}
-            onClick={(e) => {
-              e.stopPropagation()
-              onDuplicate()
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault()
-                e.stopPropagation()
-                onDuplicate()
-              }
-            }}
-            className="grid size-6 cursor-pointer place-items-center rounded bg-background/70 text-muted-foreground backdrop-blur transition-colors hover:bg-sky-500/30 hover:text-sky-500"
+          <TileIconAction
+            ariaLabel="Go live"
+            title={
+              serviceOpen
+                ? "Add to service and show on air"
+                : "Open a service first"
+            }
+            disabled={!serviceOpen || !onGoLive}
+            tone="live"
+            onClick={onGoLive}
+          >
+            <ArrowUpIcon className="size-3.5" />
+          </TileIconAction>
+          <TileIconAction
+            ariaLabel="Edit overlay"
+            title="Edit overlay"
+            tone="edit"
+            onClick={onEdit}
+          >
+            <PencilIcon className="size-3.5" />
+          </TileIconAction>
+          <TileIconAction
+            ariaLabel="Duplicate"
+            title="Duplicate"
+            tone="duplicate"
+            onClick={onDuplicate}
           >
             <CopyIcon className="size-3.5" />
-          </span>
+          </TileIconAction>
           {!isDefault && (
-            <span
-              role="button"
-              aria-label={pendingDelete ? "Confirm delete" : "Delete"}
-              tabIndex={0}
-              onClick={(e) => {
-                e.stopPropagation()
+            <TileIconAction
+              ariaLabel={pendingDelete ? "Confirm delete" : "Delete"}
+              title={pendingDelete ? "Confirm delete" : "Delete"}
+              tone={pendingDelete ? "danger" : "delete"}
+              onClick={() => {
                 if (pendingDelete) {
                   onDelete()
                   setPendingDelete(false)
@@ -208,34 +245,16 @@ function OverlayTile({
                   setPendingDelete(true)
                 }
               }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault()
-                  e.stopPropagation()
-                  if (pendingDelete) {
-                    onDelete()
-                    setPendingDelete(false)
-                  } else {
-                    setPendingDelete(true)
-                  }
-                }
-              }}
-              className={cn(
-                "grid size-6 cursor-pointer place-items-center rounded transition-colors",
-                pendingDelete
-                  ? "bg-destructive text-destructive-foreground"
-                  : "bg-background/70 text-muted-foreground backdrop-blur hover:bg-destructive/30 hover:text-destructive"
-              )}
             >
               {pendingDelete ? (
                 <XIcon className="size-3.5" />
               ) : (
                 <Trash2Icon className="size-3.5" />
               )}
-            </span>
+            </TileIconAction>
           )}
         </div>
-      </button>
+      </div>
       <div className="flex flex-col gap-0.5 border-t border-border/40 px-2 py-1.5">
         <span className="truncate text-[11px] font-medium text-foreground">
           {overlay.name}
@@ -252,6 +271,51 @@ function OverlayTile({
 // AddTile), but wrapped in a DropdownMenu so picking creates a fresh
 // overlay seeded from the chosen widget's registry defaults. The
 // trigger is `asChild` — the AddTile button IS the trigger.
+type TileActionTone = "live" | "edit" | "duplicate" | "delete" | "danger"
+
+const tileActionTone: Record<TileActionTone, string> = {
+  live: "text-emerald-500 hover:bg-emerald-500/25 hover:text-emerald-400",
+  edit: "text-muted-foreground hover:bg-amber-500/15 hover:text-amber-500",
+  duplicate: "text-muted-foreground hover:bg-sky-500/30 hover:text-sky-500",
+  delete: "text-muted-foreground hover:bg-destructive/30 hover:text-destructive",
+  danger: "bg-destructive text-destructive-foreground",
+}
+
+function TileIconAction({
+  ariaLabel,
+  title,
+  tone,
+  disabled,
+  onClick,
+  children,
+}: {
+  ariaLabel: string
+  title?: string
+  tone: TileActionTone
+  disabled?: boolean
+  onClick?: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      title={title}
+      disabled={disabled}
+      onClick={(e) => {
+        e.stopPropagation()
+        onClick?.()
+      }}
+      className={cn(
+        "grid size-6 cursor-pointer place-items-center rounded bg-background/70 backdrop-blur transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+        tileActionTone[tone]
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
 function AddOverlayTile({ onPick }: { onPick: (kind: WidgetKind) => void }) {
   return (
     <DropdownMenu>

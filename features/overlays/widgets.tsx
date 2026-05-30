@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { AnimatePresence, motion } from "motion/react"
 // react-qr-code ships as CJS with both default and named exports;
 // Vite's interop sometimes hands the namespace object back as the
 // default, so import the named binding to dodge it.
@@ -18,6 +19,22 @@ import type {
   WidgetKind,
 } from "@/features/overlays/types"
 import { Input } from "@/components/input"
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from "@/components/native-select"
+import {
+  transcriptionDefaultConfig,
+  type TranscriptionConfig,
+} from "@/features/transcription/config"
+import {
+  LATENCY_PRESETS,
+  TRANSCRIPTION_MODELS,
+  type TranscriptionModel,
+  type LatencyPreset,
+} from "@/features/transcription/settings"
+import { TRANSCRIPTION_LANGUAGES } from "@/features/transcription/languages"
+import { useTranscriptionCue } from "@/features/transcription/use-transcription"
 
 // A WidgetDef bundles everything the rest of the app needs to know
 // about a widget kind. The runtime renderer reads `config` and
@@ -581,6 +598,286 @@ const qrDef: WidgetDef<QrConfig> = {
   ConfigEditor: QrEditor,
 }
 
+// --- transcription --------------------------------------------------------
+
+// A live-subtitle overlay. The single operator-side engine (mic +
+// OpenAI realtime websocket) feeds transcript cues over the Wails
+// event bus; this renderer mirrors them as a bottom-anchored,
+// auto-scrolling caption: the newest line is bright, older lines
+// half-fade as they scroll up — like broadcast subtitles.
+const TRANSCRIPTION_PREVIEW: { id: number; text: string }[] = [
+  { id: -2, text: "and his mercy endures forever" },
+  { id: -1, text: "let everything that has breath praise the Lord" },
+]
+
+const TranscriptionRenderer: WidgetDef<TranscriptionConfig>["Renderer"] = ({
+  config,
+  style,
+  activatedAt,
+}) => {
+  const cue = useTranscriptionCue()
+  const maxLines = Math.max(1, Math.min(3, Math.round(config.max_lines || 2)))
+  const isPreview = activatedAt === undefined
+
+  let lines = cue.lines
+  if (isPreview && lines.length === 0) lines = TRANSCRIPTION_PREVIEW
+  const visible = lines.slice(-maxLines)
+
+  const color =
+    config.color || (style.color as string | undefined) || "#ffffff"
+  const fontScale = config.font_scale || 1
+  // Sized so two lines sit comfortably inside the caption box with room
+  // to spare (no clipping). Scales with the operator's text-size knob.
+  const fontSize = `${(38 / maxLines) * fontScale}cqh`
+  const align = config.align ?? "center"
+  const justify =
+    align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center"
+
+  const showListening = !isPreview && visible.length === 0
+  const showError = !isPreview && cue.status === "error" && visible.length === 0
+
+  return (
+    <div
+      className="flex h-full w-full flex-col justify-end overflow-hidden"
+      style={{
+        fontFamily: "system-ui, sans-serif",
+        // Extra bottom padding keeps the live line off the very edge of
+        // the screen so it never looks half cut-off.
+        padding: "2cqh 4cqh 4cqh",
+        alignItems: justify,
+      }}
+    >
+      <div
+        className="flex flex-col"
+        style={{
+          alignItems: justify,
+          gap: "1.4cqh",
+          maxWidth: "100%",
+          ...(config.background
+            ? {
+                background: "rgba(0,0,0,0.6)",
+                borderRadius: "2.5cqh",
+                padding: "2cqh 3cqh",
+                backdropFilter: "blur(2px)",
+              }
+            : {}),
+        }}
+      >
+        {showError ? (
+          <div style={{ color: "#fca5a5", fontSize: `${14 * fontScale}cqh`, textAlign: align }}>
+            {cue.error ?? "Transcription error"}
+          </div>
+        ) : showListening ? (
+          <div
+            className="animate-pulse"
+            style={{ color, opacity: 0.6, fontSize: `${14 * fontScale}cqh`, textAlign: align }}
+          >
+            Listening…
+          </div>
+        ) : (
+          <AnimatePresence initial={false}>
+            {visible.map((line, i) => {
+              const newest = i === visible.length - 1
+              return (
+                <motion.div
+                  key={line.id}
+                  layout="position"
+                  initial={{ opacity: 0, y: "0.4em" }}
+                  animate={{ opacity: newest ? 1 : 0.4, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.28, ease: "easeOut" }}
+                  style={{
+                    color,
+                    fontSize,
+                    width: "100%",
+                    textAlign: align,
+                    lineHeight: 1.18,
+                    fontWeight: 600,
+                    textShadow: config.background
+                      ? "none"
+                      : "0 2px 8px rgba(0,0,0,0.85)",
+                    textTransform: config.uppercase ? "uppercase" : "none",
+                  }}
+                >
+                  {line.text}
+                </motion.div>
+              )
+            })}
+          </AnimatePresence>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const TranscriptionEditor: WidgetDef<TranscriptionConfig>["ConfigEditor"] = ({
+  config,
+  onChange,
+}) => {
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="rounded-md border border-border/50 bg-muted/30 px-2.5 py-2 text-[10px] leading-relaxed text-muted-foreground">
+        Real-time transcription uses your OpenAI API key from{" "}
+        <span className="font-medium text-foreground">
+          Settings → Transcription
+        </span>
+        . Audio is captured from this machine's default microphone while the
+        overlay is live.
+      </p>
+
+      <Field label="Language">
+        <NativeSelect
+          size="sm"
+          value={config.language}
+          onChange={(e) => onChange({ ...config, language: e.target.value })}
+          className="w-full text-xs"
+        >
+          {TRANSCRIPTION_LANGUAGES.map((l) => (
+            <NativeSelectOption key={l.code || "auto"} value={l.code}>
+              {l.name}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+      </Field>
+
+      <Field label="Model">
+        <NativeSelect
+          size="sm"
+          value={config.model}
+          onChange={(e) =>
+            onChange({ ...config, model: e.target.value as TranscriptionModel })
+          }
+          className="w-full text-xs"
+        >
+          {TRANSCRIPTION_MODELS.map((m) => (
+            <NativeSelectOption key={m.value} value={m.value}>
+              {m.label}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+      </Field>
+
+      <Field label="Latency">
+        <NativeSelect
+          size="sm"
+          value={config.latency}
+          onChange={(e) =>
+            onChange({ ...config, latency: e.target.value as LatencyPreset })
+          }
+          className="w-full text-xs"
+        >
+          {LATENCY_PRESETS.map((p) => (
+            <NativeSelectOption key={p.value} value={p.value}>
+              {p.label}
+            </NativeSelectOption>
+          ))}
+        </NativeSelect>
+      </Field>
+
+      <Field label="Vocabulary hint (optional)">
+        <Input
+          value={config.prompt}
+          onChange={(e) => onChange({ ...config, prompt: e.target.value })}
+          placeholder="Names, places, terms to bias toward"
+          className="h-8 text-xs"
+        />
+      </Field>
+
+      <Field label="Visible lines">
+        <Input
+          type="number"
+          min="1"
+          max="3"
+          step="1"
+          value={config.max_lines}
+          onChange={(e) =>
+            onChange({
+              ...config,
+              max_lines: Math.max(1, Math.min(3, Math.round(Number(e.target.value) || 2))),
+            })
+          }
+          className="h-8 w-20 text-xs"
+        />
+      </Field>
+
+      <Field label="Alignment">
+        <NativeSelect
+          size="sm"
+          value={config.align}
+          onChange={(e) =>
+            onChange({
+              ...config,
+              align: e.target.value as TranscriptionConfig["align"],
+            })
+          }
+          className="w-full text-xs"
+        >
+          <NativeSelectOption value="left">Left</NativeSelectOption>
+          <NativeSelectOption value="center">Center</NativeSelectOption>
+          <NativeSelectOption value="right">Right</NativeSelectOption>
+        </NativeSelect>
+      </Field>
+
+      <Field label="Text size">
+        <div className="flex items-center gap-2">
+          <input
+            type="range"
+            min="0.5"
+            max="2"
+            step="0.05"
+            value={config.font_scale}
+            onChange={(e) =>
+              onChange({ ...config, font_scale: Number(e.target.value) })
+            }
+            className="flex-1 accent-foreground"
+          />
+          <span className="w-10 text-right text-[10px] tabular-nums text-muted-foreground">
+            {Math.round((config.font_scale || 1) * 100)}%
+          </span>
+        </div>
+      </Field>
+
+      <Field label="Text color">
+        <input
+          type="color"
+          value={config.color || "#ffffff"}
+          onChange={(e) => onChange({ ...config, color: e.target.value })}
+          className="h-8 w-16 cursor-pointer rounded border border-border/50 bg-transparent"
+        />
+      </Field>
+
+      <Toggle
+        label="Background bar"
+        checked={config.background}
+        onChange={(v) => onChange({ ...config, background: v })}
+      />
+      <Toggle
+        label="Uppercase"
+        checked={config.uppercase}
+        onChange={(v) => onChange({ ...config, uppercase: v })}
+      />
+    </div>
+  )
+}
+
+const transcriptionDef: WidgetDef<TranscriptionConfig> = {
+  kind: "transcription",
+  label: "Live captions",
+  icon: MicIcon,
+  defaultName: "Live captions",
+  defaultConfig: transcriptionDefaultConfig,
+  defaultLayout: {
+    x: 0.5,
+    y: 0.82,
+    w: 0.9,
+    h: 0.24,
+    style: { color: "#ffffff", entry: "fade", duration_ms: 300 },
+  },
+  defaultRules: { cover_slide: false },
+  Renderer: TranscriptionRenderer,
+  ConfigEditor: TranscriptionEditor,
+}
+
 // --- registry -------------------------------------------------------------
 
 // The single source of truth for which widgets exist. Adding a kind
@@ -592,6 +889,7 @@ export const WIDGETS: Record<WidgetKind, WidgetDef<any>> = {
   preacher_name: preacherNameDef,
   message: messageDef,
   qr: qrDef,
+  transcription: transcriptionDef,
 }
 
 export function widgetDef(kind: WidgetKind): WidgetDef<any> {

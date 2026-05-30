@@ -8,7 +8,7 @@ import { useDebounce } from "@/hooks/use-debounce"
 import { Dialogs, Events } from "@wailsio/runtime"
 import { Service as Media } from "@/bindings/neoprojector/services/media"
 import { Service as Bible } from "@/bindings/neoprojector/services/bible"
-import type { BibleBook } from "@/bindings/neoprojector/database"
+import type { BibleBook, Overlay } from "@/bindings/neoprojector/database"
 import type { AdHocBibleRef } from "@/features/show/show-pane"
 import type { ChapterVerse } from "@/bindings/neoprojector/services/bible"
 import { useLive } from "@/features/live/live-context"
@@ -55,11 +55,17 @@ type LibraryViewProps = {
   // what "click" means (typically: append to the auto-inbox + focus
   // the new schedule item so its preview shows in the show pane).
   onMediaPick?: (mediaId: number) => void
+  onOverlayAddToService?: (overlay: Overlay) => void
+  onOverlayGoLive?: (overlay: Overlay) => void
+  serviceOpen?: boolean
 }
 
 export function LibraryView({
   onAdHocBibleRef,
   onMediaPick,
+  onOverlayAddToService,
+  onOverlayGoLive,
+  serviceOpen = false,
 }: LibraryViewProps = {}) {
   const navigate = useNavigate()
   // Library state is session-persisted: active tab + per-tab search
@@ -326,12 +332,15 @@ export function LibraryView({
             {active === "overlays" && (
               <OverlaysTab
                 search={overlaySearch}
+                serviceOpen={serviceOpen}
                 onOpen={(o) =>
                   navigate({
                     to: "/overlays/$overlayId",
                     params: { overlayId: String(o.id) },
                   })
                 }
+                onAddToService={onOverlayAddToService}
+                onGoLive={onOverlayGoLive}
               />
             )}
             {active === "presentations" && (

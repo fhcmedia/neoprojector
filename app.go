@@ -90,10 +90,21 @@ func (a *App) runInit(splash application.Window) {
 
 	openMainWindow()
 
-	// Small delay ensures the native window is fully registered in the
-	// app's window map before we close the splash. Otherwise the app sees
-	// zero windows and terminates (ApplicationShouldTerminateAfterLastWindowClosed).
-	// Ideally we'd rely solely on WindowRuntimeReady, but for now now this will do.
-	time.Sleep(100 * time.Millisecond)
+	// Wait until the main window is actually registered in the app's
+	// window map before closing the splash. Otherwise the app can
+	// momentarily see zero windows and terminate
+	// (ApplicationShouldTerminateAfterLastWindowClosed). A fixed sleep
+	// here is racy — poll for the window instead, with a hard cap so a
+	// failure to open never strands the splash forever.
+	app := application.Get()
+	for i := 0; i < 150; i++ {
+		if _, ok := app.Window.GetByName("main"); ok {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// Small extra buffer for the native window to settle before the
+	// splash (potentially the last visible window) goes away.
+	time.Sleep(200 * time.Millisecond)
 	splash.Close()
 }

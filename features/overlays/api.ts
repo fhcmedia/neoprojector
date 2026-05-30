@@ -10,6 +10,8 @@ import type {
   OverlayLayouts,
   WidgetKind,
 } from "@/features/overlays/types"
+import { loadTranscriptionSettings } from "@/features/transcription/settings"
+import { transcriptionDefaultConfig } from "@/features/transcription/config"
 
 export const overlayKeys = {
   list: ["overlays", "list"] as const,
@@ -81,10 +83,24 @@ export function buildCreateInputForKind(kind: WidgetKind): CreateOverlayInput {
     default: def.defaultLayout,
     displays: {},
   }
+  // Caption overlays seed their per-overlay config from the global
+  // transcription defaults (Settings → Transcription) so a freshly
+  // added overlay matches the operator's preferred model/language.
+  let config: Record<string, unknown> = def.defaultConfig
+  if (kind === "transcription") {
+    const s = loadTranscriptionSettings()
+    config = {
+      ...transcriptionDefaultConfig,
+      model: s.model,
+      language: s.language,
+      latency: s.latency,
+      prompt: s.prompt,
+    }
+  }
   return {
     name: def.defaultName,
     kind,
-    configJSON: JSON.stringify(def.defaultConfig),
+    configJSON: JSON.stringify(config),
     layoutsJSON: JSON.stringify(layouts),
     rulesJSON: JSON.stringify(def.defaultRules),
   }
