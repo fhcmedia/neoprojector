@@ -1,27 +1,24 @@
 import { useRef, type ReactNode } from "react"
 import { motion } from "motion/react"
-import { ArrowLeftIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 // EditorPanel: second-layer slide-in that occupies the same column as the
 // schedule sidebar. Closed = translated off-screen to the left; open = slid in.
-// Always mounted so the close transition plays.
+// Always mounted so the close transition plays. Pure container — the content
+// (AddFlow) owns its own header + back, so a single back arrow can step within
+// the flow before closing the panel.
 //
 // `exitMode` picks which close animation plays the next time `open` flips
 // to false: "slide" (default, for explicit back) leaves to the left;
 // "fade" (for final save) keeps position and fades out.
 export function EditorPanel({
   open,
-  title,
   exitMode = "slide",
-  onBack,
   onClosed,
   children,
 }: {
   open: boolean
-  title: string
   exitMode?: "slide" | "fade"
-  onBack: () => void
   onClosed?: () => void
   children: ReactNode
 }) {
@@ -55,20 +52,7 @@ export function EditorPanel({
         !open && "pointer-events-none"
       )}
     >
-      <div className="flex h-7 shrink-0 items-center gap-1 border-b border-border/50 px-2">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back"
-          className="grid size-5 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-        >
-          <ArrowLeftIcon className="size-3.5" />
-        </button>
-        <span className="flex-1 truncate text-xs font-medium tracking-tight">
-          {title}
-        </span>
-      </div>
-      <div className="flex-1 overflow-hidden">{children}</div>
+      {children}
     </motion.div>
   )
 }

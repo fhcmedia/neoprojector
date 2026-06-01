@@ -19,6 +19,7 @@ import { EditItemDialog } from "@/features/schedule/edit-item-dialog"
 import { LibraryView } from "@/features/library/library-view"
 import { DisplayPreviewPane } from "@/features/displays/display-preview-pane"
 import { ShowPane, type AdHocBibleRef } from "@/features/show/show-pane"
+import { BibleEditProvider } from "@/features/schedule/bible-edit-context"
 import {
   useAppendPreviousVerse,
   useAppendMediaFromLibrary,
@@ -134,17 +135,31 @@ function Projector() {
   // two rows so the operator can build a sequence.
   const appendMediaFromLibrary = useAppendMediaFromLibrary(activeServiceId)
 
-  // Library Enter sets the ad-hoc ref AND clears active item so the
-  // show pane swaps over cleanly.
-  const submitAdHocBibleRef = (ref: AdHocBibleRef) => {
+  // Library Enter sets the ad-hoc ref AND clears active item so the show
+  // pane swaps over cleanly. The verse goes live immediately; once the
+  // append resolves we backfill the resulting row id so the live state
+  // correlates to the "Scripture from Library" row and it highlights as
+  // live in the schedule. The guard avoids stamping a stale id if the
+  // operator has already typed another reference.
+  const submitAdHocBibleRef = async (ref: AdHocBibleRef) => {
     setActiveItemIdState(undefined)
     setAdHocBibleRef(ref)
-    void appendPreviousVerse({
+    const itemId = await appendPreviousVerse({
       book: ref.book,
       chapter: ref.chapter,
       verse_start: ref.verseStart,
       verse_end: ref.verseEnd,
     })
+    if (itemId == null) return
+    setAdHocBibleRef((prev) =>
+      prev &&
+      prev.book === ref.book &&
+      prev.chapter === ref.chapter &&
+      prev.verseStart === ref.verseStart &&
+      prev.verseEnd === ref.verseEnd
+        ? { ...prev, itemId }
+        : prev
+    )
   }
 
   // Media tile click in the library: append to the inbox, then set
@@ -223,14 +238,14 @@ function Projector() {
     })
 
   const editorOpen = addSectionId !== undefined
-  const editorTitle = addSectionId ? "Add item" : ""
 
   useEffect(() => {
     if (editorOpen) setEditorExitMode("slide")
   }, [editorOpen])
 
   return (
-    <ResizablePanelGroup orientation="vertical" className="h-full">
+    <BibleEditProvider>
+      <ResizablePanelGroup orientation="vertical" className="h-full">
       <ResizablePanel defaultSize="70%" minSize="30%">
         <ResizablePanelGroup orientation="horizontal">
           <ResizablePanel defaultSize="20%" minSize="10%" maxSize="40%">
@@ -276,18 +291,14 @@ function Projector() {
                   </motion.div>
                 )}
               </AnimatePresence>
-              <EditorPanel
-                open={editorOpen}
-                title={editorTitle}
-                exitMode={editorExitMode}
-                onBack={() => closeEditor("slide")}
-              >
+              <EditorPanel open={editorOpen} exitMode={editorExitMode}>
                 <AnimatePresence mode="wait" initial={false}>
                   {addSectionId !== undefined && (
                     <AddFlow
                       key={`add-${addSectionId}`}
                       sectionId={addSectionId}
                       onDone={() => closeEditor("fade")}
+                      onClose={() => closeEditor("slide")}
                     />
                   )}
                 </AnimatePresence>
@@ -318,6 +329,7 @@ function Projector() {
           onMediaPick={handleMediaPick}
         />
       </ResizablePanel>
-    </ResizablePanelGroup>
+      </ResizablePanelGroup>
+    </BibleEditProvider>
   )
 }

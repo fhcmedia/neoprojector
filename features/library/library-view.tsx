@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import { useNavigate } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { SearchIcon } from "lucide-react"
+import { SearchIcon, PencilIcon, XIcon, CheckIcon } from "lucide-react"
 import { useSessionState } from "@/hooks/use-session-state"
 import { useDebounce } from "@/hooks/use-debounce"
 import { Dialogs, Events } from "@wailsio/runtime"
@@ -16,6 +16,11 @@ import { useBibleTranslations } from "@/hooks/use-bible-translations"
 import { Input } from "@/components/input"
 import { cn } from "@/lib/utils"
 import { BibleTab } from "@/features/library/bible-tab"
+import {
+  useBibleEdit,
+  type BibleEditTarget,
+} from "@/features/schedule/bible-edit-context"
+import { KIND_COLOR, type ItemKind } from "@/features/schedule/kind-colors"
 import { SongsTab } from "@/features/library/songs-tab"
 import { MediaTab } from "@/features/library/media-tab"
 import { TemplatesTab } from "@/features/library/templates-tab"
@@ -40,6 +45,22 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "templates", label: "Templates" },
   { key: "overlays", label: "Overlays" },
 ]
+
+// Each tab that corresponds to a schedule item kind takes that kind's
+// color for its active underline; Templates has no kind, so it stays
+// neutral.
+const TAB_KIND: Partial<Record<Tab, ItemKind>> = {
+  bible: "bible",
+  songs: "song",
+  media: "media",
+  presentations: "presentation",
+  overlays: "overlay",
+}
+
+function tabUnderlineClass(tab: Tab): string {
+  const kind = TAB_KIND[tab]
+  return kind ? KIND_COLOR[kind].bar : "bg-foreground"
+}
 
 const MEDIA_DROP_EVENT = "media:files-dropped"
 const MEDIA_DROP_TARGET = "library-media"
@@ -69,6 +90,17 @@ export function LibraryView({
     "neoprojector.libraryTab",
     "bible"
   )
+
+  // Editing a Bible row arms the drawer: force the Bible tab to the
+  // front for the duration, regardless of which tab was last open.
+  // `activeTab` is what actually renders; `active` stays the persisted
+  // user choice we fall back to once the edit ends.
+  const {
+    target: bibleEditTarget,
+    commit: commitBibleEdit,
+    cancel: cancelBibleEdit,
+  } = useBibleEdit()
+  const activeTab: Tab = bibleEditTarget ? "bible" : active
 
   const [bibleSearch, setBibleSearch] = useSessionState<string>(
     "neoprojector.bibleSearch",
@@ -158,12 +190,16 @@ export function LibraryView({
       <div className="flex h-8 shrink-0 items-center border-b border-border/50">
         <div className="flex h-full shrink-0 items-center">
           {TABS.map((t) => {
-            const isActive = t.key === active
+            const isActive = t.key === activeTab
             return (
               <button
                 key={t.key}
                 type="button"
-                onClick={() => setActive(t.key)}
+                onClick={() => {
+                  // Leaving the Bible tab abandons any in-progress edit.
+                  if (bibleEditTarget && t.key !== "bible") cancelBibleEdit()
+                  setActive(t.key)
+                }}
                 className={cn(
                   "relative h-full px-3 text-[10px] font-medium uppercase tracking-wider transition-colors",
                   isActive
@@ -178,7 +214,10 @@ export function LibraryView({
                 {isActive && (
                   <motion.span
                     layoutId="library-tab-underline"
-                    className="absolute inset-x-2 -bottom-px h-px bg-foreground"
+                    className={cn(
+                      "absolute inset-x-2 -bottom-px h-px",
+                      tabUnderlineClass(t.key)
+                    )}
                     transition={{
                       duration: 0.22,
                       ease: [0.32, 0.72, 0, 1],
@@ -192,7 +231,7 @@ export function LibraryView({
         <span className="mx-1 h-4 w-px bg-border/60" />
         <div className="relative flex h-full flex-1 items-center px-2">
           <AnimatePresence mode="wait" initial={false}>
-            {active === "bible" && (
+            {activeTab === "bible" && (
               <motion.div
                 key="bible-controls"
                 initial={{ opacity: 0, x: 6 }}
@@ -201,14 +240,22 @@ export function LibraryView({
                 transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
                 className="flex h-full w-full items-center gap-2"
               >
-                <BibleSearchInput
-                  value={bibleSearch}
-                  onChange={setBibleSearch}
-                  onSubmit={onAdHocBibleRef}
-                />
+                {bibleEditTarget ? (
+                  <BibleEditChip
+                    target={bibleEditTarget}
+                    onCommit={commitBibleEdit}
+                    onCancel={cancelBibleEdit}
+                  />
+                ) : (
+                  <BibleSearchInput
+                    value={bibleSearch}
+                    onChange={setBibleSearch}
+                    onSubmit={onAdHocBibleRef}
+                  />
+                )}
               </motion.div>
             )}
-            {active === "songs" && (
+            {activeTab === "songs" && (
               <motion.div
                 key="songs-controls"
                 initial={{ opacity: 0, x: 6 }}
@@ -223,7 +270,7 @@ export function LibraryView({
                 />
               </motion.div>
             )}
-            {active === "media" && (
+            {activeTab === "media" && (
               <motion.div
                 key="media-controls"
                 initial={{ opacity: 0, x: 6 }}
@@ -238,7 +285,7 @@ export function LibraryView({
                 />
               </motion.div>
             )}
-            {active === "templates" && (
+            {activeTab === "templates" && (
               <motion.div
                 key="templates-controls"
                 initial={{ opacity: 0, x: 6 }}
@@ -253,7 +300,7 @@ export function LibraryView({
                 />
               </motion.div>
             )}
-            {active === "overlays" && (
+            {activeTab === "overlays" && (
               <motion.div
                 key="overlays-controls"
                 initial={{ opacity: 0, x: 6 }}
@@ -268,7 +315,7 @@ export function LibraryView({
                 />
               </motion.div>
             )}
-            {active === "presentations" && (
+            {activeTab === "presentations" && (
               <motion.div
                 key="presentations-controls"
                 initial={{ opacity: 0, x: 6 }}
@@ -289,21 +336,21 @@ export function LibraryView({
       <div className="min-h-0 flex-1 overflow-hidden">
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
-            key={active}
+            key={activeTab}
             className="h-full"
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
           >
-            {active === "bible" && (
+            {activeTab === "bible" && (
               <BibleTab
                 search={bibleSearch}
                 onSubmit={onAdHocBibleRef}
               />
             )}
-            {active === "songs" && <SongsTab search={songSearch} />}
-            {active === "media" && (
+            {activeTab === "songs" && <SongsTab search={songSearch} />}
+            {activeTab === "media" && (
               <MediaTab
                 search={mediaSearch}
                 importing={importing}
@@ -312,7 +359,7 @@ export function LibraryView({
                 onPick={onMediaPick}
               />
             )}
-            {active === "templates" && (
+            {activeTab === "templates" && (
               <TemplatesTab
                 search={templateSearch}
                 onOpen={(t) =>
@@ -323,7 +370,7 @@ export function LibraryView({
                 }
               />
             )}
-            {active === "overlays" && (
+            {activeTab === "overlays" && (
               <OverlaysTab
                 search={overlaySearch}
                 onOpen={(o) =>
@@ -334,7 +381,7 @@ export function LibraryView({
                 }
               />
             )}
-            {active === "presentations" && (
+            {activeTab === "presentations" && (
               <PresentationsTab
                 search={presentationSearch}
                 onOpen={(p) =>
@@ -348,6 +395,53 @@ export function LibraryView({
           </motion.div>
         </AnimatePresence>
       </div>
+    </div>
+  )
+}
+
+// Shown in place of the search input while a schedule row is being
+// edited. Book + chapter are fixed (edit is verse-selection only), so
+// the chip names them and prompts for the verse pick. Picks are
+// tentative until confirmed: the ✓ / Enter commits, the ✕ / Esc
+// discards.
+function BibleEditChip({
+  target,
+  onCommit,
+  onCancel,
+}: {
+  target: BibleEditTarget
+  onCommit: () => void
+  onCancel: () => void
+}) {
+  const range =
+    target.verseStart === target.verseEnd
+      ? `${target.verseStart}`
+      : `${target.verseStart}–${target.verseEnd}`
+  return (
+    <div className="flex h-full w-full items-center gap-2 pl-1 text-xs">
+      <PencilIcon className="size-3 shrink-0 text-amber-500" />
+      <span className="truncate text-foreground">
+        Editing {target.bookLabel} {target.chapter}:{range}
+      </span>
+      <span className="ml-2 hidden shrink-0 text-[10px] text-muted-foreground/50 md:inline">
+        Enter to confirm · Esc to cancel
+      </span>
+      <button
+        type="button"
+        aria-label="Confirm edit"
+        onClick={onCommit}
+        className="ml-auto grid size-5 shrink-0 place-items-center rounded text-emerald-500/80 transition-colors hover:bg-emerald-500/15 hover:text-emerald-500"
+      >
+        <CheckIcon className="size-3.5" />
+      </button>
+      <button
+        type="button"
+        aria-label="Cancel edit"
+        onClick={onCancel}
+        className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground/70 transition-colors hover:bg-destructive/15 hover:text-destructive"
+      >
+        <XIcon className="size-3.5" />
+      </button>
     </div>
   )
 }

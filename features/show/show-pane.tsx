@@ -33,6 +33,7 @@ import {
   useReorderSlides,
 } from "@/features/presentations/api"
 import { useUpdateBibleItem } from "@/features/schedule/api"
+import { useBibleEdit } from "@/features/schedule/bible-edit-context"
 import { useBibleTranslations } from "@/hooks/use-bible-translations"
 import type { ChapterVerse } from "@/bindings/neoprojector/services/bible"
 import { Service as Media } from "@/bindings/neoprojector/services/media"
@@ -65,6 +66,10 @@ export type AdHocBibleRef = {
   chapter: number
   verseStart: number
   verseEnd: number
+  // The "Scripture from Library" row this ref was appended to, when the
+  // search bar / drawer pushed it live. Lets the live state correlate to
+  // that schedule row so it highlights as live in the schedule.
+  itemId?: number
 }
 
 type Props = {
@@ -79,7 +84,12 @@ type Props = {
 export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
   const qc = useQueryClient()
 
-  const item = useMemo<ListServiceItemsWithContentRow | null>(() => {
+  // Resolved from cache every render (not memoized) so an in-place
+  // verse-range edit reflects in the preview immediately — a memo with
+  // stable deps would keep returning the pre-edit row. The found object
+  // ref stays stable while the cache is unchanged, so the item-keyed
+  // effects below don't thrash.
+  const item = ((): ListServiceItemsWithContentRow | null => {
     if (adHocBibleRef !== undefined) return null
     if (activeItemId === undefined) return null
     const cached = qc.getQueriesData<ListServiceItemsWithContentRow[]>({
@@ -91,9 +101,26 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
       if (found) return found
     }
     return null
-  }, [qc, activeItemId, adHocBibleRef])
+  })()
 
-  const itemSlides = useItemSlides(item)
+  // While a bible row is being edited in the drawer, preview its
+  // TENTATIVE range (the edit hasn't been persisted yet). Overriding
+  // here — rather than waiting for a cache write — is what makes the
+  // preview track each pick live. Only the row currently under edit is
+  // affected; everything else previews its saved range.
+  const { target: bibleEditTarget } = useBibleEdit()
+  const previewItem: ListServiceItemsWithContentRow | null =
+    item &&
+    item.kind === "bible" &&
+    bibleEditTarget?.itemId === item.id
+      ? {
+          ...item,
+          verse_start: bibleEditTarget.verseStart,
+          verse_end: bibleEditTarget.verseEnd,
+        }
+      : item
+
+  const itemSlides = useItemSlides(previewItem)
   const adHocSlides = useAdHocBibleSlides(
     adHocBibleRef?.book,
     adHocBibleRef?.bookLabel ?? "",
@@ -109,10 +136,14 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
   // transition to audience output.
   const playback = adHocBibleRef ? null : itemSlides.playback
 
-  // sourceItemId is the live-state correlator: schedule items use
-  // their row id; ad-hoc bible uses null. Keeping these distinct
-  // means click-to-toggle works correctly in either mode.
-  const sourceItemId: number | null = item ? item.id : null
+  // sourceItemId is the live-state correlator: schedule items use their
+  // row id. An ad-hoc bible ref carries the row it was appended to (the
+  // "Scripture from Library" inbox), so it correlates there too — that's
+  // what lets the appended row highlight as live. Falls back to null only
+  // when there's genuinely no backing row (no active service).
+  const sourceItemId: number | null = item
+    ? item.id
+    : adHocBibleRef?.itemId ?? null
 
   // Presentation-only affordances: drag-to-reorder and external-file
   // drop both need the parent presentation's id. Zero when this item
@@ -257,13 +288,13 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
     if (!first) return
     setLive({
       kind: first.kind,
-      sourceItemId: null,
+      sourceItemId,
       slideIndex: 0,
       fill: first.fill,
       fontSizeOverrideByTemplate: templateMins,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adHocKey, adHocSlides.isLoading, templateMins])
+  }, [adHocKey, adHocSlides.isLoading, templateMins, sourceItemId])
 
   // Register arrow-key navigators that walk this source's slide
   // list. Re-registered on every slide-list change so the closure

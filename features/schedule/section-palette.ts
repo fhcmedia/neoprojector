@@ -36,6 +36,14 @@ const SWATCH_CLASS: Record<SectionColor, string> = {
   "chart-5": "bg-chart-5",
 }
 
+const TEXT_CLASS: Record<SectionColor, string> = {
+  "chart-1": "text-chart-1",
+  "chart-2": "text-chart-2",
+  "chart-3": "text-chart-3",
+  "chart-4": "text-chart-4",
+  "chart-5": "text-chart-5",
+}
+
 export const PALETTE_COLORS: SectionColor[] = ORDER
 
 function isSectionColor(s: string | undefined | null): s is SectionColor {
@@ -64,4 +72,8 @@ export function sectionBorderClass(color: SectionColor): string {
 
 export function sectionSwatchClass(color: SectionColor): string {
   return SWATCH_CLASS[color]
+}
+
+export function sectionTextClass(color: SectionColor): string {
+  return TEXT_CLASS[color]
 }

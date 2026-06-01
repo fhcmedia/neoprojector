@@ -46,6 +46,7 @@ import { PlayedProvider } from "@/features/schedule/played-context"
 import {
   resolveSectionColor,
   sectionBorderClass,
+  sectionTextClass,
   sectionSwatchClass,
   PALETTE_COLORS,
 } from "@/features/schedule/section-palette"
@@ -394,7 +395,7 @@ function SectionRow({
       <div
         ref={headerRef}
         className={cn(
-          "group flex items-center gap-1 border-l-2 pl-1.5 pr-1.5 py-1.5 transition-colors duration-200",
+          "group relative flex items-center gap-1 border-l-2 pl-1.5 pr-1.5 py-1.5 transition-colors duration-200",
           sectionBorderClass(color),
           pendingDelete
             ? "bg-destructive/25 text-foreground"
@@ -432,12 +433,28 @@ function SectionRow({
           <button
             type="button"
             onDoubleClick={() => setEditing(true)}
-            className="flex-1 truncate text-left text-[11px] font-semibold uppercase tracking-wider"
+            className={cn(
+              "flex-1 truncate text-left text-[11px] font-semibold uppercase tracking-wider",
+              // Title takes the section's color (updates live when changed),
+              // except while confirming delete where the row turns destructive.
+              pendingDelete ? "text-foreground" : sectionTextClass(color)
+            )}
           >
             {section.name}
           </button>
         )}
-        <div className="grid">
+        <div
+          className={cn(
+            // Out of flow so the title keeps full width; the icons overlay
+            // the title's tail on hover, masked by a fade-to-background so
+            // the text disappears cleanly under them. Palette-open and
+            // pending-delete pin it visible regardless of hover.
+            "absolute inset-y-0 right-1.5 grid items-center bg-gradient-to-l from-background via-background to-transparent pl-10 transition-opacity",
+            paletteOpen || pendingDelete
+              ? "opacity-100"
+              : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100"
+          )}
+        >
           <AnimatePresence mode="popLayout" initial={false}>
             {paletteOpen ? (
               <motion.div

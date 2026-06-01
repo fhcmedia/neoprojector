@@ -373,8 +373,8 @@ async function findOrCreateAutoSection(
 export function useAppendPreviousVerse(serviceId: number | undefined) {
   const qc = useQueryClient()
   return useCallback(
-    async (ref: BibleRef) => {
-      if (!serviceId) return
+    async (ref: BibleRef): Promise<number | null> => {
+      if (!serviceId) return null
       const section = await findOrCreateAutoSection(
         qc,
         serviceId,
@@ -411,17 +411,21 @@ export function useAppendPreviousVerse(serviceId: number | undefined) {
             merged.verse_start === last.verse_start &&
             merged.verse_end === last.verse_end
           ) {
-            // Already covered — no DB write needed.
-            return
+            // Already covered — no DB write needed, but it's still the
+            // row that's now live.
+            return last.id
           }
           await Schedule.UpdateBibleItem(last.id, merged)
           qc.invalidateQueries({ queryKey: scheduleKeys.items(section.id) })
-          return
+          return last.id
         }
       }
       // No mergeable neighbor — append a new item.
-      await Schedule.AddBibleItem(section.id, ref)
+      const created = (await Schedule.AddBibleItem(section.id, ref)) as
+        | { id?: number }
+        | undefined
       qc.invalidateQueries({ queryKey: scheduleKeys.items(section.id) })
+      return created?.id ?? null
     },
     [qc, serviceId]
   )

@@ -19,6 +19,8 @@ import { useItems, useDeleteItem } from "@/features/schedule/api"
 import { VerticalSortable, useSortableRow } from "@/features/schedule/sortable"
 import { usePlayed } from "@/features/schedule/played-context"
 import { useLive } from "@/features/live/live-context"
+import { useBibleEdit } from "@/features/schedule/bible-edit-context"
+import { kindColor } from "@/features/schedule/kind-colors"
 import {
   sectionBorderClass,
   type SectionColor,
@@ -130,7 +132,13 @@ function ItemRow({
 }) {
   const { isPlayed, toggle } = usePlayed()
   const played = isPlayed(item.id)
-  const { toggleOverlay, isOverlayActive } = useLive()
+  const { live, toggleOverlay, isOverlayActive } = useLive()
+  // Bible rows edit in the drawer, not the modal: the pencil arms the
+  // Bible tab for this row. Which row is being edited is shown by the
+  // library chip + the selected row, so the pencil itself stays a plain
+  // action button (no persistent highlight).
+  const { target: bibleEditTarget, begin: beginBibleEdit, cancel: cancelBibleEdit } =
+    useBibleEdit()
   const { attributes, listeners, setNodeRef, style } = useSortableRow(
     `item-${item.id}`,
     { type: "item" }
@@ -143,6 +151,16 @@ function ItemRow({
     item.kind === "overlay"
   const isOverlay = item.kind === "overlay"
   const overlayActive = isOverlay && isOverlayActive(item.id)
+  // "Showing live" = this row is what's currently on the projector:
+  // overlays when toggled active, every other kind when it's the live
+  // source. A live row turns its kind color (Bible yellow, Song green, …)
+  // so the operator can see at a glance what's on screen.
+  const isItemLive = !isOverlay && live?.sourceItemId === item.id
+  const showingLive = overlayActive || isItemLive
+  const colorInfo = kindColor(item.kind)
+  // Live recolors only the text/icon — the background is left to behave
+  // exactly as it did before (default / hover / selected).
+  const liveText = showingLive && colorInfo ? colorInfo.text : ""
 
   const [pendingDelete, setPendingDelete] = useState(false)
   const rowRef = useRef<HTMLDivElement | null>(null)
@@ -173,9 +191,15 @@ function ItemRow({
         className={cn(
           "group relative flex w-full items-center gap-1 border-l-2 pl-5 pr-1.5 text-left text-xs transition-colors",
           sectionBorderClass(color),
-          tinted && "bg-destructive/15 text-foreground",
-          !tinted && !isActive && "text-muted-foreground hover:bg-muted hover:text-foreground",
-          !tinted && isActive && "bg-muted text-foreground"
+          // Background — unchanged by live state (default / hover / selected).
+          tinted && "bg-destructive/15",
+          !tinted && isActive && "bg-muted",
+          !tinted && !isActive && "hover:bg-muted",
+          // Text/icon — live recolors to the kind color, else normal states.
+          tinted && "text-foreground",
+          !tinted && showingLive && liveText,
+          !tinted && !showingLive && isActive && "text-foreground",
+          !tinted && !showingLive && !isActive && "text-muted-foreground hover:text-foreground"
         )}
       >
           <button
@@ -184,7 +208,7 @@ function ItemRow({
             {...listeners}
             aria-label="Drag"
             onClick={(e) => e.stopPropagation()}
-            className="cursor-grab touch-none grid size-5 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-50 hover:opacity-90"
+            className="cursor-grab touch-none grid size-5 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition group-hover:opacity-60 hover:text-foreground"
           >
             <GripVerticalIcon className="size-3" />
           </button>
@@ -204,6 +228,11 @@ function ItemRow({
                   rulesJSON: item.overlay_rules_json,
                 })
               } else {
+                // Previewing a different row ends any in-progress
+                // drawer edit so the edit mode never lingers unseen.
+                if (bibleEditTarget && bibleEditTarget.itemId !== item.id) {
+                  cancelBibleEdit()
+                }
                 onSelect()
               }
             }}
@@ -211,21 +240,37 @@ function ItemRow({
           >
             <Icon
               className={cn(
-                "size-3.5 shrink-0 opacity-70",
-                overlayActive && "text-emerald-500 opacity-100"
+                "size-3.5 shrink-0",
+                showingLive ? "opacity-100" : "opacity-70"
               )}
             />
-            <span
-              className={cn(
-                "truncate",
-                overlayActive && "text-emerald-500"
-              )}
-            >
-              {label}
-            </span>
+            <span className="truncate">{label}</span>
           </button>
           {editable && (
-            <ItemAction ariaLabel="Edit" tone="yellow" onClick={onEdit}>
+            <ItemAction
+              ariaLabel="Edit"
+              tone="yellow"
+              onClick={() => {
+                // Bible edits happen inline in the drawer; everything
+                // else still opens the edit modal.
+                if (item.kind === "bible") {
+                  // Preview the row in the Show pane too, so the verse
+                  // picks are visible as they happen (preview only —
+                  // selecting never broadcasts to the projector).
+                  onSelect()
+                  beginBibleEdit({
+                    itemId: item.id,
+                    book: item.book,
+                    bookLabel: item.book_kjv || item.book,
+                    chapter: item.chapter,
+                    verseStart: item.verse_start,
+                    verseEnd: item.verse_end,
+                  })
+                } else {
+                  onEdit()
+                }
+              }}
+            >
               <PencilIcon className="size-3" />
             </ItemAction>
           )}
@@ -242,10 +287,10 @@ function ItemRow({
               }
             }}
             className={cn(
-              "grid size-5 shrink-0 place-items-center rounded transition-all",
+              "grid size-5 shrink-0 place-items-center rounded transition",
               pendingDelete
                 ? "bg-destructive text-destructive-foreground opacity-100"
-                : "text-muted-foreground opacity-0 hover:bg-destructive/15 hover:text-destructive group-hover:opacity-70 hover:!opacity-100"
+                : "text-muted-foreground opacity-0 group-hover:opacity-70 hover:bg-destructive/15 hover:text-destructive"
             )}
           >
             {pendingDelete ? (
@@ -265,10 +310,10 @@ function ItemRow({
               // Played = green icon (positive done-state, always visible).
               // Unplayed = muted hover-only, green hover tint hints the
               // affordance.
-              "relative z-[1] grid size-5 shrink-0 place-items-center rounded transition-opacity",
+              "relative z-[1] grid size-5 shrink-0 place-items-center rounded transition",
               played
                 ? "text-emerald-500 opacity-100 hover:bg-emerald-500/15"
-                : "text-muted-foreground opacity-0 group-hover:opacity-70 hover:bg-emerald-500/15 hover:text-emerald-500 hover:!opacity-100"
+                : "text-muted-foreground opacity-0 group-hover:opacity-70 hover:bg-emerald-500/15 hover:text-emerald-500"
             )}
           >
             {played ? (
@@ -310,7 +355,7 @@ function ItemAction({
         onClick()
       }}
       className={cn(
-        "grid size-5 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-70 hover:!opacity-100",
+        "grid size-5 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition group-hover:opacity-70",
         itemToneHover[tone]
       )}
     >

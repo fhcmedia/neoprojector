@@ -120,7 +120,7 @@ export function MediaPicker({
         />
       </motion.div>
 
-      <motion.div variants={pickerRowVariants} className="flex-1 min-h-0">
+      <motion.div variants={pickerRowVariants} className="flex min-h-0 flex-1">
         <DropTarget importing={importing}>
           {isLoading ? (
             <Empty>Loading…</Empty>

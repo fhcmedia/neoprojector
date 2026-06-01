@@ -1,9 +1,10 @@
-import { useEffect, useRef } from "react"
+import { useEffect, useLayoutEffect, useRef } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Service as Bible } from "@/bindings/neoprojector/services/bible"
 import type { BibleBook } from "@/bindings/neoprojector/database"
 import type { ChapterVerse } from "@/bindings/neoprojector/services/bible"
 import { useSessionState } from "@/hooks/use-session-state"
+import { useBibleEdit } from "@/features/schedule/bible-edit-context"
 import { parseBibleRef } from "@/features/schedule/bible-ref"
 import { bibleCategoryBorderClass } from "@/features/bible/categories"
 import type { AdHocBibleRef } from "@/features/show/show-pane"
@@ -22,6 +23,14 @@ export function BibleTab({ search, onSubmit }: Props) {
     queryKey: ["bible", "books"],
     queryFn: () => Bible.ListBooks() as unknown as Promise<BibleBook[]>,
   })
+
+  // When a schedule row is being edited, the drawer is "armed": book and
+  // chapter are pinned to the row (edit is verse-selection only) and a
+  // verse pick updates the tentative range via `setRange` — which the
+  // drawer highlight, the header chip, and the Show-pane preview all
+  // follow. Nothing persists until the operator confirms (Enter).
+  const { target, setRange, parkAt } = useBibleEdit()
+  const armed = target !== null
 
   // Selection state — session-persisted so the operator lands back
   // exactly where they were across navigations within the session.
@@ -44,11 +53,31 @@ export function BibleTab({ search, onSubmit }: Props) {
     1
   )
 
+  // When an edit ends (commit OR cancel), park the browse position right
+  // where the edit was, so the drawer simply stays put — it never jumps
+  // back to a prior spot (Genesis default, or an earlier edit). The edit
+  // already drove the view here via the override, so this just persists
+  // it into the browse state. useLayoutEffect runs before paint so the
+  // hand-off is seamless (no flash). De-duped by reference.
+  const lastParkRef = useRef(parkAt)
+  useLayoutEffect(() => {
+    if (!parkAt || parkAt === lastParkRef.current) return
+    lastParkRef.current = parkAt
+    setBook(parkAt.book)
+    setChapter(parkAt.chapter)
+    setVerseStart(parkAt.verseStart)
+    setVerseEnd(parkAt.verseEnd)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parkAt])
+
   // Pane updates are immediate — chapter and verse should react on
   // every keystroke without waiting for a debounce settle. Only the
   // search input's autocomplete (which rewrites a typed prefix to a
   // canonical book name) is debounced, and that lives on the input.
   useEffect(() => {
+    // Armed mode owns book/chapter/verse from the edit target; the
+    // search input is hidden behind the chip, so ignore search nav.
+    if (target) return
     if (!books) return
     const text = search.trim()
     if (!text) return
@@ -67,12 +96,21 @@ export function BibleTab({ search, onSubmit }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, books])
 
+  // Effective selection: the edit target wins while armed, otherwise the
+  // operator's own browse state drives the panes.
+  const shownBook = armed ? target.book : book
+  const shownChapter = armed ? target.chapter : chapter
+  const shownStart = armed ? target.verseStart : verseStart
+  const shownEnd = armed ? target.verseEnd : verseEnd
+
   return (
     <div className="flex h-full">
       <BooksPane
         books={books ?? []}
-        activeBook={book}
+        activeBook={shownBook}
+        locked={armed}
         onPick={(b) => {
+          if (armed) return
           setBook(b)
           setChapter(undefined)
           setVerseStart(undefined)
@@ -80,23 +118,39 @@ export function BibleTab({ search, onSubmit }: Props) {
         }}
       />
       <ChaptersPane
-        book={book}
-        activeChapter={chapter}
+        book={shownBook}
+        activeChapter={shownChapter}
+        locked={armed}
         onPick={(c) => {
+          if (armed) return
           setChapter(c)
           setVerseStart(undefined)
           setVerseEnd(undefined)
         }}
       />
       <VersesPane
-        book={book}
-        chapter={chapter}
-        verseStart={verseStart}
-        verseEnd={verseEnd}
+        book={shownBook}
+        chapter={shownChapter}
+        verseStart={shownStart}
+        verseEnd={shownEnd}
         onPick={(verse, extend) => {
-          // Compute the new range locally before persisting state —
-          // we need it for the emit too, and useSessionState is
-          // async so we can't rely on the post-set values.
+          // Compute the new range locally first — we need it for both
+          // the state update and the emit/mutation, and useSessionState
+          // is async so the post-set values aren't readable here.
+          if (target) {
+            // Armed: update the tentative range only. The preview
+            // follows; nothing persists and the projector output is
+            // never touched until the operator confirms.
+            let nextStart = verse
+            let nextEnd = verse
+            if (extend) {
+              nextStart = Math.min(target.verseStart, verse)
+              nextEnd = Math.max(target.verseEnd, verse)
+            }
+            setRange(nextStart, nextEnd)
+            return
+          }
+          // Ad-hoc browse: update the selection and push it live.
           let nextStart = verse
           let nextEnd = verse
           if (extend && verseStart !== undefined) {
@@ -126,10 +180,14 @@ function BooksPane({
   books,
   activeBook,
   onPick,
+  locked = false,
 }: {
   books: BibleBook[]
   activeBook: string | undefined
   onPick: (name: string) => void
+  // locked dims the pane and ignores clicks — book is fixed while
+  // editing a schedule row.
+  locked?: boolean
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   useAutoScrollTo(scrollRef, activeBook, `[data-book="${activeBook}"]`, books)
@@ -137,7 +195,10 @@ function BooksPane({
   return (
     <div
       ref={scrollRef}
-      className="w-[220px] shrink-0 overflow-y-auto border-r border-border/40 py-1"
+      className={cn(
+        "w-[220px] shrink-0 overflow-y-auto border-r border-border/40 py-1",
+        locked && "pointer-events-none opacity-40"
+      )}
     >
       {books.map((b) => {
         const border = bibleCategoryBorderClass(b.category)
@@ -168,10 +229,14 @@ function ChaptersPane({
   book,
   activeChapter,
   onPick,
+  locked = false,
 }: {
   book: string | undefined
   activeChapter: number | undefined
   onPick: (chapter: number) => void
+  // locked dims the pane and ignores clicks — chapter is fixed while
+  // editing a schedule row.
+  locked?: boolean
 }) {
   const { data: chapters } = useQuery({
     queryKey: ["bible", "chapters", book],
@@ -199,7 +264,10 @@ function ChaptersPane({
   return (
     <div
       ref={scrollRef}
-      className="w-[180px] shrink-0 overflow-y-auto border-r border-border/40 p-2"
+      className={cn(
+        "w-[180px] shrink-0 overflow-y-auto border-r border-border/40 p-2",
+        locked && "pointer-events-none opacity-40"
+      )}
     >
       <div className="grid grid-cols-5 gap-1">
         {(chapters ?? []).map((c) => (

@@ -1,6 +1,6 @@
 import { useMemo } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { MusicIcon, BookOpenIcon, LayersIcon } from "lucide-react"
+import { MusicIcon, LayersIcon } from "lucide-react"
 import type { ListServiceItemsWithContentRow } from "@/bindings/neoprojector/database"
 import {
   Dialog,
@@ -9,7 +9,6 @@ import {
   DialogTitle,
 } from "@/components/dialog"
 import { SongEditor } from "@/features/songs/song-editor"
-import { BiblePicker } from "@/features/schedule/pickers/bible-picker"
 import { OverlayItemEditor } from "@/features/schedule/overlay-item-editor"
 
 type Props = {
@@ -17,10 +16,11 @@ type Props = {
   onClose: () => void
 }
 
+// Bible items deliberately omitted — scripture edits happen inline in
+// the Bible drawer (see bible-edit-context), not in this modal.
 const KIND_META: Record<string, { label: string; Icon: typeof MusicIcon }> = {
-  song:    { label: "Edit song",       Icon: MusicIcon },
-  bible:   { label: "Edit scripture",  Icon: BookOpenIcon },
-  overlay: { label: "Edit overlay",    Icon: LayersIcon },
+  song:    { label: "Edit song",    Icon: MusicIcon },
+  overlay: { label: "Edit overlay", Icon: LayersIcon },
 }
 
 // EditItemDialog: resolves the item from the React Query cache (always warm
@@ -75,19 +75,6 @@ export function EditItemDialog({ itemId, onClose }: Props) {
               songId={item.song_id}
               onSaved={onClose}
               onCancel={onClose}
-            />
-          )}
-          {item?.kind === "bible" && (
-            <BiblePicker
-              mode="edit"
-              itemId={item.id}
-              initial={{
-                book: item.book,
-                chapter: item.chapter,
-                from: item.verse_start,
-                to: item.verse_end,
-              }}
-              onSaved={onClose}
             />
           )}
           {item?.kind === "overlay" && (
