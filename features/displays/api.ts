@@ -137,6 +137,51 @@ export function useSetDisplayEnabled() {
   })
 }
 
+// DisplayLayer names the content kinds a display can be routed to show
+// or hide independently. Mirrors the show_* columns on the Display row
+// and the layer switch in the Go SetDisplayLayer service method.
+export type DisplayLayer = "song" | "bible" | "media" | "overlay"
+
+const layerField: Record<DisplayLayer, keyof Display> = {
+  song: "show_song",
+  bible: "show_bible",
+  media: "show_media",
+  overlay: "show_overlay",
+}
+
+// Per-display content routing toggle. Optimistic like the enabled
+// switch so the preview's layer button flips with no IPC stutter; the
+// open output windows pick up the change off the displays:changed
+// emit (their own row refetch), not this cache.
+export function useSetDisplayLayer() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, layer, on }: { id: number; layer: DisplayLayer; on: boolean }) =>
+      Displays.SetDisplayLayer(id, layer, on) as unknown as Promise<Display>,
+    onMutate: async ({ id, layer, on }) => {
+      await qc.cancelQueries({ queryKey: displayKeys.list })
+      const previous = qc.getQueryData<Display[]>(displayKeys.list)
+      if (previous) {
+        const field = layerField[layer]
+        qc.setQueryData<Display[]>(
+          displayKeys.list,
+          previous.map((d) =>
+            d.id === id ? { ...d, [field]: on ? 1 : 0 } : d
+          )
+        )
+      }
+      return { previous }
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.previous) qc.setQueryData(displayKeys.list, ctx.previous)
+    },
+    onSettled: (_d, _e, vars) => {
+      qc.invalidateQueries({ queryKey: displayKeys.list })
+      qc.invalidateQueries({ queryKey: ["displays", "by-id", vars.id] })
+    },
+  })
+}
+
 // templateID === 0 clears the binding. Negative IDs are frontend
 // default templates and are stored verbatim.
 export function useSetDisplayBibleTemplate() {

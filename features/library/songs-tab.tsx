@@ -122,9 +122,9 @@ function SongPreview({ songId }: { songId: number | null }) {
   return (
     <div className="flex h-full flex-1 flex-col">
       {isSongLive && (
-        <div className="flex items-center gap-2 border-b border-border/40 bg-emerald-500/10 px-3 py-1.5">
-          <RadioIcon className="size-3 text-emerald-500" />
-          <span className="flex-1 truncate text-[11px] text-emerald-600 dark:text-emerald-400">
+        <div className="flex items-center gap-2 border-b border-border/40 bg-chart-2/10 px-3 py-1.5">
+          <RadioIcon className="size-3 text-chart-2" />
+          <span className="flex-1 truncate text-[11px] text-chart-2 dark:text-chart-2">
             Live — {data.song.title}
           </span>
           <button
@@ -155,7 +155,7 @@ function SongPreview({ songId }: { songId: number | null }) {
                 className={cn(
                   "group relative flex flex-col border-b border-l-2 border-r border-b-border/40 border-r-border/40",
                   t.border,
-                  liveHere && "bg-emerald-500/5"
+                  liveHere && "bg-chart-2/5"
                 )}
               >
                 <div className="flex items-center justify-between pl-2.5 pr-1.5 py-1">
@@ -163,7 +163,7 @@ function SongPreview({ songId }: { songId: number | null }) {
                     {t.label}
                   </span>
                   {liveHere ? (
-                    <span className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-emerald-500">
+                    <span className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-chart-2">
                       <RadioIcon className="size-2.5" />
                       Live
                     </span>

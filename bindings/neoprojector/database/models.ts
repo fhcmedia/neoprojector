@@ -83,6 +83,10 @@ export class Display {
     "bible_template_id": sql$0.NullInt64;
     "song_template_id": sql$0.NullInt64;
     "screen_id": sql$0.NullString;
+    "show_song": number;
+    "show_bible": number;
+    "show_media": number;
+    "show_overlay": number;
     "created_at": string;
     "updated_at": string;
 
@@ -108,6 +112,18 @@ export class Display {
         }
         if (!("screen_id" in $$source)) {
             this["screen_id"] = (new sql$0.NullString());
+        }
+        if (!("show_song" in $$source)) {
+            this["show_song"] = 0;
+        }
+        if (!("show_bible" in $$source)) {
+            this["show_bible"] = 0;
+        }
+        if (!("show_media" in $$source)) {
+            this["show_media"] = 0;
+        }
+        if (!("show_overlay" in $$source)) {
+            this["show_overlay"] = 0;
         }
         if (!("created_at" in $$source)) {
             this["created_at"] = "";

@@ -219,7 +219,7 @@ function TemplateTile({
                 onDuplicate()
               }
             }}
-            className="grid size-6 cursor-pointer place-items-center rounded bg-background/70 text-muted-foreground backdrop-blur transition-colors hover:bg-sky-500/30 hover:text-sky-500"
+            className="grid size-6 cursor-pointer place-items-center rounded bg-background/70 text-muted-foreground backdrop-blur transition-colors hover:bg-chart-1/30 hover:text-chart-1"
           >
             <CopyIcon className="size-3.5" />
           </span>

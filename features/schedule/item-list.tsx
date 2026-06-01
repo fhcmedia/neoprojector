@@ -55,6 +55,18 @@ export function ItemList({
     return null
   }
 
+  // Hidden cache-warmer for media items in this section. Each schedule
+  // row that points at a media file gets a one-pixel off-screen
+  // <img>/<video preload="auto"> at mount — the browser fetches and
+  // decodes the bytes into its HTTP cache, so the first time the
+  // operator clicks the row the preview surface paints instantly
+  // instead of spinning while bytes stream in. preload="auto" trusts
+  // the browser's heuristics; for very large videos it caps at a few
+  // MB rather than pulling the whole file.
+  const mediaIdsToWarm = items
+    .filter((i) => i.kind === "media" && i.media_id > 0)
+    .map((i) => i.media_id)
+
   return (
     <VerticalSortable ids={items.map((i) => `item-${i.id}`)}>
       <div className="flex flex-col">
@@ -74,6 +86,27 @@ export function ItemList({
           />
         ))}
       </div>
+      {mediaIdsToWarm.length > 0 && (
+        <div
+          aria-hidden
+          style={{
+            position: "fixed",
+            left: -100000,
+            top: -100000,
+            width: 1,
+            height: 1,
+            pointerEvents: "none",
+            opacity: 0,
+          }}
+        >
+          {mediaIdsToWarm.map((id) => (
+            <span key={id}>
+              <img src={`/media-asset/${id}`} alt="" />
+              <video src={`/media-asset/${id}`} preload="auto" muted />
+            </span>
+          ))}
+        </div>
+      )}
     </VerticalSortable>
   )
 }

@@ -122,6 +122,20 @@ export function SetDisplayEnabled(id: number, enabled: boolean): $CancellablePro
 }
 
 /**
+ * SetDisplayLayer toggles whether this display renders one content
+ * kind. layer is one of "song" | "bible" | "media" | "overlay"; on
+ * maps to the row's show_* column. Suppression is enforced client-
+ * side in each output window (and the operator preview), so flipping a
+ * flag only needs the displays:changed emit to make every open output
+ * refetch its row and re-evaluate — no live re-push required.
+ */
+export function SetDisplayLayer(id: number, layer: string, on: boolean): $CancellablePromise<database$0.Display> {
+    return $Call.ByID(1839944674, id, layer, on).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+/**
  * SetDisplayScreen binds the display to a physical monitor by its
  * stable Wails screen id. Pass empty string to clear the binding;
  * the display will no longer open an output window on Go Live until

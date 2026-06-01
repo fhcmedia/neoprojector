@@ -74,7 +74,22 @@ function AppShell() {
   const stopMut = useStopLive()
   const { republish } = useLive()
   useKeybinds()
-  const isSaving = useIsMutating() > 0
+  // Debounce the "Saving" indicator. Fast optimistic mutations — e.g.
+  // toggling a display's routing or power from the preview pane — trip
+  // useIsMutating for only a few dozen ms, which flashed the amber
+  // pill on and off (the flicker in the top toolbar). Only show it once
+  // a mutation has actually been in flight past the threshold; genuine
+  // saves (template edits, etc.) outlast it, instant toggles never do.
+  const mutating = useIsMutating() > 0
+  const [isSaving, setIsSaving] = useState(false)
+  useEffect(() => {
+    if (!mutating) {
+      setIsSaving(false)
+      return
+    }
+    const t = window.setTimeout(() => setIsSaving(true), 400)
+    return () => window.clearTimeout(t)
+  }, [mutating])
   const [confirmOffline, setConfirmOffline] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
   const [hasUnread, setHasUnread] = useState(false)

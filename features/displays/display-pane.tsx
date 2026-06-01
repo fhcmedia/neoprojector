@@ -4,8 +4,13 @@ import {
   PencilIcon,
   Trash2Icon,
   XIcon,
+  MonitorIcon,
+  MonitorOffIcon,
+  ChevronDownIcon,
+  BookOpenIcon,
+  MusicIcon,
 } from "lucide-react"
-import type { Display } from "@/bindings/neoprojector/database"
+import type { Display, Template } from "@/bindings/neoprojector/database"
 import type { ScreenInfo } from "@/bindings/neoprojector/services/displays"
 import { useTemplates } from "@/features/library/templates-api"
 import {
@@ -24,6 +29,8 @@ import { Input } from "@/components/input"
 import { Switch } from "@/components/switch"
 import { AddArea } from "@/components/add-area"
 import { cn } from "@/lib/utils"
+import { ScaledTemplate } from "@/features/templates/renderer"
+import { sampleFor } from "@/features/templates/samples"
 import {
   DndContext,
   PointerSensor,
@@ -41,6 +48,24 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/dropdown-menu"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/popover"
+
+// templateName coerces a template's name to something safe to render.
+// The DB column is TEXT and *should* always be a non-empty string, but
+// a row saved with an empty/JSON-ish name would otherwise surface as a
+// raw "{}" in the binding UI. Never render that — fall back to a label.
+function templateName(t: { name?: unknown } | null | undefined): string {
+  const n = t?.name
+  if (typeof n === "string") {
+    const trimmed = n.trim()
+    if (trimmed && trimmed !== "{}" && trimmed !== "{ }") return trimmed
+  }
+  return "Untitled template"
+}
 
 // DisplaySettings: the full CRUD list. Rendered in the Settings >
 // Display section. No surrounding pane chrome — the parent provides
@@ -84,7 +109,7 @@ export function DisplaySettings() {
   }
 
   return (
-    <div className="flex flex-col rounded-md border border-border/50 overflow-hidden">
+    <div className="flex flex-col overflow-hidden rounded-lg border border-border/50">
       {displays && displays.length > 0 && (
         <DndContext
           sensors={sensors}
@@ -112,9 +137,8 @@ function DisplayRow({ display }: { display: Display }) {
   const renameMut = useRenameDisplay()
   const deleteMut = useDeleteDisplay()
   const enabledMut = useSetDisplayEnabled()
-  const { attributes, listeners, setNodeRef, style } = useSortableRow(
-    `display-${display.id}`
-  )
+  const { attributes, listeners, setNodeRef, style, isDragging } =
+    useSortableRow(`display-${display.id}`)
 
   const [editing, setEditing] = useState(false)
   const [pendingDelete, setPendingDelete] = useState(false)
@@ -141,28 +165,29 @@ function DisplayRow({ display }: { display: Display }) {
         rowRef.current = node
       }}
       style={style}
+      className={cn(isDragging && "relative z-10")}
     >
       <div
         className={cn(
-          "group flex flex-col gap-2 border-b border-border/40 px-2 py-3 text-xs transition-colors",
+          "group flex flex-col gap-3 border-b border-border/40 px-3 py-3 transition-colors last:border-b-0",
           pendingDelete
-            ? "bg-destructive/15 text-foreground"
-            : enabled
-              ? "text-foreground"
-              : "text-muted-foreground/60"
+            ? "bg-destructive/10"
+            : isDragging
+              ? "bg-muted/40"
+              : "hover:bg-muted/15"
         )}
       >
-        {/* Row 1: drag, switch, name, row-level actions */}
+        {/* Header: drag, enable switch, name, row actions */}
         <div className="flex items-center gap-2">
           <button
             type="button"
             {...attributes}
             {...listeners}
-            aria-label="Drag display"
+            aria-label="Drag to reorder"
             onClick={(e) => e.stopPropagation()}
-            className="cursor-grab touch-none grid size-5 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-50 hover:opacity-90"
+            className="cursor-grab touch-none grid size-6 shrink-0 place-items-center rounded text-muted-foreground/60 opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
           >
-            <GripVerticalIcon className="size-3" />
+            <GripVerticalIcon className="size-3.5" />
           </button>
 
           <Switch
@@ -188,10 +213,19 @@ function DisplayRow({ display }: { display: Display }) {
                   if (e.key === "Enter") e.currentTarget.blur()
                   if (e.key === "Escape") setEditing(false)
                 }}
-                className="h-6 px-1.5 py-0 text-xs"
+                className="h-7 px-2 py-0 text-sm"
               />
             ) : (
-              <span className="truncate font-medium">{display.name}</span>
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className={cn(
+                  "truncate text-left text-sm font-semibold tracking-tight",
+                  enabled ? "text-foreground" : "text-muted-foreground/50"
+                )}
+              >
+                {display.name}
+              </button>
             )}
           </div>
 
@@ -202,9 +236,9 @@ function DisplayRow({ display }: { display: Display }) {
               e.stopPropagation()
               setEditing(true)
             }}
-            className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-amber-500/15 hover:text-amber-500 group-hover:opacity-70 hover:!opacity-100"
+            className="grid size-6 shrink-0 place-items-center rounded text-muted-foreground opacity-0 transition-opacity hover:bg-amber-500/15 hover:text-amber-500 group-hover:opacity-70 hover:!opacity-100"
           >
-            <PencilIcon className="size-3" />
+            <PencilIcon className="size-3.5" />
           </button>
           <button
             type="button"
@@ -219,31 +253,37 @@ function DisplayRow({ display }: { display: Display }) {
               }
             }}
             className={cn(
-              "grid size-5 shrink-0 place-items-center rounded transition-all",
+              "grid size-6 shrink-0 place-items-center rounded transition-all",
               pendingDelete
                 ? "bg-destructive text-destructive-foreground opacity-100"
                 : "text-muted-foreground opacity-0 hover:bg-destructive/15 hover:text-destructive group-hover:opacity-70 hover:!opacity-100"
             )}
           >
             {pendingDelete ? (
-              <XIcon className="size-3" />
+              <XIcon className="size-3.5" />
             ) : (
-              <Trash2Icon className="size-3" />
+              <Trash2Icon className="size-3.5" />
             )}
           </button>
         </div>
 
-        {/* Row 2: bindings — the per-display configuration that drives
-            output behavior. Each pill is labelled so the user can tell
-            at a glance which knob does what. */}
-        <div className="flex flex-wrap items-center gap-2 pl-9">
-          <ScreenDropdown
+        {/* Bindings: the per-display config that drives output. Three
+            equal cards that stretch across the available width — each
+            template binding shows a live preview thumbnail so the
+            operator recognizes it at a glance, not just by name. */}
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-2 pl-8 transition-opacity sm:grid-cols-2 lg:grid-cols-3",
+            !enabled && "opacity-50"
+          )}
+        >
+          <MonitorCard
             displayId={display.id}
             currentScreenId={
               display.screen_id.Valid ? display.screen_id.String : null
             }
           />
-          <BindingDropdown
+          <TemplateBindingCard
             label="Bible template"
             kind="bible"
             currentId={
@@ -253,7 +293,7 @@ function DisplayRow({ display }: { display: Display }) {
             }
             displayId={display.id}
           />
-          <BindingDropdown
+          <TemplateBindingCard
             label="Song template"
             kind="song"
             currentId={
@@ -269,11 +309,47 @@ function DisplayRow({ display }: { display: Display }) {
   )
 }
 
-// ScreenDropdown picks the physical monitor that this display's
-// output window opens on. The OS screen id is opaque so we render
-// the human label; a stored id that no longer matches any connected
-// screen shows as "(disconnected)" — picking a new one re-binds.
-function ScreenDropdown({
+// TemplateThumb renders a small 16:9 live preview of a template using
+// kind-appropriate sample content (so a bible template previews with a
+// verse, a song with lyrics). Null template → a dim kind glyph.
+function TemplateThumb({
+  template,
+  kind,
+  className,
+}: {
+  template: Template | null
+  kind: "bible" | "song"
+  className?: string
+}) {
+  const Icon = kind === "bible" ? BookOpenIcon : MusicIcon
+  return (
+    <div
+      className={cn(
+        "aspect-video shrink-0 overflow-hidden rounded border border-border/50 bg-black",
+        className
+      )}
+    >
+      {template ? (
+        <ScaledTemplate
+          template={template}
+          fill={sampleFor(template.kind)}
+          measure
+          style={{ width: "100%", height: "100%" }}
+        />
+      ) : (
+        <div className="grid h-full place-items-center text-muted-foreground/30">
+          <Icon className="size-4" />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// MonitorCard binds the display to a physical screen. Same card shape
+// as the template bindings (a 16:9 slot + label + value) so the row of
+// three reads as a consistent set; the slot holds a monitor glyph
+// since a screen has no template to preview.
+function MonitorCard({
   displayId,
   currentScreenId,
 }: {
@@ -287,35 +363,46 @@ function ScreenDropdown({
     ? list.find((s) => s.id === currentScreenId)
     : null
   const stale = !!currentScreenId && !current
-  const label = current
-    ? screenLabel(current)
-    : stale
-      ? "(disconnected)"
-      : "Unbound"
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className={cn(
-            "flex h-7 min-w-[200px] shrink-0 items-center gap-1.5 rounded border border-border/50 px-2.5 text-[11px] transition-colors hover:bg-muted",
-            current
-              ? "text-foreground"
-              : stale
-                ? "text-destructive/80"
-                : "text-muted-foreground/60"
-          )}
+          className="flex items-center gap-2.5 rounded-md border border-border/50 p-1.5 text-left transition-colors hover:border-border hover:bg-muted/30"
         >
-          <span className="text-muted-foreground/50">Monitor:</span>
-          <span className="truncate">{label}</span>
+          <div className="grid aspect-video w-20 shrink-0 place-items-center rounded border border-border/50 bg-muted/20 text-muted-foreground/40">
+            {current ? (
+              <MonitorIcon className="size-4" />
+            ) : (
+              <MonitorOffIcon className="size-4" />
+            )}
+          </div>
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/50">
+              Monitor
+            </span>
+            <span
+              className={cn(
+                "truncate text-xs font-medium",
+                current
+                  ? "text-foreground"
+                  : stale
+                    ? "text-destructive/80"
+                    : "text-muted-foreground/50"
+              )}
+            >
+              {current
+                ? screenLabel(current)
+                : stale
+                  ? "(disconnected)"
+                  : "Unbound"}
+            </span>
+          </span>
+          <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground/40" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent
-        align="start"
-        sideOffset={4}
-        className="min-w-[220px]"
-      >
+      <DropdownMenuContent align="start" sideOffset={6} className="min-w-[240px]">
         <DropdownMenuItem
           onSelect={() => setMut.mutate({ id: displayId, screenID: "" })}
           className={cn(currentScreenId === null && "font-medium")}
@@ -345,10 +432,13 @@ function screenLabel(s: ScreenInfo): string {
   return s.is_primary ? `${base} (primary)` : base
 }
 
-// BindingDropdown picks a template (filtered by kind) for one of the
-// display's content kinds. Negative IDs come from frontend defaults;
-// positive from DB rows. id = 0 means "no template bound".
-function BindingDropdown({
+// TemplateBindingCard picks a template (filtered by kind) for one of
+// the display's content kinds, showing a live preview of the current
+// pick. Clicking opens a popover grid of every template of that kind,
+// each rendered as its own preview thumbnail — so choosing a template
+// is a visual act, not a guess at a name. Negative ids are frontend
+// defaults; id 0 clears the binding.
+function TemplateBindingCard({
   label,
   kind,
   currentId,
@@ -363,52 +453,95 @@ function BindingDropdown({
   const bibleMut = useSetDisplayBibleTemplate()
   const songMut = useSetDisplaySongTemplate()
   const mut = kind === "bible" ? bibleMut : songMut
+  const [open, setOpen] = useState(false)
 
   const filtered = useMemo(
     () => (templates ?? []).filter((t) => t.kind === kind),
     [templates, kind]
   )
-
   const current = useMemo(
     () =>
-      currentId !== null ? filtered.find((t) => t.id === currentId) : undefined,
+      currentId !== null ? filtered.find((t) => t.id === currentId) ?? null : null,
     [filtered, currentId]
   )
 
+  function choose(templateID: number) {
+    mut.mutate({ id: displayId, templateID })
+    setOpen(false)
+  }
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
         <button
           type="button"
-          className={cn(
-            "flex h-7 min-w-[180px] shrink-0 items-center gap-1.5 rounded border border-border/50 px-2.5 text-[11px] transition-colors hover:bg-muted",
-            current
-              ? "text-foreground"
-              : "text-muted-foreground/60"
-          )}
+          className="flex items-center gap-2.5 rounded-md border border-border/50 p-1.5 text-left transition-colors hover:border-border hover:bg-muted/30"
         >
-          <span className="text-muted-foreground/50">{label}:</span>
-          <span className="truncate">{current?.name ?? "None"}</span>
+          <TemplateThumb template={current} kind={kind} className="w-20" />
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="text-[10px] uppercase tracking-wider text-muted-foreground/50">
+              {label}
+            </span>
+            <span
+              className={cn(
+                "truncate text-xs font-medium",
+                current ? "text-foreground" : "text-muted-foreground/50"
+              )}
+            >
+              {current ? templateName(current) : "None"}
+            </span>
+          </span>
+          <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground/40" />
         </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" sideOffset={4} className="min-w-[200px]">
-        <DropdownMenuItem
-          onSelect={() => mut.mutate({ id: displayId, templateID: 0 })}
-          className={cn(currentId === null && "font-medium")}
-        >
-          None
-        </DropdownMenuItem>
-        {filtered.length > 0 && <DropdownMenuSeparator />}
-        {filtered.map((t) => (
-          <DropdownMenuItem
-            key={t.id}
-            onSelect={() => mut.mutate({ id: displayId, templateID: t.id })}
-            className={cn(currentId === t.id && "font-medium")}
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        sideOffset={6}
+        className="w-80 p-2"
+      >
+        <div className="mb-1.5 px-0.5 text-[10px] uppercase tracking-wider text-muted-foreground/50">
+          {label}
+        </div>
+        <div className="grid max-h-[340px] grid-cols-2 gap-1.5 overflow-y-auto">
+          <button
+            type="button"
+            onClick={() => choose(0)}
+            className={cn(
+              "flex aspect-video items-center justify-center rounded border text-xs transition-colors",
+              currentId === null
+                ? "border-foreground/50 text-foreground"
+                : "border-border/50 text-muted-foreground/60 hover:border-border hover:bg-muted/30"
+            )}
           >
-            <span className="truncate">{t.name}</span>
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+            None
+          </button>
+          {filtered.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => choose(t.id)}
+              className={cn(
+                "group/opt flex flex-col overflow-hidden rounded border text-left transition-colors",
+                currentId === t.id
+                  ? "border-foreground/60 ring-1 ring-foreground/30"
+                  : "border-border/50 hover:border-border"
+              )}
+            >
+              <div className="aspect-video w-full bg-black">
+                <ScaledTemplate
+                  template={t}
+                  fill={sampleFor(t.kind)}
+                  measure
+                  style={{ width: "100%", height: "100%" }}
+                />
+              </div>
+              <div className="truncate border-t border-border/40 px-1.5 py-1 text-[10px] font-medium">
+                {templateName(t)}
+              </div>
+            </button>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }

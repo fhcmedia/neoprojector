@@ -64,6 +64,23 @@ type LivePayload struct {
 	//
 	// Empty for slides that didn't go through the uniform pass.
 	FontSizeOverrideByTemplate map[string]int64 `json:"font_size_override_by_template,omitempty"`
+
+	// AudioDisplayID names the single output window that should play
+	// audio when the current slot is video/audio media. Every other
+	// output mutes its <video>. Computed in PushLive as the smallest
+	// active display id — deterministic across pushes so the audio
+	// doesn't hop between screens mid-slide. Zero when no live output
+	// windows are open.
+	AudioDisplayID int64 `json:"audio_display_id,omitempty"`
+
+	// NextMediaID is the media id the NEXT slide will reference, if
+	// the operator knows what's coming (presentations with a fixed
+	// slide list). Output windows mount a hidden preload element for
+	// this id so the bytes are decoded and warm before the slide
+	// transition fires — fixes the fade stutter with many outputs all
+	// fetching+decoding the same asset concurrently. Zero for non-
+	// presentation slots or when there's no determinate next.
+	NextMediaID int64 `json:"next_media_id,omitempty"`
 }
 
 // OverlayActivation is a schedule-item overlay currently toggled on.
@@ -201,6 +218,39 @@ func (s *Service) SetDisplayEnabled(ctx context.Context, id int64, enabled bool)
 		v = 1
 	}
 	out, err := s.q.SetDisplayEnabled(ctx, database.SetDisplayEnabledParams{ID: id, Enabled: v})
+	if err == nil {
+		emitChanged()
+	}
+	return out, err
+}
+
+// SetDisplayLayer toggles whether this display renders one content
+// kind. layer is one of "song" | "bible" | "media" | "overlay"; on
+// maps to the row's show_* column. Suppression is enforced client-
+// side in each output window (and the operator preview), so flipping a
+// flag only needs the displays:changed emit to make every open output
+// refetch its row and re-evaluate — no live re-push required.
+func (s *Service) SetDisplayLayer(ctx context.Context, id int64, layer string, on bool) (database.Display, error) {
+	v := int64(0)
+	if on {
+		v = 1
+	}
+	var (
+		out database.Display
+		err error
+	)
+	switch layer {
+	case "song":
+		out, err = s.q.SetDisplayShowSong(ctx, database.SetDisplayShowSongParams{ShowSong: v, ID: id})
+	case "bible":
+		out, err = s.q.SetDisplayShowBible(ctx, database.SetDisplayShowBibleParams{ShowBible: v, ID: id})
+	case "media":
+		out, err = s.q.SetDisplayShowMedia(ctx, database.SetDisplayShowMediaParams{ShowMedia: v, ID: id})
+	case "overlay":
+		out, err = s.q.SetDisplayShowOverlay(ctx, database.SetDisplayShowOverlayParams{ShowOverlay: v, ID: id})
+	default:
+		return database.Display{}, fmt.Errorf("unknown display layer %q", layer)
+	}
 	if err == nil {
 		emitChanged()
 	}
@@ -462,16 +512,60 @@ func (s *Service) StopLive(_ context.Context) {
 // PushLive caches the snapshot from the main window and rebroadcasts
 // to all output windows via the "live:slot" event. Output webviews
 // subscribe to this event and update their template fill in place.
-func (s *Service) PushLive(_ context.Context, payload LivePayload) {
+func (s *Service) PushLive(ctx context.Context, payload LivePayload) {
 	if payload.Kind == "" {
 		payload.Kind = "none"
 	}
+	// Resolve which displays actually render media before taking the
+	// lock (keeps the DB read off the mutex the other live calls
+	// contend on). A media-suppressed display (show_media=0) mounts no
+	// <video>, so it can't be the audio source.
+	mediaCapable, mediaErr := s.mediaCapableDisplays(ctx)
 	s.mu.Lock()
+	// Pick a single audio output deterministically — the smallest
+	// active display id that renders media wins. Output windows mute
+	// themselves unless their id matches, so N displays presenting the
+	// same video don't pile up N audio streams on the computer's audio
+	// device. Skipping media-suppressed displays is what prevents
+	// venue-wide silence when the smallest id is routed lyrics-only
+	// (its window has no <video> to play, and every other window mutes
+	// itself). On a lookup error we fall back to the plain smallest-id
+	// pick so audio never regresses to "off". When every live display
+	// suppresses media, audioID stays 0 — correct, since media is
+	// hidden everywhere and there is genuinely nothing to play.
+	var audioID int64
+	for id := range s.live {
+		if mediaErr == nil && !mediaCapable[id] {
+			continue
+		}
+		if audioID == 0 || id < audioID {
+			audioID = id
+		}
+	}
+	payload.AudioDisplayID = audioID
 	s.lastSlot = payload
 	s.mu.Unlock()
 	if app := application.Get(); app != nil {
 		app.Event.Emit("live:slot", payload)
 	}
+}
+
+// mediaCapableDisplays returns the set of display ids whose show_media
+// flag is on. PushLive uses it to keep audio on a display that actually
+// renders the video; a media-suppressed output produces no <video> and
+// thus no sound, so it must never be chosen as the audio source.
+func (s *Service) mediaCapableDisplays(ctx context.Context) (map[int64]bool, error) {
+	rows, err := s.q.ListDisplays(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]bool, len(rows))
+	for _, d := range rows {
+		if d.ShowMedia != 0 {
+			out[d.ID] = true
+		}
+	}
+	return out, nil
 }
 
 // CurrentLive returns the last pushed payload so an output window can

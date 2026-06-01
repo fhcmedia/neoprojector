@@ -135,6 +135,27 @@ export class LivePayload {
      */
     "font_size_override_by_template"?: { [_ in string]?: number };
 
+    /**
+     * AudioDisplayID names the single output window that should play
+     * audio when the current slot is video/audio media. Every other
+     * output mutes its <video>. Computed in PushLive as the smallest
+     * active display id — deterministic across pushes so the audio
+     * doesn't hop between screens mid-slide. Zero when no live output
+     * windows are open.
+     */
+    "audio_display_id"?: number;
+
+    /**
+     * NextMediaID is the media id the NEXT slide will reference, if
+     * the operator knows what's coming (presentations with a fixed
+     * slide list). Output windows mount a hidden preload element for
+     * this id so the bytes are decoded and warm before the slide
+     * transition fires — fixes the fade stutter with many outputs all
+     * fetching+decoding the same asset concurrently. Zero for non-
+     * presentation slots or when there's no determinate next.
+     */
+    "next_media_id"?: number;
+
     /** Creates a new LivePayload instance. */
     constructor($$source: Partial<LivePayload> = {}) {
         if (!("kind" in $$source)) {

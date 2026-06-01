@@ -26,6 +26,30 @@ SET enabled = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
 RETURNING *;
 
+-- name: SetDisplayShowSong :one
+UPDATE display
+SET show_song = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING *;
+
+-- name: SetDisplayShowBible :one
+UPDATE display
+SET show_bible = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING *;
+
+-- name: SetDisplayShowMedia :one
+UPDATE display
+SET show_media = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING *;
+
+-- name: SetDisplayShowOverlay :one
+UPDATE display
+SET show_overlay = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING *;
+
 -- name: SetDisplayBibleTemplate :one
 UPDATE display
 SET bible_template_id = ?, updated_at = CURRENT_TIMESTAMP

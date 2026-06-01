@@ -187,8 +187,18 @@ function MediaTile({
             <video
               src={`/media-asset/${medium.id}`}
               className="absolute inset-0 h-full w-full object-cover"
-              preload="metadata"
+              preload="auto"
               muted
+              playsInline
+              // Seek to ~0.5s once metadata is ready so the tile shows
+              // a frame mid-action instead of the often-black first
+              // frame. preload="auto" makes sure enough bytes are
+              // buffered to satisfy the seek.
+              onLoadedMetadata={(e) => {
+                const el = e.currentTarget
+                const t = Math.min(0.5, Math.max(0, (el.duration || 0) - 0.1))
+                if (Number.isFinite(t) && t > 0) el.currentTime = t
+              }}
             />
           ) : (
             <div className="grid h-full place-items-center text-muted-foreground/60">

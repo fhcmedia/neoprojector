@@ -48,6 +48,10 @@ type Display struct {
 	BibleTemplateID sql.NullInt64  `json:"bible_template_id"`
 	SongTemplateID  sql.NullInt64  `json:"song_template_id"`
 	ScreenID        sql.NullString `json:"screen_id"`
+	ShowSong        int64          `json:"show_song"`
+	ShowBible       int64          `json:"show_bible"`
+	ShowMedia       int64          `json:"show_media"`
+	ShowOverlay     int64          `json:"show_overlay"`
 	CreatedAt       string         `json:"created_at"`
 	UpdatedAt       string         `json:"updated_at"`
 }

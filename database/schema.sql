@@ -164,6 +164,13 @@ CREATE TABLE IF NOT EXISTS display (
   bible_template_id  INTEGER,
   song_template_id   INTEGER,
   screen_id          TEXT,
+  -- Per-display content routing. 1 = this output renders the matching
+  -- live kind; 0 = it stays black for that kind. Lets one screen show
+  -- lyrics while another shows only media, etc. See migration 0019.
+  show_song          INTEGER NOT NULL DEFAULT 1,
+  show_bible         INTEGER NOT NULL DEFAULT 1,
+  show_media         INTEGER NOT NULL DEFAULT 1,
+  show_overlay       INTEGER NOT NULL DEFAULT 1,
   created_at         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

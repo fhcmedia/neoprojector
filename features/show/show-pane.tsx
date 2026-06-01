@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import { useQueryClient } from "@tanstack/react-query"
+import { Events } from "@wailsio/runtime"
 import type {
   ListServiceItemsWithContentRow,
   Medium,
@@ -27,6 +28,26 @@ import { useShowTemplate } from "@/features/show/use-show-template"
 import { ScaledTemplate } from "@/features/templates/renderer"
 import { songSectionType } from "@/features/songs/section-types"
 import { cn } from "@/lib/utils"
+import {
+  useAddSlide,
+  useReorderSlides,
+} from "@/features/presentations/api"
+import { useUpdateBibleItem } from "@/features/schedule/api"
+import { useBibleTranslations } from "@/hooks/use-bible-translations"
+import type { ChapterVerse } from "@/bindings/neoprojector/services/bible"
+import { Service as Media } from "@/bindings/neoprojector/services/media"
+
+// Drop target tag that lets the operator drag external image files
+// directly onto the show pane while a presentation is active. The Go
+// side reports the element-id on file drop; we filter the broadcast
+// `media:files-dropped` event by this value and import + append in
+// one step.
+const SHOW_PANE_DROP_TARGET = "show-pane-presentation"
+const MEDIA_DROP_EVENT = "media:files-dropped"
+type MediaDropPayload = {
+  paths?: string[]
+  target_id?: string
+}
 
 // Per-template minimum fontSize. Single number per template applied
 // uniformly to every fitToBox box across every slide in the active
@@ -93,9 +114,88 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
   // means click-to-toggle works correctly in either mode.
   const sourceItemId: number | null = item ? item.id : null
 
+  // Presentation-only affordances: drag-to-reorder and external-file
+  // drop both need the parent presentation's id. Zero when this item
+  // isn't a presentation — the mutations stay idle in that case.
+  const isPresentation =
+    !!item && item.kind === "presentation" && item.presentation_id !== 0
+  const presentationId = isPresentation ? item!.presentation_id : 0
+  const addSlide = useAddSlide(presentationId)
+  const reorderSlides = useReorderSlides(presentationId)
+
+  // Bible-grow: pressing arrow past the end (or before the start) of
+  // a single bible item's queued range extends the range by one verse
+  // and lets live advance into it. Capped by the chapter's verse list
+  // — we don't auto-cross chapters, since that would also change the
+  // book_chapter on the schedule row and surprise the operator.
+  const updateBibleItem = useUpdateBibleItem()
+  const { state: bibleTranslations } = useBibleTranslations()
+
   const { live, setLive, isLive, registerNavigators } = useLive()
   const { data: displays } = useDisplays()
   const { data: allTemplates } = useTemplates()
+
+  // Drag-to-reorder state. Holds the presentation-slide DB id of the
+  // tile currently being dragged. Reset on dragend/drop. The reorder
+  // mutation reads the current slide-list order from React Query, so
+  // we hand it the new id array on drop and let it persist server-
+  // side. Optimistic update happens via the mutation's onSuccess
+  // invalidating the slides query.
+  const [dragSlideId, setDragSlideId] = useState<number | null>(null)
+
+  // Pause auto-advance via per-tile pause click. Reset whenever the
+  // source item changes — entering a new presentation shouldn't
+  // inherit a paused state from the previous one.
+  const [autoPaused, setAutoPaused] = useState(false)
+  useEffect(() => {
+    setAutoPaused(false)
+  }, [sourceItemId])
+
+  // Listen for OS-level file drops landing on the show pane while a
+  // presentation is active. Same Wails-emitted event the library uses;
+  // we filter by target_id so library/show drops don't collide. Each
+  // dropped file is imported into the media library and appended as a
+  // new slide on the active presentation. Sequential await keeps
+  // ordering deterministic — drops added in the order the user
+  // dropped them.
+  useEffect(() => {
+    if (!isPresentation) return
+    const off = Events.On(
+      MEDIA_DROP_EVENT,
+      async (event: { data?: MediaDropPayload }) => {
+        const data = event?.data ?? {}
+        if (data.target_id !== SHOW_PANE_DROP_TARGET) return
+        const paths = data.paths ?? []
+        if (paths.length === 0) return
+        const imported = (await Media.ImportFiles(paths)) as unknown as Medium[]
+        for (const m of imported) {
+          await addSlide.mutateAsync(m.id)
+        }
+      }
+    )
+    return () => {
+      off?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPresentation, presentationId])
+
+  // Drop one tile onto another: the dragged tile takes the target
+  // tile's index, the others slide to make room. Operates on the
+  // current slide list's presentation-slide ids — non-presentation
+  // slides don't carry those ids, so the function is a no-op there.
+  function moveDraggedBefore(targetSlideId: number) {
+    if (dragSlideId === null || dragSlideId === targetSlideId) return
+    const ids = slides
+      .map((s) => s.presentationSlideId)
+      .filter((v): v is number => typeof v === "number")
+    const from = ids.indexOf(dragSlideId)
+    const to = ids.indexOf(targetSlideId)
+    if (from < 0 || to < 0) return
+    const next = ids.slice()
+    next.splice(from, 1)
+    next.splice(to, 0, dragSlideId)
+    reorderSlides.mutate(next)
+  }
 
   // Uniform-fit pass, scoped per template. Lower-thirds (small box)
   // and two-translations (medium box) have different floors; they
@@ -173,6 +273,19 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
     function liveIndex(): number {
       return slides.findIndex((s, i) => isLive(s.kind, sourceItemId, i))
     }
+    // Compute the upcoming slide's media id so output windows can
+    // preload it before the next crossfade. Only meaningful when the
+    // current item is a presentation with a determinate next slide.
+    function nextMediaIdAfter(idx: number): number | undefined {
+      if (!playback) return undefined
+      const nextIdx = playback.loop
+        ? (idx + 1) % slides.length
+        : idx + 1 < slides.length
+          ? idx + 1
+          : -1
+      if (nextIdx < 0) return undefined
+      return slides[nextIdx]?.fill.media?.mediaId
+    }
     function setIndex(idx: number) {
       const s = slides[idx]
       if (!s) return
@@ -184,7 +297,54 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
         fontSizeOverrideByTemplate: templateMins,
         transitionKind: playback?.transitionKind,
         transitionDurationMs: playback?.transitionDurationMs,
+        nextMediaId: nextMediaIdAfter(idx),
       })
+    }
+    // Bible-grow: when arrow nav runs off the end (or start) of a
+    // single bible schedule item, try to extend its verse range by
+    // one and let the slides update reactively. Capped by the chapter
+    // — qc.getQueryData reads the cached chapter rows the slide hook
+    // already fetched, so we never re-IPC just to check the bound.
+    function bibleGrow(direction: "forward" | "backward"): boolean {
+      if (!item || item.kind !== "bible") return false
+      const chapterRows =
+        qc.getQueryData<ChapterVerse[]>([
+          "bible",
+          "verses",
+          item.book,
+          item.chapter,
+          bibleTranslations.primary,
+        ]) ?? []
+      const maxVerse = chapterRows.reduce(
+        (m, v) => (v.verse > m ? v.verse : m),
+        0
+      )
+      if (direction === "forward") {
+        if (item.verse_end + 1 > maxVerse) return false
+        const nextEnd = item.verse_end + 1
+        updateBibleItem.mutate({
+          itemId: item.id,
+          ref: {
+            book: item.book,
+            chapter: item.chapter,
+            verse_start: item.verse_start,
+            verse_end: nextEnd,
+          },
+        })
+        return true
+      }
+      if (item.verse_start <= 1) return false
+      const prevStart = item.verse_start - 1
+      updateBibleItem.mutate({
+        itemId: item.id,
+        ref: {
+          book: item.book,
+          chapter: item.chapter,
+          verse_start: prevStart,
+          verse_end: item.verse_end,
+        },
+      })
+      return true
     }
     registerNavigators({
       next: () => {
@@ -194,16 +354,25 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
           return
         }
         // Presentations wrap on next so the loop runs forever; other
-        // kinds stop at the end (the operator is driving manually).
+        // kinds stop at the end. Bible items auto-grow into the next
+        // verse so the operator can keep reading without re-typing.
         if (cur + 1 < slides.length) {
           setIndex(cur + 1)
-        } else if (playback?.loop) {
-          setIndex(0)
+          return
         }
+        if (playback?.loop) {
+          setIndex(0)
+          return
+        }
+        bibleGrow("forward")
       },
       prev: () => {
         const cur = liveIndex()
-        if (cur > 0) setIndex(cur - 1)
+        if (cur > 0) {
+          setIndex(cur - 1)
+          return
+        }
+        bibleGrow("backward")
       },
     })
   }, [
@@ -214,6 +383,10 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
     registerNavigators,
     templateMins,
     playback,
+    item,
+    qc,
+    bibleTranslations.primary,
+    updateBibleItem,
   ])
 
   // Auto-advance loop. Runs ONLY when a presentation item is live
@@ -226,6 +399,7 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
   // last action is the new anchor, never a half-elapsed dwell).
   useEffect(() => {
     if (!playback || !playback.loop) return
+    if (autoPaused) return
     if (slides.length <= 1) return
     if (!live || live.sourceItemId !== sourceItemId) return
     const id = window.setInterval(() => {
@@ -235,6 +409,10 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
       const next = cur < 0 ? 0 : (cur + 1) % slides.length
       const s = slides[next]
       if (!s) return
+      // The one AFTER `next` is what outputs need warm so the
+      // FOLLOWING crossfade isn't blocked on decode. Always wraps
+      // because auto-advance runs in loop mode by definition here.
+      const after = (next + 1) % slides.length
       setLive({
         kind: s.kind,
         sourceItemId,
@@ -243,11 +421,13 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
         fontSizeOverrideByTemplate: templateMins,
         transitionKind: playback.transitionKind,
         transitionDurationMs: playback.transitionDurationMs,
+        nextMediaId: slides[after]?.fill.media?.mediaId,
       })
     }, Math.max(250, playback.intervalMs))
     return () => window.clearInterval(id)
   }, [
     playback,
+    autoPaused,
     slides,
     live,
     sourceItemId,
@@ -365,6 +545,13 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
+              // Drop-target marker is only meaningful for presentations.
+              // The Go side reads the attribute to tag the emitted
+              // event; if absent, the drop is treated as targetless
+              // (and the show-pane listener ignores it).
+              {...(isPresentation
+                ? { "data-file-drop-target": SHOW_PANE_DROP_TARGET }
+                : {})}
               className="grid flex-1 auto-rows-max grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2 overflow-y-auto p-2 content-start"
             >
               {slides.map((slide, idx) => {
@@ -377,9 +564,24 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
                   tmplBody?.crossSlideUniform === true
                 const tmplOverride =
                   tmpl && tmplCrossSlide ? templateMins[tmpl.id] : undefined
+                // Drag-to-reorder only applies to presentation slides
+                // (only they have a stable DB id we can re-order on).
+                // Hover-pause icon shows only while loop auto-advance
+                // is currently running — pointless on single-frame or
+                // manual playlists.
+                const draggableId =
+                  isPresentation && slide.presentationSlideId !== undefined
+                    ? slide.presentationSlideId
+                    : null
+                const showPauseAffordance =
+                  isPresentation && playback?.loop === true
                 return (
                   <motion.div
-                    key={idx}
+                    key={
+                      draggableId !== null
+                        ? `slide-${draggableId}`
+                        : idx
+                    }
                     initial={{ opacity: 0, scale: 0.97 }}
                     animate={{ opacity: 1, scale: 1 }}
                     transition={{
@@ -387,12 +589,37 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
                       ease: [0.32, 0.72, 0, 1],
                       delay: Math.min(idx * 0.03, 0.18),
                     }}
+                    {...(draggableId !== null
+                      ? {
+                          draggable: true,
+                          onDragStart: () => setDragSlideId(draggableId),
+                          onDragEnd: () => setDragSlideId(null),
+                          onDragOver: (e: ReactDragEvent) => {
+                            e.preventDefault()
+                            e.dataTransfer.dropEffect = "move"
+                          },
+                          onDrop: (e: ReactDragEvent) => {
+                            e.preventDefault()
+                            moveDraggedBefore(draggableId)
+                            setDragSlideId(null)
+                          },
+                          className: cn(
+                            "relative transition-opacity",
+                            dragSlideId === draggableId && "opacity-50"
+                          ),
+                        }
+                      : {})}
                   >
                     <SlideTile
                       slide={slide}
                       template={tmpl}
                       active={active}
                       fontSizeOverride={tmplOverride}
+                      pausedAffordance={
+                        showPauseAffordance
+                          ? { paused: autoPaused, onToggle: () => setAutoPaused((p) => !p) }
+                          : undefined
+                      }
                       onFitComputed={(slot, fontSize) => {
                         // Only forward fits for templates that opted
                         // into cross-slide uniform. Per-slide-only
@@ -406,6 +633,19 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
                           setLive(null)
                           return
                         }
+                        // Preload the next slide's media so the
+                        // subsequent crossfade has its bytes warm in
+                        // every output window. Loop-mode wraps;
+                        // manual-mode just looks one ahead.
+                        const nextIdx = playback?.loop
+                          ? (idx + 1) % slides.length
+                          : idx + 1 < slides.length
+                            ? idx + 1
+                            : -1
+                        const nextMediaId =
+                          nextIdx >= 0
+                            ? slides[nextIdx]?.fill.media?.mediaId
+                            : undefined
                         setLive({
                           kind: slide.kind,
                           sourceItemId,
@@ -414,6 +654,7 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
                           fontSizeOverrideByTemplate: templateMins,
                           transitionKind: playback?.transitionKind,
                           transitionDurationMs: playback?.transitionDurationMs,
+                          nextMediaId,
                         })
                       }}
                     />
@@ -492,6 +733,7 @@ function SlideTile({
   fontSizeOverride,
   onFitComputed,
   onClick,
+  pausedAffordance,
 }: {
   slide: Slide
   template: Template | undefined
@@ -499,6 +741,12 @@ function SlideTile({
   fontSizeOverride: number | undefined
   onFitComputed: (slot: SlotName, fontSize: number) => void
   onClick: () => void
+  // Set only for presentation tiles while loop auto-advance is on.
+  // The overlay is hover-revealed and toggles the parent's auto-pause
+  // state on click. We use a nested span+role="button" instead of a
+  // real <button> to avoid invalid nested-button HTML — the outer
+  // tile is already a <button>.
+  pausedAffordance?: { paused: boolean; onToggle: () => void }
 }) {
   const bottomAccent =
     slide.kind === "song" && slide.sectionType
@@ -571,6 +819,44 @@ function SlideTile({
           />
         )}
       </AnimatePresence>
+      {pausedAffordance && (
+        // Small corner chip — hover-revealed when running, persistent
+        // when paused (so the operator can see the current state at a
+        // glance). Lives in the top-left so it doesn't fight the
+        // bottom-aligned caption bar or the trash icon convention.
+        // Clicks here stop propagation; clicks anywhere ELSE on the
+        // tile fall through to the underlying button's "go live"
+        // onClick — which is the bug we just fixed (the previous
+        // full-tile overlay was swallowing every click).
+        <span
+          role="button"
+          tabIndex={0}
+          aria-label={pausedAffordance.paused ? "Resume auto-advance" : "Pause auto-advance"}
+          onClick={(e) => {
+            e.stopPropagation()
+            pausedAffordance.onToggle()
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault()
+              e.stopPropagation()
+              pausedAffordance.onToggle()
+            }
+          }}
+          className={cn(
+            "absolute left-1.5 top-1.5 grid size-6 cursor-pointer place-items-center rounded bg-background/70 text-foreground backdrop-blur transition-opacity",
+            pausedAffordance.paused
+              ? "opacity-100"
+              : "opacity-0 group-hover:opacity-100"
+          )}
+        >
+          {pausedAffordance.paused ? (
+            <PlayIcon className="size-3.5" />
+          ) : (
+            <PauseIcon className="size-3.5" />
+          )}
+        </span>
+      )}
     </button>
   )
 }
@@ -603,19 +889,37 @@ function MediaThumb({ mediaId }: { mediaId: number }) {
     )
   }
   if (medium.type === "video") {
-    return (
-      <video
-        src={`/media-asset/${mediaId}`}
-        className="absolute inset-0 h-full w-full object-cover"
-        preload="metadata"
-        muted
-      />
-    )
+    return <VideoThumb src={`/media-asset/${mediaId}`} />
   }
   return (
     <div className="grid h-full w-full place-items-center bg-muted/30 text-muted-foreground/40">
       <PlayIcon className="size-5 opacity-60" />
     </div>
+  )
+}
+
+// VideoThumb seeks the element to ~0.5s once metadata loads so the
+// tile shows a frame mid-action instead of the usually-black first
+// frame. preload="auto" tells the browser to fetch enough bytes to
+// satisfy the seek; once cached, clicking the tile to go live is
+// instant because the same /media-asset URL is already warm in this
+// webview's HTTP cache.
+function VideoThumb({ src }: { src: string }) {
+  const ref = useRef<HTMLVideoElement>(null)
+  return (
+    <video
+      ref={ref}
+      src={src}
+      className="absolute inset-0 h-full w-full object-cover"
+      preload="auto"
+      muted
+      playsInline
+      onLoadedMetadata={(e) => {
+        const el = e.currentTarget
+        const t = Math.min(0.5, Math.max(0, (el.duration || 0) - 0.1))
+        if (Number.isFinite(t) && t > 0) el.currentTime = t
+      }}
+    />
   )
 }
 
@@ -688,8 +992,18 @@ function MediaPreview({
             src={`/media-asset/${mediaId}`}
             controls
             muted
+            preload="auto"
+            playsInline
             className="h-full w-full"
             onClick={(e) => e.stopPropagation()}
+            onLoadedMetadata={(e) => {
+              const el = e.currentTarget
+              // Seek to ~0.5s so the preview surface shows a real
+              // frame instead of opening on the first (often-black)
+              // frame. Operator can still scrub freely.
+              const t = Math.min(0.5, Math.max(0, (el.duration || 0) - 0.1))
+              if (Number.isFinite(t) && t > 0) el.currentTime = t
+            }}
           />
         ) : isAudio && mediaId ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground/70">

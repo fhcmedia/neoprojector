@@ -1,10 +1,41 @@
-import { useMemo } from "react"
+import { useMemo, type ReactNode } from "react"
 import { Link } from "@tanstack/react-router"
 import { AnimatePresence, motion } from "motion/react"
-import { SettingsIcon } from "lucide-react"
-import { useDisplays } from "@/features/displays/api"
+import {
+  SettingsIcon,
+  MusicIcon,
+  BookOpenIcon,
+  ImageIcon,
+  LayersIcon,
+  Power,
+  PowerOff,
+  Slash,
+  GripVerticalIcon,
+  type LucideIcon,
+} from "lucide-react"
+import {
+  useDisplays,
+  useSetDisplayEnabled,
+  useSetDisplayLayer,
+  useReorderDisplays,
+  type DisplayLayer,
+} from "@/features/displays/api"
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  VerticalSortable,
+  useSortableRow,
+  type DragEndEvent,
+} from "@/features/schedule/sortable"
 import { useTemplates } from "@/features/library/templates-api"
-import { useLive, type ActiveOverlay } from "@/features/live/live-context"
+import {
+  useLive,
+  type ActiveOverlay,
+  type LiveSlide,
+} from "@/features/live/live-context"
 import { LiveTemplateView } from "@/features/templates/renderer"
 import { widgetDef } from "@/features/overlays/widgets"
 import {
@@ -29,6 +60,7 @@ export function DisplayPreviewPane() {
   const { data: displays, isLoading } = useDisplays()
   const { data: templates } = useTemplates()
   const { live, activeOverlays } = useLive()
+  const reorderMut = useReorderDisplays()
 
   // Index templates by id once so each tile can resolve its binding in
   // O(1). useTemplates returns defaults + DB rows merged, so negative
@@ -39,12 +71,31 @@ export function DisplayPreviewPane() {
     return map
   }, [templates])
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
+  )
+
+  // Reorder persists through the same useReorderDisplays mutation the
+  // settings list uses, so dragging here writes display.position and
+  // the two stay in lockstep — drag on the main page, see it in
+  // settings and vice versa.
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event
+    if (!over || !displays || active.id === over.id) return
+    const oldIdx = displays.findIndex((d) => `display-${d.id}` === active.id)
+    const newIdx = displays.findIndex((d) => `display-${d.id}` === over.id)
+    if (oldIdx < 0 || newIdx < 0) return
+    const next = [...displays]
+    const [moved] = next.splice(oldIdx, 1)
+    next.splice(newIdx, 0, moved)
+    reorderMut.mutate(next.map((d) => d.id))
+  }
+
   return (
     <div className="relative h-full w-full bg-background">
-      <div className="pointer-events-none absolute left-3 top-2 z-10 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
-        Preview
-      </div>
-      <div className="flex h-full flex-col pt-7">
+      {/* No pane-level "Preview" label — each tile carries its own
+          header now, so a stray title would just double up. */}
+      <div className="flex h-full flex-col">
         {isLoading ? (
           <div className="grid flex-1 place-items-center text-xs text-muted-foreground/60">
             Loading…
@@ -53,15 +104,23 @@ export function DisplayPreviewPane() {
           <EmptyState />
         ) : (
           <div className="flex flex-1 flex-col overflow-y-auto">
-            {displays.map((d) => (
-              <PreviewTile
-                key={d.id}
-                display={d}
-                templateById={templateById}
-                live={live}
-                activeOverlays={activeOverlays}
-              />
-            ))}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <VerticalSortable ids={displays.map((d) => `display-${d.id}`)}>
+                {displays.map((d) => (
+                  <PreviewTile
+                    key={d.id}
+                    display={d}
+                    templateById={templateById}
+                    live={live}
+                    activeOverlays={activeOverlays}
+                  />
+                ))}
+              </VerticalSortable>
+            </DndContext>
           </div>
         )}
       </div>
@@ -152,6 +211,49 @@ function PreviewOverlay({
   )
 }
 
+// The four routable content layers, in the order they sit in the hover
+// pill. field points at the matching show_* flag on the Display row;
+// layer is the string the Go SetDisplayLayer service switches on.
+type LayerField = "show_song" | "show_bible" | "show_media" | "show_overlay"
+
+// Per-action hover tints, mirroring the schedule item-list's color
+// language (amber / sky / emerald / destructive) so the two surfaces
+// feel like one app. Each layer owns a hue; the icons themselves also
+// match the schedule's kind icons for consistency.
+type ToneKey = "emerald" | "amber" | "sky" | "violet" | "destructive"
+
+const TONE_HOVER: Record<ToneKey, string> = {
+  emerald: "hover:bg-emerald-500/15 hover:text-emerald-500",
+  amber: "hover:bg-amber-500/15 hover:text-amber-500",
+  sky: "hover:bg-sky-500/15 hover:text-sky-500",
+  violet: "hover:bg-violet-500/15 hover:text-violet-500",
+  destructive: "hover:bg-destructive/15 hover:text-destructive",
+}
+
+const LAYER_BUTTONS: {
+  layer: DisplayLayer
+  field: LayerField
+  icon: LucideIcon
+  label: string
+  tone: ToneKey
+}[] = [
+  { layer: "song", field: "show_song", icon: MusicIcon, label: "song lyrics", tone: "emerald" },
+  { layer: "bible", field: "show_bible", icon: BookOpenIcon, label: "bible verses", tone: "amber" },
+  { layer: "media", field: "show_media", icon: ImageIcon, label: "media", tone: "sky" },
+  { layer: "overlay", field: "show_overlay", icon: LayersIcon, label: "overlays", tone: "violet" },
+]
+
+// Whether the currently-live kind is routed to this display. The
+// overlay layer is orthogonal (it stacks regardless of the slide kind),
+// so it isn't consulted here — show_overlay gates the overlay stack
+// separately.
+function liveKindShown(display: Display, kind: LiveSlide["kind"]): boolean {
+  if (kind === "song") return display.show_song !== 0
+  if (kind === "bible") return display.show_bible !== 0
+  if (kind === "media") return display.show_media !== 0
+  return true
+}
+
 function PreviewTile({
   display,
   templateById,
@@ -164,74 +266,190 @@ function PreviewTile({
   activeOverlays: ActiveOverlay[]
 }) {
   const enabled = display.enabled !== 0
+  const setEnabled = useSetDisplayEnabled()
+  const setLayer = useSetDisplayLayer()
+  const { attributes, listeners, setNodeRef, style, isDragging } =
+    useSortableRow(`display-${display.id}`)
 
-  // Pick the binding that matches the live slide kind. Disabled
-  // displays still show their tile so the operator sees the full
-  // output set, just dimmed.
-  const bindingId = live
-    ? live.kind === "bible"
-      ? display.bible_template_id.Valid
-        ? display.bible_template_id.Int64
-        : null
-      : live.kind === "song"
-        ? display.song_template_id.Valid
-          ? display.song_template_id.Int64
+  // Per-display routing: a screen whose show_* flag for the live kind
+  // is off stays black even while that kind is broadcasting. This
+  // mirrors the exact suppression the output window applies, so the
+  // operator's preview always matches the audience screen.
+  const slideShown = live ? liveKindShown(display, live.kind) : true
+  const overlaysShown = display.show_overlay !== 0
+
+  // Template binding for the live kind (bible/song). Media renders
+  // straight from fill.media with no template. A suppressed kind
+  // resolves to null so the tile falls back to its black surface.
+  const bindingId =
+    slideShown && live
+      ? live.kind === "bible"
+        ? display.bible_template_id.Valid
+          ? display.bible_template_id.Int64
           : null
-        : null
-    : null
+        : live.kind === "song"
+          ? display.song_template_id.Valid
+            ? display.song_template_id.Int64
+            : null
+          : null
+      : null
 
   const template = bindingId !== null ? templateById.get(bindingId) ?? null : null
-  const overlaysCoverSlide = activeOverlays.some((a) => {
-    const def = widgetDef(a.overlayKind as WidgetKind)
-    return parseRules(a.rulesJSON, def.defaultRules).cover_slide === true
-  })
 
-  // Slide identity for crossfade — same shape as the output route so
-  // the in-app preview and the audience-facing output animate in lock-
-  // step. Empty string when nothing is live so the tile fades to blank
-  // cleanly.
+  // cover_slide overlays blank the template beneath them — but only
+  // when overlays actually render on this display. A screen routed to
+  // hide overlays keeps showing its slide underneath.
+  const overlaysCoverSlide =
+    overlaysShown &&
+    activeOverlays.some((a) => {
+      const def = widgetDef(a.overlayKind as WidgetKind)
+      return parseRules(a.rulesJSON, def.defaultRules).cover_slide === true
+    })
+
+  // Blank the fill when the slide is suppressed so the renderer drops
+  // to a clean black surface rather than freezing on the last shown
+  // content. slideKey uses the output route's slot-identity shape
+  // verbatim — and crucially does NOT change when a routing flag flips
+  // — so a layer toggle refreshes the layer in place (an instant hard
+  // cut) on both surfaces, instead of the preview crossfading while the
+  // audience window hard-cuts. Parity at the toggle edge, not just in
+  // steady state.
+  const fill = slideShown ? live?.fill ?? {} : {}
   const slideKey = live
     ? `${live.kind}-${live.sourceItemId ?? "_"}-${live.slideIndex}`
     : "idle"
 
   return (
     <div
+      ref={setNodeRef}
+      style={style}
       className={cn(
-        "group relative aspect-video w-full shrink-0 overflow-hidden",
-        enabled ? "bg-muted/30" : "bg-muted/10"
+        "group shrink-0 bg-black border-b border-border/50 last:border-b-0",
+        isDragging && "relative z-10 opacity-80"
       )}
     >
-      <LiveTemplateView
-        template={overlaysCoverSlide ? null : template}
-        fill={live?.fill ?? {}}
-        slideKey={slideKey}
-        fontSizeOverride={
-          template
-            ? live?.fontSizeOverrideByTemplate?.[template.id]
-            : undefined
-        }
-        className="absolute inset-0 h-full w-full"
-      />
-      {enabled && (
-        <PreviewOverlays
-          displayId={display.id}
-          overlays={activeOverlays}
+      {/* Header strip: drag handle + display name on the left; action
+          buttons on the right, docked like the top toolbar (flush
+          full-height cells + hairline dividers) but hidden until the
+          tile is hovered, then each tints to its own color — same
+          reveal + tint language as the schedule item-list. */}
+      <div className="flex h-7 items-stretch justify-between border-b border-border/50">
+        <div className="flex min-w-0 items-center gap-0.5 pl-1 pr-2.5">
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            aria-label="Drag to reorder"
+            onClick={(e) => e.stopPropagation()}
+            className="cursor-grab touch-none grid size-5 shrink-0 place-items-center rounded text-muted-foreground/50 opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+          >
+            <GripVerticalIcon className="size-3" />
+          </button>
+          <span
+            className={cn(
+              "truncate text-[10px] font-medium uppercase tracking-wider",
+              enabled ? "text-muted-foreground/70" : "text-muted-foreground/40"
+            )}
+          >
+            {display.name}
+          </span>
+        </div>
+        <div className="flex shrink-0 items-stretch opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+          <span className="w-px bg-border/50" />
+          <HeaderButton
+            label={enabled ? "Disable output" : "Enable output"}
+            tone={enabled ? "destructive" : "emerald"}
+            disabled={setEnabled.isPending}
+            onClick={() => setEnabled.mutate({ id: display.id, enabled: !enabled })}
+          >
+            {enabled ? (
+              <Power className="size-3.5" />
+            ) : (
+              <PowerOff className="size-3.5" />
+            )}
+          </HeaderButton>
+          <span className="w-px bg-border/50" />
+          {LAYER_BUTTONS.map(({ layer, field, icon: Icon, label, tone }) => {
+            const on = display[field] !== 0
+            return (
+              <HeaderButton
+                key={layer}
+                label={`${on ? "Hide" : "Show"} ${label} on this display`}
+                tone={tone}
+                dim={!on}
+                disabled={setLayer.isPending}
+                onClick={() => setLayer.mutate({ id: display.id, layer, on: !on })}
+              >
+                <Icon className="size-3.5" />
+                {!on && (
+                  <Slash className="absolute inset-0 m-auto size-4 text-muted-foreground/70" />
+                )}
+              </HeaderButton>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* 16:9 audience surface — true black so an idle or disabled
+          output reads like a real dark screen. */}
+      <div
+        className={cn(
+          "relative aspect-video w-full overflow-hidden bg-black",
+          !enabled && "opacity-40"
+        )}
+      >
+        <LiveTemplateView
+          template={overlaysCoverSlide ? null : template}
+          fill={fill}
+          slideKey={slideKey}
+          fontSizeOverride={
+            template ? live?.fontSizeOverrideByTemplate?.[template.id] : undefined
+          }
+          className="absolute inset-0 h-full w-full"
         />
-      )}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between px-2 py-1 text-[10px] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-        <span className="truncate font-medium text-foreground">
-          {display.name}
-        </span>
-        {!enabled ? (
-          <span className="shrink-0 uppercase tracking-wider text-muted-foreground/80">
-            Disabled
-          </span>
-        ) : !template && live ? (
-          <span className="shrink-0 uppercase tracking-wider text-muted-foreground/80">
-            No {live.kind} template
-          </span>
-        ) : null}
+        {enabled && overlaysShown && (
+          <PreviewOverlays displayId={display.id} overlays={activeOverlays} />
+        )}
       </div>
     </div>
+  )
+}
+
+// HeaderButton is one icon button in a tile's header action strip, laid
+// out like the top toolbar's controls — a flush, full-height cell with
+// hairline dividers added by the caller — but borrowing the schedule
+// item-list's resting/hover treatment: muted at rest, tinting to its
+// tone color on hover. `dim` drops the resting icon a step (used for a
+// routed-off layer, which the caller also marks with a Slash overlay).
+function HeaderButton({
+  label,
+  tone,
+  dim,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string
+  tone: ToneKey
+  dim?: boolean
+  disabled?: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "relative grid w-7 place-items-center outline-none transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset disabled:opacity-50",
+        dim ? "text-muted-foreground/50" : "text-muted-foreground",
+        TONE_HOVER[tone]
+      )}
+    >
+      {children}
+    </button>
   )
 }

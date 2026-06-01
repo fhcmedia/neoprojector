@@ -27,6 +27,11 @@ export type Slide = {
   // sectionType is set for song slides so the show pane can colorize
   // the left accent by type (verse, chorus, bridge, …).
   sectionType?: string
+  // Presentation-slide DB id. Set only for slides that came from a
+  // presentation item — the show pane uses it for drag-to-reorder
+  // and per-slide delete actions. Undefined for bible/song/single-
+  // media slides.
+  presentationSlideId?: number
 }
 
 // PresentationPlayback carries the per-presentation runtime settings
@@ -113,6 +118,7 @@ export function usePresentationSlides(
       kind: "media",
       caption: title,
       body: title,
+      presentationSlideId: s.id,
       fill: {
         media: {
           mediaId: s.media_id,

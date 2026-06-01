@@ -133,7 +133,7 @@ function SongList({
                 <MusicIcon className="size-3.5 shrink-0 opacity-70" />
                 <span className="truncate">{song.title}</span>
                 {inSection && (
-                  <CheckIcon className="ml-auto size-3 shrink-0 text-emerald-500/70" />
+                  <CheckIcon className="ml-auto size-3 shrink-0 text-chart-2/70" />
                 )}
               </button>
             )

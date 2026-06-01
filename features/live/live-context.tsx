@@ -49,6 +49,11 @@ export type LiveSlide = {
   // treated as "no override, use template default."
   transitionKind?: string
   transitionDurationMs?: number
+  // Media id of the NEXT slide (for presentations with a known
+  // upcoming slide). Output windows preload this asset behind the
+  // scenes so the slide-change crossfade isn't waiting on decode
+  // when many outputs hit the asset simultaneously.
+  nextMediaId?: number
 }
 
 // ActiveOverlay = an overlay schedule item the operator has toggled
@@ -240,6 +245,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       font_size_override_by_template: overrideByTemplate,
       transition_kind: live?.transitionKind ?? "",
       transition_duration_ms: live?.transitionDurationMs ?? 0,
+      next_media_id: live?.nextMediaId ?? 0,
       fill: live
         ? new LiveFill({
             primary: asString(live.fill.primary),
