@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react"
-import { MusicIcon, PlayIcon, RadioIcon } from "lucide-react"
+import { MusicIcon, RadioIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDebounce } from "@/hooks/use-debounce"
 import { useSessionState } from "@/hooks/use-session-state"
@@ -152,32 +152,25 @@ function SongPreview({ songId }: { songId: number | null }) {
               <motion.div
                 key={sec.section.id}
                 variants={sectionTileVariants}
+                role="button"
+                tabIndex={0}
+                onClick={() => sendSection(sec, idx)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault()
+                    sendSection(sec, idx)
+                  }
+                }}
                 className={cn(
-                  "group relative flex flex-col border-b border-l-2 border-r border-b-border/40 border-r-border/40",
+                  "group relative flex cursor-pointer flex-col border-b border-l-2 border-r border-b-border/40 border-r-border/40 transition-colors",
                   t.border,
-                  liveHere && "bg-chart-2/5"
+                  liveHere ? "bg-chart-2/5" : "hover:bg-muted/40"
                 )}
               >
-                <div className="flex items-center justify-between pl-2.5 pr-1.5 py-1">
+                <div className="pl-2.5 pr-1.5 py-1">
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
                     {t.label}
                   </span>
-                  {liveHere ? (
-                    <span className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-chart-2">
-                      <RadioIcon className="size-2.5" />
-                      Live
-                    </span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => sendSection(sec, idx)}
-                      className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-0 transition-all hover:bg-foreground/10 hover:text-foreground group-hover:opacity-100"
-                      aria-label="Send to live"
-                    >
-                      <PlayIcon className="size-2.5" />
-                      Send
-                    </button>
-                  )}
                 </div>
                 <div className="flex-1 px-3 pb-2">
                   {sec.lines.map((line) => (

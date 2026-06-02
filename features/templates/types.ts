@@ -13,15 +13,17 @@ export type TemplateBody = {
   transition?: TemplateTransition
   // crossSlideUniform: aggregate the fit-to-box minimum ACROSS every
   // slide in the active item and apply that single value to every
-  // fitToBox box on every slide. Used by lower-thirds templates where
-  // a stable, consistent font across verses is the whole point. Off
-  // for audience templates: each slide independently shrinks to fit
-  // its own content. Within a slide, fitToBox boxes always coordinate
-  // to share one fontSize regardless of this flag — the flag only
-  // controls whether different slides talk to each other.
-  // Defaults to false; existing templates without the field behave
-  // as "per-slide only", which matches user-visible behavior in
-  // every non-lower-thirds default.
+  // fitToBox box on every slide — so the font never jumps verse-to-
+  // verse (or line-to-line) on the audience output. The operator
+  // window measures this once and broadcasts it as fontSizeOverride,
+  // so the display renders the final size directly instead of
+  // re-fitting in flight. Within a slide, fitToBox boxes always
+  // coordinate to share one fontSize regardless of this flag — the
+  // flag only controls whether different slides talk to each other.
+  // Defaults to TRUE: rock-stable typography across slides is the
+  // baseline the audience should see. Set explicitly false on a
+  // template to opt into per-slide auto-sizing (each verse fits its
+  // own content independently, larger but jumpy).
   crossSlideUniform?: boolean
 }
 
@@ -163,7 +165,10 @@ export function parseTemplateBody(json: string): TemplateBody {
       background: parsed.background ?? EMPTY_BODY.background,
       boxes: Array.isArray(parsed.boxes) ? parsed.boxes : [],
       transition: parsed.transition ?? DEFAULT_TRANSITION,
-      crossSlideUniform: parsed.crossSlideUniform === true,
+      // Default TRUE — absent flag means "stable across slides" so
+      // existing templates (and duplicates of old defaults) stop
+      // jumping verse-to-verse. Only an explicit false opts out.
+      crossSlideUniform: parsed.crossSlideUniform !== false,
     }
   } catch {
     return EMPTY_BODY

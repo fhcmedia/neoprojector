@@ -105,9 +105,10 @@ const DEFAULTS: DefaultTemplate[] = [
       transition: DEFAULT_FADE,
       // Single translation: medium weight throughout. Caption is the
       // only intentionally-lighter element (muted color + reg weight).
-      // fitToBox on so a too-long verse shrinks to fit its own slide,
-      // crossSlideUniform off so other verses keep their declared
-      // size — every slide auto-sizes independently.
+      // fitToBox on so a too-long verse shrinks; crossSlideUniform on
+      // so every verse in the passage renders at the SAME size — no
+      // jump as the operator advances.
+      crossSlideUniform: true,
       boxes: [
         box({
           slot: "primary",
@@ -137,9 +138,10 @@ const DEFAULTS: DefaultTemplate[] = [
       // Two translations: identical weight + color across primary and
       // secondary so neither reads as "the real one" and the other as
       // a footnote. Visual parity matches the editorial intent.
-      // fitToBox on, crossSlideUniform off: within a slide, primary
-      // and secondary share one fontSize (shrunk together if either
-      // overflows); across slides, each verse auto-sizes its own.
+      // fitToBox on, crossSlideUniform on: primary and secondary share
+      // one fontSize within a slide, and that size is uniform across
+      // every verse in the passage — no jump as the operator advances.
+      crossSlideUniform: true,
       boxes: [
         box({
           slot: "primary",
@@ -175,8 +177,10 @@ const DEFAULTS: DefaultTemplate[] = [
       transition: DEFAULT_FADE,
       // Three translations: same parity rule as 2-translation — equal
       // weight, equal color across all three.
-      // fitToBox on, crossSlideUniform off: all three boxes share
-      // one fontSize within a slide; each slide auto-sizes its own.
+      // fitToBox on, crossSlideUniform on: all three boxes share one
+      // fontSize within a slide, uniform across every verse — stable
+      // as the operator advances.
+      crossSlideUniform: true,
       boxes: [
         box({
           slot: "primary",
@@ -253,6 +257,8 @@ const DEFAULTS: DefaultTemplate[] = [
       // One big centered block. Audience reads the current line and only
       // the current line — no next-line preview here (that's a Stage
       // template thing, where worship leaders need the cue).
+      // crossSlideUniform on: every section renders at one stable size.
+      crossSlideUniform: true,
       boxes: [
         box({
           slot: "primary",
@@ -272,6 +278,9 @@ const DEFAULTS: DefaultTemplate[] = [
     body: {
       background: bgThemed(),
       transition: DEFAULT_FADE,
+      // crossSlideUniform on: current + next line hold one stable size
+      // across every section.
+      crossSlideUniform: true,
       boxes: [
         box({
           slot: "primary",
@@ -298,6 +307,9 @@ const DEFAULTS: DefaultTemplate[] = [
     body: {
       background: bgTransparent(),
       transition: DEFAULT_FADE,
+      // crossSlideUniform on: lower thirds over video need rock-stable
+      // type — no jump between lines.
+      crossSlideUniform: true,
       boxes: [
         box({
           slot: "primary",

@@ -26,6 +26,7 @@ import {
 } from "lucide-react"
 import { useShowTemplate } from "@/features/show/use-show-template"
 import { ScaledTemplate } from "@/features/templates/renderer"
+import { SongShowView, BibleShowView } from "@/features/show/show-content-views"
 import { songSectionType } from "@/features/songs/section-types"
 import { cn } from "@/lib/utils"
 import {
@@ -35,7 +36,6 @@ import {
 import { useUpdateBibleItem } from "@/features/schedule/api"
 import { useBibleEdit } from "@/features/schedule/bible-edit-context"
 import { useBibleTranslations } from "@/hooks/use-bible-translations"
-import type { ChapterVerse } from "@/bindings/neoprojector/services/bible"
 import { Service as Media } from "@/bindings/neoprojector/services/media"
 
 // Drop target tag that lets the operator drag external image files
@@ -66,6 +66,10 @@ export type AdHocBibleRef = {
   chapter: number
   verseStart: number
   verseEnd: number
+  // The verse that should be LIVE within the range. Picking verse 18
+  // of a 16-18 selection puts 18 live (not the first verse). Defaults
+  // to verseStart when unset.
+  liveVerse?: number
   // The "Scripture from Library" row this ref was appended to, when the
   // search bar / drawer pushed it live. Lets the live state correlate to
   // that schedule row so it highlights as live in the schedule.
@@ -75,13 +79,26 @@ export type AdHocBibleRef = {
 type Props = {
   activeItemId: number | undefined
   adHocBibleRef?: AdHocBibleRef
+  // Lets the show pane extend the ad-hoc range (e.g. clicking the
+  // next-verse preview grows the passage and goes live to it). Same
+  // handler the library uses to submit a typed reference.
+  onAdHocBibleRef?: (ref: AdHocBibleRef) => void
+  // Fired when the operator navigates bible FROM the show pane (verse
+  // click, arrows, preview). The library uses it to auto-collapse the
+  // now-redundant bible drawer. Not fired for drawer-driven changes.
+  onShowBibleNav?: () => void
 }
 
 // ShowPane renders each slide for the previewed source as a 16:9
 // thumbnail using the audience-display template binding. Source is
 // either a schedule item (clicked in the schedule) or an ad-hoc
 // bible range (typed in the library + Enter).
-export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
+export function ShowPane({
+  activeItemId,
+  adHocBibleRef,
+  onAdHocBibleRef,
+  onShowBibleNav,
+}: Props) {
   const qc = useQueryClient()
 
   // Resolved from cache every render (not memoized) so an in-place
@@ -108,7 +125,7 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
   // here — rather than waiting for a cache write — is what makes the
   // preview track each pick live. Only the row currently under edit is
   // affected; everything else previews its saved range.
-  const { target: bibleEditTarget } = useBibleEdit()
+  const { target: bibleEditTarget, setRange: setBibleEditRange } = useBibleEdit()
   const previewItem: ListServiceItemsWithContentRow | null =
     item &&
     item.kind === "bible" &&
@@ -131,6 +148,12 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
 
   const slides = adHocBibleRef ? adHocSlides.slides : itemSlides.slides
   const isLoading = adHocBibleRef ? adHocSlides.isLoading : itemSlides.isLoading
+  // Read-ahead verse (the one just past the range), shown dimmed in the
+  // bible view when the next-verse-preview setting is on. peekBack is the
+  // verse just before the range — only shown once the operator arms it
+  // by pressing up (rarely needed, so it stays out of the way).
+  const peek = adHocBibleRef ? adHocSlides.peek : itemSlides.peek
+  const peekBack = adHocBibleRef ? adHocSlides.peekBack : itemSlides.peekBack
   // playback is set only when the current item is a presentation —
   // drives auto-advance below and broadcasts the per-presentation
   // transition to audience output.
@@ -163,6 +186,17 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
   const { state: bibleTranslations } = useBibleTranslations()
 
   const { live, setLive, isLive, registerNavigators } = useLive()
+
+  // Latest "advance into the next/previous verse" actions. The arrow-key
+  // navigators are registered in an effect defined ABOVE selectPeek
+  // (const TDZ), so they reach these through refs — read at keypress
+  // time, always current — instead of stale or not-yet-defined values.
+  const selectPeekRef = useRef<(() => void) | null>(null)
+  const selectPeekBackRef = useRef<(() => void) | null>(null)
+  // Stable handle to onShowBibleNav so the nav call sites don't need it
+  // in their dependency arrays (it can change identity each render).
+  const onShowBibleNavRef = useRef(onShowBibleNav)
+  onShowBibleNavRef.current = onShowBibleNav
   const { data: displays } = useDisplays()
   const { data: allTemplates } = useTemplates()
 
@@ -180,6 +214,14 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
   const [autoPaused, setAutoPaused] = useState(false)
   useEffect(() => {
     setAutoPaused(false)
+  }, [sourceItemId])
+
+  // Whether the up-direction preview (peekBack) is revealed. Off until
+  // the operator presses up — going up is rare, so we keep it hidden
+  // until they signal it. Reset when the source changes.
+  const [upPeekArmed, setUpPeekArmed] = useState(false)
+  useEffect(() => {
+    setUpPeekArmed(false)
   }, [sourceItemId])
 
   // Listen for OS-level file drops landing on the show pane while a
@@ -278,20 +320,32 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
   // defeating the keystroke-fluency the typed-ref flow is for.
   // Re-runs only when the ref itself changes (keyed on the range
   // so re-typing the same range doesn't double-broadcast).
+  // Which verse the operator just picked — goes live even when the
+  // range grew around it. Falls back to the range start.
+  const adHocLiveVerse = adHocBibleRef?.liveVerse ?? adHocBibleRef?.verseStart
   const adHocKey = adHocBibleRef
-    ? `${adHocBibleRef.book}-${adHocBibleRef.chapter}-${adHocBibleRef.verseStart}-${adHocBibleRef.verseEnd}`
+    ? `${adHocBibleRef.book}-${adHocBibleRef.chapter}-${adHocBibleRef.verseStart}-${adHocBibleRef.verseEnd}-${adHocLiveVerse}`
     : null
   useEffect(() => {
     if (!adHocBibleRef) return
     if (adHocSlides.isLoading) return
-    const first = adHocSlides.slides[0]
-    if (!first) return
+    // Broadcast the picked verse, not necessarily the first one — when
+    // the operator builds a passage by clicking down the chapter, the
+    // earlier verses stay in the list while the clicked verse goes live.
+    const target = adHocLiveVerse ?? adHocBibleRef.verseStart
+    let idx = adHocSlides.slides.findIndex(
+      (s) => Number(s.caption.split(":").pop()) === target
+    )
+    if (idx < 0) idx = 0
+    const slide = adHocSlides.slides[idx]
+    if (!slide) return
     setLive({
-      kind: first.kind,
+      kind: slide.kind,
       sourceItemId,
-      slideIndex: 0,
-      fill: first.fill,
+      slideIndex: idx,
+      fill: slide.fill,
       fontSizeOverrideByTemplate: templateMins,
+      bibleRef: slide.bibleRef,
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adHocKey, adHocSlides.isLoading, templateMins, sourceItemId])
@@ -329,54 +383,13 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
         transitionKind: playback?.transitionKind,
         transitionDurationMs: playback?.transitionDurationMs,
         nextMediaId: nextMediaIdAfter(idx),
+        bibleRef: s.bibleRef,
       })
+      if (s.kind === "bible") onShowBibleNavRef.current?.()
     }
-    // Bible-grow: when arrow nav runs off the end (or start) of a
-    // single bible schedule item, try to extend its verse range by
-    // one and let the slides update reactively. Capped by the chapter
-    // — qc.getQueryData reads the cached chapter rows the slide hook
-    // already fetched, so we never re-IPC just to check the bound.
-    function bibleGrow(direction: "forward" | "backward"): boolean {
-      if (!item || item.kind !== "bible") return false
-      const chapterRows =
-        qc.getQueryData<ChapterVerse[]>([
-          "bible",
-          "verses",
-          item.book,
-          item.chapter,
-          bibleTranslations.primary,
-        ]) ?? []
-      const maxVerse = chapterRows.reduce(
-        (m, v) => (v.verse > m ? v.verse : m),
-        0
-      )
-      if (direction === "forward") {
-        if (item.verse_end + 1 > maxVerse) return false
-        const nextEnd = item.verse_end + 1
-        updateBibleItem.mutate({
-          itemId: item.id,
-          ref: {
-            book: item.book,
-            chapter: item.chapter,
-            verse_start: item.verse_start,
-            verse_end: nextEnd,
-          },
-        })
-        return true
-      }
-      if (item.verse_start <= 1) return false
-      const prevStart = item.verse_start - 1
-      updateBibleItem.mutate({
-        itemId: item.id,
-        ref: {
-          book: item.book,
-          chapter: item.chapter,
-          verse_start: prevStart,
-          verse_end: item.verse_end,
-        },
-      })
-      return true
-    }
+    // Off-the-end growth (forward/back) now runs through selectPeek /
+    // selectPeekBack (via refs), which grow AND go live in one press and
+    // cap themselves at the chapter edge (no peek slide → no-op).
     registerNavigators({
       next: () => {
         const cur = liveIndex()
@@ -395,15 +408,23 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
           setIndex(0)
           return
         }
-        bibleGrow("forward")
+        // Advance into the next verse — grow the passage AND go live in
+        // one keypress, same as clicking the preview. selectPeek caps
+        // itself at the chapter end (no next verse → no-op), and is a
+        // no-op for non-bible kinds.
+        selectPeekRef.current?.()
       },
       prev: () => {
+        // Heading up — reveal the up-preview (kept hidden until now).
+        setUpPeekArmed(true)
         const cur = liveIndex()
         if (cur > 0) {
           setIndex(cur - 1)
           return
         }
-        bibleGrow("backward")
+        // At the top — grow upward and go live in one press, mirroring
+        // forward. Caps at verse 1 (no peekBack → no-op).
+        selectPeekBackRef.current?.()
       },
     })
   }, [
@@ -508,6 +529,153 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
       .filter((t) => parseTemplateBody(t.data_json).crossSlideUniform === true)
   }, [allTemplates, displays, bibleTemplate, songTemplate, slideKind])
 
+  // Push the slide at idx live, or clear it if it's already live (a
+  // second click on the live unit blanks output — same toggle the old
+  // template tiles had). Song/bible carry no playback fields, so this
+  // is the whole interaction for the text views.
+  const selectSlide = useCallback(
+    (idx: number) => {
+      const slide = slides[idx]
+      if (!slide) return
+      if (isLive(slide.kind, sourceItemId, idx)) {
+        setLive(null)
+        return
+      }
+      setLive({
+        kind: slide.kind,
+        sourceItemId,
+        slideIndex: idx,
+        fill: slide.fill,
+        fontSizeOverrideByTemplate: templateMins,
+        bibleRef: slide.bibleRef,
+      })
+      if (slide.kind === "bible") onShowBibleNavRef.current?.()
+    },
+    [slides, sourceItemId, isLive, setLive, templateMins]
+  )
+
+  // Click the dimmed next-verse preview: grow the passage to include
+  // that verse AND go live to it in one action — no separate "confirm"
+  // step. Three sources, three ways to grow:
+  //   - ad-hoc range  → extend the typed ref (also grows the inbox row)
+  //   - bible row being edited → extend the tentative range only
+  //   - plain bible item → persist the grown range, then broadcast
+  const selectPeek = useCallback(() => {
+    if (!peek) return
+    const peekVerse = Number(peek.caption.split(":").pop())
+    if (!Number.isFinite(peekVerse)) return
+    onShowBibleNavRef.current?.()
+    if (adHocBibleRef) {
+      onAdHocBibleRef?.({
+        ...adHocBibleRef,
+        verseEnd: Math.max(adHocBibleRef.verseEnd, peekVerse),
+        liveVerse: peekVerse,
+      })
+      return
+    }
+    if (
+      item &&
+      item.kind === "bible" &&
+      bibleEditTarget?.itemId === item.id
+    ) {
+      setBibleEditRange(bibleEditTarget.verseStart, peekVerse)
+      return
+    }
+    if (item && item.kind === "bible") {
+      updateBibleItem.mutate({
+        itemId: item.id,
+        ref: {
+          book: item.book,
+          chapter: item.chapter,
+          verse_start: item.verse_start,
+          verse_end: peekVerse,
+        },
+      })
+      // The grown verse appends at the end of the list — broadcast it
+      // now so going live doesn't wait on the mutation round-trip.
+      setLive({
+        kind: "bible",
+        sourceItemId,
+        slideIndex: slides.length,
+        fill: peek.fill,
+        fontSizeOverrideByTemplate: templateMins,
+        bibleRef: peek.bibleRef,
+      })
+    }
+  }, [
+    peek,
+    adHocBibleRef,
+    onAdHocBibleRef,
+    item,
+    bibleEditTarget,
+    setBibleEditRange,
+    updateBibleItem,
+    setLive,
+    sourceItemId,
+    slides.length,
+    templateMins,
+  ])
+  // Expose the latest selectPeek to the arrow-key navigators (above).
+  selectPeekRef.current = selectPeek
+
+  // Click the armed up-preview (verse just before the range): grow the
+  // passage upward and go live to it, mirroring selectPeek. The grown
+  // verse prepends at index 0 (existing verses shift down).
+  const selectPeekBack = useCallback(() => {
+    if (!peekBack) return
+    const v = Number(peekBack.caption.split(":").pop())
+    if (!Number.isFinite(v)) return
+    onShowBibleNavRef.current?.()
+    if (adHocBibleRef) {
+      onAdHocBibleRef?.({
+        ...adHocBibleRef,
+        verseStart: Math.min(adHocBibleRef.verseStart, v),
+        liveVerse: v,
+      })
+      return
+    }
+    if (
+      item &&
+      item.kind === "bible" &&
+      bibleEditTarget?.itemId === item.id
+    ) {
+      setBibleEditRange(v, bibleEditTarget.verseEnd)
+      return
+    }
+    if (item && item.kind === "bible") {
+      updateBibleItem.mutate({
+        itemId: item.id,
+        ref: {
+          book: item.book,
+          chapter: item.chapter,
+          verse_start: v,
+          verse_end: item.verse_end,
+        },
+      })
+      setLive({
+        kind: "bible",
+        sourceItemId,
+        slideIndex: 0,
+        fill: peekBack.fill,
+        fontSizeOverrideByTemplate: templateMins,
+        bibleRef: peekBack.bibleRef,
+      })
+    }
+  }, [
+    peekBack,
+    adHocBibleRef,
+    onAdHocBibleRef,
+    item,
+    bibleEditTarget,
+    setBibleEditRange,
+    updateBibleItem,
+    setLive,
+    sourceItemId,
+    templateMins,
+  ])
+  // Expose the latest up-advance to the arrow-key navigators (above).
+  selectPeekBackRef.current = selectPeekBack
+
   // Empty state copy depends on which source is active so the
   // operator sees the right next-step prompt.
   const emptyPrompt = adHocBibleRef
@@ -515,7 +683,7 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
     : "Pick an item in the schedule to preview"
 
   return (
-    <div className="relative h-full w-full bg-background">
+    <div className="relative h-full w-full select-none bg-background">
       <div className="pointer-events-none absolute left-3 top-2 z-10 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
         Show
       </div>
@@ -568,6 +736,50 @@ export function ShowPane({ activeItemId, adHocBibleRef }: Props) {
                 if (!slide) return
                 setLive({ kind: slide.kind as "media", sourceItemId: item.id, slideIndex: 0, fill: slide.fill })
               }} />
+            </motion.div>
+          ) : slideKind === "song" ? (
+            <motion.div
+              key={`song-${activeItemId ?? "adhoc"}`}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
+              className="flex flex-1 flex-col overflow-hidden"
+            >
+              <SongShowView
+                slides={slides}
+                isLiveAt={(idx) =>
+                  isLive(slides[idx].kind, sourceItemId, idx)
+                }
+                onSelect={selectSlide}
+              />
+            </motion.div>
+          ) : slideKind === "bible" ? (
+            <motion.div
+              key={`bible-${activeItemId ?? "adhoc"}`}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
+              className="flex flex-1 flex-col overflow-hidden"
+            >
+              <BibleShowView
+                slides={slides}
+                isLiveAt={(idx) =>
+                  isLive(slides[idx].kind, sourceItemId, idx)
+                }
+                onSelect={selectSlide}
+                peek={
+                  bibleTranslations.nextVersePreview ? peek ?? null : null
+                }
+                onPeekSelect={selectPeek}
+                peekBack={
+                  bibleTranslations.nextVersePreview && upPeekArmed
+                    ? peekBack ?? null
+                    : null
+                }
+                onPeekBackSelect={selectPeekBack}
+              />
             </motion.div>
           ) : (
             <motion.div

@@ -16,12 +16,19 @@ export type BibleTranslations = {
   primary: string
   secondary: string | null
   tertiary: string | null
+  // Show-pane read-ahead: when true the Bible show view appends a
+  // dimmed preview of the verse just past the selected range, so the
+  // operator can see what's coming before advancing into it. Off by
+  // default. (Persisted alongside the translation choices since both
+  // are Bible-view preferences.)
+  nextVersePreview: boolean
 }
 
 const DEFAULT_STATE: BibleTranslations = {
   primary: "KJV",
   secondary: null,
   tertiary: null,
+  nextVersePreview: false,
 }
 
 function readStored(): BibleTranslations {
@@ -41,6 +48,7 @@ type Ctx = {
   setPrimary: (t: string) => void
   setSecondary: (t: string | null) => void
   setTertiary: (t: string | null) => void
+  setNextVersePreview: (v: boolean) => void
 }
 
 const BibleTranslationsContext = createContext<Ctx>({
@@ -48,6 +56,7 @@ const BibleTranslationsContext = createContext<Ctx>({
   setPrimary: () => {},
   setSecondary: () => {},
   setTertiary: () => {},
+  setNextVersePreview: () => {},
 })
 
 export function BibleTranslationsProvider({ children }: { children: ReactNode }) {
@@ -65,6 +74,8 @@ export function BibleTranslationsProvider({ children }: { children: ReactNode })
         setPrimary: (t) => setState((s) => ({ ...s, primary: t })),
         setSecondary: (t) => setState((s) => ({ ...s, secondary: t })),
         setTertiary: (t) => setState((s) => ({ ...s, tertiary: t })),
+        setNextVersePreview: (v) =>
+          setState((s) => ({ ...s, nextVersePreview: v })),
       }}
     >
       {children}

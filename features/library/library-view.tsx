@@ -2,7 +2,14 @@ import { useEffect, useRef, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import { useNavigate } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { SearchIcon, PencilIcon, XIcon, CheckIcon } from "lucide-react"
+import {
+  SearchIcon,
+  PencilIcon,
+  XIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+} from "lucide-react"
 import { useSessionState } from "@/hooks/use-session-state"
 import { useDebounce } from "@/hooks/use-debounce"
 import { Dialogs, Events } from "@wailsio/runtime"
@@ -12,6 +19,7 @@ import type { BibleBook } from "@/bindings/neoprojector/database"
 import type { AdHocBibleRef } from "@/features/show/show-pane"
 import type { ChapterVerse } from "@/bindings/neoprojector/services/bible"
 import { useLive } from "@/features/live/live-context"
+import { useLibraryAutoCollapse } from "@/hooks/use-library-auto-collapse"
 import { useBibleTranslations } from "@/hooks/use-bible-translations"
 import { Input } from "@/components/input"
 import { cn } from "@/lib/utils"
@@ -76,11 +84,24 @@ type LibraryViewProps = {
   // what "click" means (typically: append to the auto-inbox + focus
   // the new schedule item so its preview shows in the show pane).
   onMediaPick?: (mediaId: number) => void
+  // Animated collapse/expand of the bottom library panel (the parent
+  // owns the panel handle + the slide animation).
+  onCollapseRequest?: () => void
+  onExpandRequest?: () => void
+  // Whether the panel is currently collapsed — drives the chevron.
+  collapsed?: boolean
+  // Bumped by the show pane each time the operator navigates bible from
+  // there — the cue to auto-collapse the (now redundant) bible drawer.
+  showNavTick?: number
 }
 
 export function LibraryView({
   onAdHocBibleRef,
   onMediaPick,
+  onCollapseRequest,
+  onExpandRequest,
+  collapsed = false,
+  showNavTick = 0,
 }: LibraryViewProps = {}) {
   const navigate = useNavigate()
   // Library state is session-persisted: active tab + per-tab search
@@ -101,6 +122,22 @@ export function LibraryView({
     cancel: cancelBibleEdit,
   } = useBibleEdit()
   const activeTab: Tab = bibleEditTarget ? "bible" : active
+
+  // Auto-collapse: the show pane bumps `showNavTick` whenever the
+  // operator navigates bible from THERE (verse click, arrows, preview) —
+  // that's the moment the bible drawer becomes redundant, so slide it
+  // down to its tab bar. We deliberately do NOT collapse on drawer
+  // clicks, so building a passage in the drawer still works. Reopens on
+  // any tab click. Fires only on the tick so switching tabs etc. never
+  // triggers a collapse on its own.
+  const { enabled: autoCollapseEnabled } = useLibraryAutoCollapse()
+  useEffect(() => {
+    if (showNavTick === 0) return
+    if (!autoCollapseEnabled) return
+    if (activeTab !== "bible") return
+    onCollapseRequest?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showNavTick])
 
   const [bibleSearch, setBibleSearch] = useSessionState<string>(
     "neoprojector.bibleSearch",
@@ -196,6 +233,9 @@ export function LibraryView({
                 key={t.key}
                 type="button"
                 onClick={() => {
+                  // Any tab click reopens the drawer if it was
+                  // auto-collapsed while presenting.
+                  onExpandRequest?.()
                   // Leaving the Bible tab abandons any in-progress edit.
                   if (bibleEditTarget && t.key !== "bible") cancelBibleEdit()
                   setActive(t.key)
@@ -332,6 +372,25 @@ export function LibraryView({
             )}
           </AnimatePresence>
         </div>
+        {/* Manual collapse/expand. Pinned to the right of the tab bar so
+            it stays reachable even when the drawer is collapsed to just
+            the tabs. Points down to put the drawer away, up to bring it
+            back. */}
+        <button
+          type="button"
+          onClick={() =>
+            collapsed ? onExpandRequest?.() : onCollapseRequest?.()
+          }
+          aria-label={collapsed ? "Expand library" : "Collapse library"}
+          title={collapsed ? "Expand library" : "Collapse library"}
+          className="grid h-full w-8 shrink-0 place-items-center text-muted-foreground/60 transition-colors hover:text-foreground"
+        >
+          {collapsed ? (
+            <ChevronUpIcon className="size-3.5" />
+          ) : (
+            <ChevronDownIcon className="size-3.5" />
+          )}
+        </button>
       </div>
       <div className="min-h-0 flex-1 overflow-hidden">
         <AnimatePresence mode="wait" initial={false}>

@@ -27,6 +27,10 @@ export type Slide = {
   // sectionType is set for song slides so the show pane can colorize
   // the left accent by type (verse, chorus, bridge, …).
   sectionType?: string
+  // bibleRef is set for bible slides so live state can carry the exact
+  // reference — the library drawer follows it to keep its highlight in
+  // sync as the operator navigates from the show pane.
+  bibleRef?: { book: string; chapter: number; verse: number }
   // Presentation-slide DB id. Set only for slides that came from a
   // presentation item — the show pane uses it for drag-to-reorder
   // and per-slide delete actions. Undefined for bible/song/single-
@@ -169,7 +173,12 @@ function lookupVerse(verses: ChapterVerse[] | undefined, verse: number): string 
 
 export function useBibleSlides(
   item: ListServiceItemsWithContentRow | null
-): { slides: Slide[]; isLoading: boolean } {
+): {
+  slides: Slide[]
+  isLoading: boolean
+  peek: Slide | null
+  peekBack: Slide | null
+} {
   const { state: translations } = useBibleTranslations()
   const enabled = !!item && item.kind === "bible"
 
@@ -192,35 +201,65 @@ export function useBibleSlides(
     enabled && !!translations.tertiary
   )
 
-  if (!enabled || !item) return { slides: [], isLoading: false }
+  if (!enabled || !item)
+    return { slides: [], isLoading: false, peek: null, peekBack: null }
   const isLoading =
     primary.isLoading ||
     (!!translations.secondary && secondary.isLoading) ||
     (!!translations.tertiary && tertiary.isLoading)
 
   const bookLabel = item.book_kjv || item.book
+  const slide = buildBibleSlide(
+    item.book,
+    bookLabel,
+    item.chapter,
+    translations,
+    primary.data,
+    secondary.data,
+    tertiary.data
+  )
   const slides: Slide[] = []
   for (let n = item.verse_start; n <= item.verse_end; n++) {
-    const pText = lookupVerse(primary.data, n)
-    if (!pText) continue
-    const fill: SlotFill = {
-      primary: pText,
-      caption: `${bookLabel} ${item.chapter}:${n}`,
-    }
-    if (translations.secondary) {
-      fill.secondary = lookupVerse(secondary.data, n)
-    }
-    if (translations.tertiary) {
-      fill.tertiary = lookupVerse(tertiary.data, n)
-    }
-    slides.push({
+    const s = slide(n)
+    if (s) slides.push(s)
+  }
+  // Read-ahead/behind: the verses just after / before the range, same
+  // chapter. Null at a chapter edge. The show pane shows peek dimmed
+  // (next-verse preview) and peekBack only once the operator arms it
+  // by pressing up.
+  const peek = slide(item.verse_end + 1)
+  const peekBack = slide(item.verse_start - 1)
+  return { slides, isLoading, peek, peekBack }
+}
+
+// Builds a closure that produces one bible Slide for a given verse
+// number (or null when that verse has no text in the primary
+// translation). Shared by the range loop and the read-ahead peek so
+// both carry identical multi-translation fills.
+function buildBibleSlide(
+  book: string,
+  bookLabel: string,
+  chapter: number,
+  translations: { secondary: string | null; tertiary: string | null },
+  primaryData: ChapterVerse[] | undefined,
+  secondaryData: ChapterVerse[] | undefined,
+  tertiaryData: ChapterVerse[] | undefined
+): (n: number) => Slide | null {
+  return (n: number) => {
+    const pText = lookupVerse(primaryData, n)
+    if (!pText) return null
+    const caption = `${bookLabel} ${chapter}:${n}`
+    const fill: SlotFill = { primary: pText, caption }
+    if (translations.secondary) fill.secondary = lookupVerse(secondaryData, n)
+    if (translations.tertiary) fill.tertiary = lookupVerse(tertiaryData, n)
+    return {
       kind: "bible",
-      caption: `${bookLabel} ${item.chapter}:${n}`,
+      caption,
       body: pText,
       fill,
-    })
+      bibleRef: { book, chapter, verse: n },
+    }
   }
-  return { slides, isLoading }
 }
 
 // Ad-hoc bible slides built from a typed reference (library search),
@@ -232,7 +271,12 @@ export function useAdHocBibleSlides(
   chapter: number | undefined,
   verseStart: number | undefined,
   verseEnd: number | undefined
-): { slides: Slide[]; isLoading: boolean } {
+): {
+  slides: Slide[]
+  isLoading: boolean
+  peek: Slide | null
+  peekBack: Slide | null
+} {
   const { state: translations } = useBibleTranslations()
   const enabled = !!book && !!chapter
   const primary = useChapterIn(book, chapter, translations.primary, enabled)
@@ -250,35 +294,30 @@ export function useAdHocBibleSlides(
   )
 
   if (!enabled || verseStart === undefined) {
-    return { slides: [], isLoading: false }
+    return { slides: [], isLoading: false, peek: null, peekBack: null }
   }
   const isLoading =
     primary.isLoading ||
     (!!translations.secondary && secondary.isLoading) ||
     (!!translations.tertiary && tertiary.isLoading)
   const end = verseEnd ?? verseStart
+  const slide = buildBibleSlide(
+    book!,
+    bookLabel,
+    chapter!,
+    translations,
+    primary.data,
+    secondary.data,
+    tertiary.data
+  )
   const slides: Slide[] = []
   for (let n = verseStart; n <= end; n++) {
-    const pText = lookupVerse(primary.data, n)
-    if (!pText) continue
-    const fill: SlotFill = {
-      primary: pText,
-      caption: `${bookLabel} ${chapter}:${n}`,
-    }
-    if (translations.secondary) {
-      fill.secondary = lookupVerse(secondary.data, n)
-    }
-    if (translations.tertiary) {
-      fill.tertiary = lookupVerse(tertiary.data, n)
-    }
-    slides.push({
-      kind: "bible",
-      caption: `${bookLabel} ${chapter}:${n}`,
-      body: pText,
-      fill,
-    })
+    const s = slide(n)
+    if (s) slides.push(s)
   }
-  return { slides, isLoading }
+  const peek = slide(end + 1)
+  const peekBack = slide(verseStart - 1)
+  return { slides, isLoading, peek, peekBack }
 }
 
 // ---- song -----------------------------------------------------------------
@@ -390,6 +429,11 @@ export function useItemSlides(
   slides: Slide[]
   isLoading: boolean
   playback: PresentationPlayback | null
+  // Read-ahead / read-behind verses for bible items (the verse after /
+  // before the range); null otherwise. Surfaced by the show pane's
+  // next-verse preview (peek) and armed up-preview (peekBack).
+  peek?: Slide | null
+  peekBack?: Slide | null
 } {
   const bible = useBibleSlides(item)
   const song = useSongSlides(item)

@@ -5,6 +5,7 @@ import type { BibleBook } from "@/bindings/neoprojector/database"
 import type { ChapterVerse } from "@/bindings/neoprojector/services/bible"
 import { useSessionState } from "@/hooks/use-session-state"
 import { useBibleEdit } from "@/features/schedule/bible-edit-context"
+import { useLive } from "@/features/live/live-context"
 import { parseBibleRef } from "@/features/schedule/bible-ref"
 import { bibleCategoryBorderClass } from "@/features/bible/categories"
 import type { AdHocBibleRef } from "@/features/show/show-pane"
@@ -16,6 +17,28 @@ type Props = {
   // populates the show pane and auto-broadcasts the first slide.
   // Same flow as typing-and-Enter in the search bar.
   onSubmit?: (ref: AdHocBibleRef) => void
+}
+
+// Resolve the next verse range when a verse is picked. A plain click on
+// the contiguous next verse (end + 1) GROWS the range, and a click
+// inside the current range keeps it (just re-targets which verse is
+// live) — so the operator builds a passage by clicking down the chapter
+// and each pick adds to the Show-pane list. A jump (gap, or above the
+// start) restarts a fresh single-verse selection. Shift-click always
+// spans min..max.
+function nextVerseRange(
+  start: number | undefined,
+  end: number | undefined,
+  verse: number,
+  extend: boolean
+): [number, number] {
+  if (extend && start !== undefined) {
+    return [Math.min(start, verse), Math.max(end ?? start, verse)]
+  }
+  if (start === undefined || end === undefined) return [verse, verse]
+  if (verse >= start && verse <= end) return [start, end]
+  if (verse === end + 1) return [start, verse]
+  return [verse, verse]
 }
 
 export function BibleTab({ search, onSubmit }: Props) {
@@ -52,6 +75,32 @@ export function BibleTab({ search, onSubmit }: Props) {
     "neoprojector.bibleVerseEnd",
     1
   )
+
+  // Follow live: when the operator navigates bible from the show pane,
+  // move the drawer's highlight to the live verse so the two stay in
+  // sync. We only jump when the live verse lands OUTSIDE the drawer's
+  // current selection — a verse already within range came from the
+  // drawer (or is already covered), so we leave the selection intact
+  // (preserves an accumulated/shift-selected range). Editing (armed)
+  // owns the selection, so skip then.
+  const { live } = useLive()
+  const liveBible = live?.kind === "bible" ? live.bibleRef : undefined
+  useEffect(() => {
+    if (armed || !liveBible) return
+    const covered =
+      liveBible.book === book &&
+      liveBible.chapter === chapter &&
+      verseStart !== undefined &&
+      verseEnd !== undefined &&
+      liveBible.verse >= verseStart &&
+      liveBible.verse <= verseEnd
+    if (covered) return
+    setBook(liveBible.book)
+    setChapter(liveBible.chapter)
+    setVerseStart(liveBible.verse)
+    setVerseEnd(liveBible.verse)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveBible?.book, liveBible?.chapter, liveBible?.verse, armed])
 
   // When an edit ends (commit OR cancel), park the browse position right
   // where the edit was, so the drawer simply stays put — it never jumps
@@ -141,33 +190,36 @@ export function BibleTab({ search, onSubmit }: Props) {
             // Armed: update the tentative range only. The preview
             // follows; nothing persists and the projector output is
             // never touched until the operator confirms.
-            let nextStart = verse
-            let nextEnd = verse
-            if (extend) {
-              nextStart = Math.min(target.verseStart, verse)
-              nextEnd = Math.max(target.verseEnd, verse)
-            }
+            const [nextStart, nextEnd] = nextVerseRange(
+              target.verseStart,
+              target.verseEnd,
+              verse,
+              extend
+            )
             setRange(nextStart, nextEnd)
             return
           }
-          // Ad-hoc browse: update the selection and push it live.
-          let nextStart = verse
-          let nextEnd = verse
-          if (extend && verseStart !== undefined) {
-            nextStart = Math.min(verseStart, verse)
-            nextEnd = Math.max(verseEnd ?? verseStart, verse)
-          }
+          // Ad-hoc browse: grow/keep the selection and push it live.
+          const [nextStart, nextEnd] = nextVerseRange(
+            verseStart,
+            verseEnd,
+            verse,
+            extend
+          )
           setVerseStart(nextStart)
           setVerseEnd(nextEnd)
           if (book && chapter !== undefined) {
             const bookLabel =
               books?.find((b) => b.name === book)?.name_kjv ?? book
+            // liveVerse is the verse just clicked — it goes live even
+            // when the range grew around it.
             onSubmit?.({
               book,
               bookLabel,
               chapter,
               verseStart: nextStart,
               verseEnd: nextEnd,
+              liveVerse: verse,
             })
           }
         }}

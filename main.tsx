@@ -6,6 +6,7 @@ import { AnimationsProvider } from "@/hooks/use-animations";
 import { ServiceNameFormatProvider } from "@/hooks/use-service-name-format";
 import { BibleTranslationsProvider } from "@/hooks/use-bible-translations";
 import { VimModeProvider } from "@/hooks/use-vim-mode";
+import { LibraryAutoCollapseProvider } from "@/hooks/use-library-auto-collapse";
 import { LiveProvider } from "@/features/live/live-context";
 import { routeTree } from "./routeTree.gen";
 import "./app.css";
@@ -32,11 +33,13 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       <ServiceNameFormatProvider>
         <BibleTranslationsProvider>
           <VimModeProvider>
-            <QueryClientProvider client={queryClient}>
-              <LiveProvider>
-                <RouterProvider router={router} />
-              </LiveProvider>
-            </QueryClientProvider>
+            <LibraryAutoCollapseProvider>
+              <QueryClientProvider client={queryClient}>
+                <LiveProvider>
+                  <RouterProvider router={router} />
+                </LiveProvider>
+              </QueryClientProvider>
+            </LibraryAutoCollapseProvider>
           </VimModeProvider>
         </BibleTranslationsProvider>
       </ServiceNameFormatProvider>

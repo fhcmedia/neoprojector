@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import {
   createFileRoute,
   redirect,
@@ -11,6 +11,7 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/resizable"
+import type { PanelImperativeHandle } from "react-resizable-panels"
 import { ServiceList } from "@/features/schedule/service-list"
 import { ScheduleView } from "@/features/schedule/schedule-view"
 import { EditorPanel } from "@/features/schedule/editor-panel"
@@ -115,6 +116,38 @@ function Projector() {
   // the session — closing/reopening the app drops it.
   const [adHocBibleRef, setAdHocBibleRef] = useState<AdHocBibleRef | undefined>(
     undefined
+  )
+
+  // Imperative handle for the bottom library panel — LibraryView drives
+  // collapse()/expand() on it for the auto-hide-while-presenting feature.
+  const libraryPanelRef = useRef<PanelImperativeHandle | null>(null)
+  // Bumped whenever the show pane navigates bible (verse click, arrows,
+  // preview). LibraryView watches it to auto-collapse the now-redundant
+  // bible drawer — drawer clicks don't bump it, so drawer use is safe.
+  const [showBibleNavTick, setShowBibleNavTick] = useState(0)
+
+  // Animate the library collapse/expand. react-resizable-panels snaps
+  // size changes, so we enable a flex-grow CSS transition (house easing,
+  // matching the editor panel) only for the duration of a PROGRAMMATIC
+  // collapse/expand — manual handle dragging stays instant/responsive.
+  // The global data-no-anim switch zeroes it like every other transition.
+  const [libAnimating, setLibAnimating] = useState(false)
+  // Reactive collapsed state — drives the chevron's direction. Synced
+  // from the panel's own resize events so manual handle-drags update it
+  // too, not just our programmatic collapse/expand.
+  const [libraryCollapsed, setLibraryCollapsed] = useState(false)
+  const animateLibrary = useCallback((fn: () => void) => {
+    setLibAnimating(true)
+    fn()
+    window.setTimeout(() => setLibAnimating(false), 360)
+  }, [])
+  const collapseLibrary = useCallback(
+    () => animateLibrary(() => libraryPanelRef.current?.collapse()),
+    [animateLibrary]
+  )
+  const expandLibrary = useCallback(
+    () => animateLibrary(() => libraryPanelRef.current?.expand()),
+    [animateLibrary]
   )
 
   // Selecting a schedule item drops any ad-hoc bible source (they're
@@ -314,6 +347,8 @@ function Projector() {
             <ShowPane
               activeItemId={activeItemId}
               adHocBibleRef={adHocBibleRef}
+              onAdHocBibleRef={submitAdHocBibleRef}
+              onShowBibleNav={() => setShowBibleNavTick((t) => t + 1)}
             />
           </ResizablePanel>
           <ResizableHandle />
@@ -323,10 +358,32 @@ function Projector() {
         </ResizablePanelGroup>
       </ResizablePanel>
       <ResizableHandle />
-      <ResizablePanel defaultSize="30%" minSize="10%" maxSize="60%">
+      <ResizablePanel
+        defaultSize="30%"
+        minSize="10%"
+        maxSize="60%"
+        collapsible
+        collapsedSize="2rem"
+        panelRef={libraryPanelRef}
+        onResize={() =>
+          setLibraryCollapsed(libraryPanelRef.current?.isCollapsed() ?? false)
+        }
+        style={
+          libAnimating
+            ? // `flex` (not just flex-grow): collapsing to the fixed
+              // 2rem changes flex-basis, expanding changes flex-grow —
+              // transitioning the shorthand animates BOTH directions.
+              { transition: "flex 320ms cubic-bezier(0.32, 0.72, 0, 1)" }
+            : undefined
+        }
+      >
         <LibraryView
           onAdHocBibleRef={submitAdHocBibleRef}
           onMediaPick={handleMediaPick}
+          onCollapseRequest={collapseLibrary}
+          onExpandRequest={expandLibrary}
+          collapsed={libraryCollapsed}
+          showNavTick={showBibleNavTick}
         />
       </ResizablePanel>
       </ResizablePanelGroup>

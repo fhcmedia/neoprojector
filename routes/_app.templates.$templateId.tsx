@@ -618,11 +618,11 @@ function TemplatePanel({
           onChange={(v) => onChange({ crossSlideUniform: v })}
         />
         <div className="text-[10px] text-muted-foreground/70">
-          On: every slide in a multi-slide item (e.g. a bible verse range)
-          renders at the same shrunk font — ideal for lower-thirds where a
-          jumpy font would distract.
-          Off (default): each slide auto-shrinks to fit its own content;
-          fit-to-box boxes within a slide still share one size.
+          On (default): every slide in a multi-slide item (e.g. a bible
+          verse range) renders at the same shrunk font, computed before it
+          reaches the display — no jump as the operator advances.
+          Off: each slide auto-shrinks to fit its own content (larger but
+          jumpy); fit-to-box boxes within a slide still share one size.
         </div>
       </Section>
 

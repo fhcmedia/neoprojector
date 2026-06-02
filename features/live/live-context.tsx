@@ -54,6 +54,11 @@ export type LiveSlide = {
   // scenes so the slide-change crossfade isn't waiting on decode
   // when many outputs hit the asset simultaneously.
   nextMediaId?: number
+  // Exact bible reference for kind 'bible' — used in-window only (the
+  // library drawer follows it to keep its highlight synced as the
+  // operator navigates from the show pane). Not part of the broadcast
+  // payload; the audience renders from `fill`.
+  bibleRef?: { book: string; chapter: number; verse: number }
 }
 
 // ActiveOverlay = an overlay schedule item the operator has toggled

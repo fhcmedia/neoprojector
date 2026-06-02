@@ -4,6 +4,7 @@ import { Switch } from "@/components/switch"
 import { Input } from "@/components/input"
 import { useAnimations } from "@/hooks/use-animations"
 import { useVimMode } from "@/hooks/use-vim-mode"
+import { useLibraryAutoCollapse } from "@/hooks/use-library-auto-collapse"
 import {
   resolveServiceName,
   useServiceNameFormat,
@@ -94,6 +95,17 @@ function AnimationsToggle() {
   )
 }
 
+function LibraryAutoCollapseToggle() {
+  const { enabled, setEnabled } = useLibraryAutoCollapse()
+  return (
+    <Switch
+      checked={enabled}
+      onCheckedChange={setEnabled}
+      aria-label="Toggle library auto-collapse"
+    />
+  )
+}
+
 function VimModeToggle() {
   const { enabled, setEnabled } = useVimMode()
   return (
@@ -151,6 +163,12 @@ function GeneralPanel() {
       >
         <VimModeToggle />
       </Row>
+      <Row
+        label="Auto-collapse library"
+        description="While presenting bible from the show pane with the Bible tab open, slide the library down to just its tabs (it's redundant then). Click any tab to bring it back."
+      >
+        <LibraryAutoCollapseToggle />
+      </Row>
       <div className="space-y-2 py-3">
         <div className="text-xs font-medium">Service name format</div>
         <div className="text-[11px] text-muted-foreground">
@@ -201,7 +219,13 @@ function BiblesPanel() {
     queryFn: () =>
       Bible.ListBibles() as unknown as Promise<BibleTranslation[]>,
   })
-  const { state, setPrimary, setSecondary, setTertiary } = useBibleTranslations()
+  const {
+    state,
+    setPrimary,
+    setSecondary,
+    setTertiary,
+    setNextVersePreview,
+  } = useBibleTranslations()
 
   if (isLoading) {
     return (
@@ -235,6 +259,16 @@ function BiblesPanel() {
         onChange={setTertiary}
         clearable
       />
+      <Row
+        label="Next-verse preview"
+        description="In the Show pane, show a dimmed preview of the verse just past the selected range so you can read ahead before advancing into it."
+      >
+        <Switch
+          checked={state.nextVersePreview}
+          onCheckedChange={setNextVersePreview}
+          aria-label="Toggle next-verse preview"
+        />
+      </Row>
     </div>
   )
 }
