@@ -4,7 +4,11 @@ vars:
   APP_NAME: neoprojector
   APP_DISPLAY: NeoProjector
   BUNDLE_ID: org.fhcmedia.neoprojector
-  VERSION: 0.1.0
+  # Stamped into the binary as main.version (see GO_LDFLAGS). CI
+  # overrides it per release (`task build:... VERSION=x.y.z`); the
+  # dev default is the sentinel that disables the auto-updater.
+  VERSION: 0.0.0-dev
+  GO_LDFLAGS: -w -s -X main.version={{.VERSION}}
 
 tasks:
   default:
@@ -86,7 +90,7 @@ tasks:
     cmds:
       - task: build:clean
       - task: build:frontend
-      - go build -tags production -ldflags="-w -s" -o bin/{{.APP_NAME}} .
+      - go build -tags production -ldflags="{{.GO_LDFLAGS}}" -o bin/{{.APP_NAME}} .
       - task: package:mac
 
   build:mac:universal:
@@ -94,8 +98,8 @@ tasks:
     cmds:
       - task: build:clean
       - task: build:frontend
-      - GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -tags production -ldflags="-w -s" -o bin/{{.APP_NAME}}-arm64 .
-      - GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -tags production -ldflags="-w -s" -o bin/{{.APP_NAME}}-amd64 .
+      - GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -tags production -ldflags="{{.GO_LDFLAGS}}" -o bin/{{.APP_NAME}}-arm64 .
+      - GOOS=darwin GOARCH=amd64 CGO_ENABLED=1 go build -tags production -ldflags="{{.GO_LDFLAGS}}" -o bin/{{.APP_NAME}}-amd64 .
       - go tool wails3 tool lipo -input bin/{{.APP_NAME}}-arm64 -input bin/{{.APP_NAME}}-amd64 -output bin/{{.APP_NAME}}
       - rm bin/{{.APP_NAME}}-arm64 bin/{{.APP_NAME}}-amd64
       - task: package:mac
@@ -122,7 +126,7 @@ tasks:
       - task: build:clean
       - task: build:frontend
       - cd build && go tool wails3 generate syso -arch amd64 -icon windows/icon.ico -manifest windows/wails.exe.manifest -info windows/info.json -out ../wails_windows.syso
-      - GOOS=windows GOARCH=amd64 CGO_ENABLED=1 go build -tags production -ldflags="-w -s -H windowsgui" -o bin/{{.APP_NAME}}.exe .
+      - GOOS=windows GOARCH=amd64 CGO_ENABLED=1 go build -tags production -ldflags="{{.GO_LDFLAGS}} -H windowsgui" -o bin/{{.APP_NAME}}.exe .
       - rm -f wails_windows.syso
 
   build:linux:
@@ -130,7 +134,7 @@ tasks:
     cmds:
       - task: build:clean
       - task: build:frontend
-      - GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -tags production -ldflags="-w -s" -o bin/{{.APP_NAME}} .
+      - GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -tags production -ldflags="{{.GO_LDFLAGS}}" -o bin/{{.APP_NAME}} .
 
   build:all:
     desc: Native build for the current host platform only — cross-platform via CI

@@ -87,6 +87,11 @@ func mediaStorageDir() string {
 //go:embed all:dist
 var assets embed.FS
 
+// version is stamped by release builds via
+// `-ldflags "-X main.version=<semver>"` (see the Taskfile build:*
+// tasks). The default marks a dev build and disables the auto-updater.
+var version = "0.0.0-dev"
+
 func main() {
 	setupLogging()
 

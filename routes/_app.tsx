@@ -5,15 +5,11 @@ import {
   Link,
   Outlet,
   useRouterState,
-  redirect,
-  useNavigate,
 } from "@tanstack/react-router"
 import {
   ArrowUpIcon,
-  CircleUserIcon,
   PanelsTopLeftIcon,
   SettingsIcon,
-  LogOutIcon,
 } from "lucide-react"
 import {
   AlertDialog,
@@ -26,11 +22,6 @@ import {
   AlertDialogTitle,
 } from "@/components/alert-dialog"
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/popover"
-import {
   useLiveOutput,
   useStartLive,
   useStopLive,
@@ -39,22 +30,9 @@ import { useIsMutating } from "@tanstack/react-query"
 import { useLive } from "@/features/live/live-context"
 import { useKeybinds } from "@/hooks/use-keybinds"
 import { CommandPalette } from "@/features/command-palette/command-palette"
-import { useAuth } from "@/hooks/use-auth"
-import { MOCK_AUTH_ENABLED, hasMockSession } from "@/lib/auth-storage"
 import logo from "@/assets/logo.png"
 
 export const Route = createFileRoute("/_app")({
-  beforeLoad: () => {
-    // Mock auth is dev-only — in production the gate is a no-op so
-    // users land directly in the app. See lib/auth-storage.ts.
-    if (!MOCK_AUTH_ENABLED) return
-    if (!hasMockSession()) {
-      throw redirect({
-        to: "/auth",
-        replace: true,
-      })
-    }
-  },
   component: AppShell,
 })
 
@@ -105,8 +83,6 @@ function AppShell() {
     window.addEventListener("keydown", onKey)
     return () => window.removeEventListener("keydown", onKey)
   }, [])
-  const { user, logout } = useAuth()
-  const navigate = useNavigate()
 
   return (
     <motion.div
@@ -129,37 +105,6 @@ function AppShell() {
           </span>
         </Link>
         <div className="flex items-stretch">
-          <Popover>
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                aria-label="Account"
-                className="grid w-12 place-items-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
-              >
-                <CircleUserIcon className="h-4 w-4" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-56 overflow-hidden rounded-xl border border-border/50 bg-background/95 p-0 shadow-lg backdrop-blur-md">
-              <div className="flex flex-col p-4">
-                <span className="text-sm font-semibold text-foreground">Welcome, {user?.username}</span>
-                <span className="text-xs text-muted-foreground">Pro License Active</span>
-              </div>
-              <div className="h-px bg-border/50" />
-              <div className="p-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    logout()
-                    navigate({ to: "/auth", replace: true })
-                  }}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-red-500 transition-colors hover:bg-red-500/10 focus-visible:bg-red-500/10 focus-visible:outline-none"
-                >
-                  <LogOutIcon className="h-4 w-4" />
-                  Sign Out
-                </button>
-              </div>
-            </PopoverContent>
-          </Popover>
           <Link
             to="/"
             search={(prev) =>

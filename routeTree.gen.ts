@@ -10,7 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SplashRouteImport } from './routes/splash'
-import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
 import { Route as OutputDisplayIdRouteImport } from './routes/output.$displayId'
@@ -18,11 +17,6 @@ import { Route as OutputDisplayIdRouteImport } from './routes/output.$displayId'
 const SplashRoute = SplashRouteImport.update({
   id: '/splash',
   path: '/splash',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthRoute = AuthRouteImport.update({
-  id: '/auth',
-  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppRoute = AppRouteImport.update({
@@ -42,12 +36,10 @@ const OutputDisplayIdRoute = OutputDisplayIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
-  '/auth': typeof AuthRoute
   '/splash': typeof SplashRoute
   '/output/$displayId': typeof OutputDisplayIdRoute
 }
 export interface FileRoutesByTo {
-  '/auth': typeof AuthRoute
   '/splash': typeof SplashRoute
   '/output/$displayId': typeof OutputDisplayIdRoute
   '/': typeof AppIndexRoute
@@ -55,28 +47,20 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
-  '/auth': typeof AuthRoute
   '/splash': typeof SplashRoute
   '/output/$displayId': typeof OutputDisplayIdRoute
   '/_app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/splash' | '/output/$displayId'
+  fullPaths: '/' | '/splash' | '/output/$displayId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/auth' | '/splash' | '/output/$displayId' | '/'
-  id:
-    | '__root__'
-    | '/_app'
-    | '/auth'
-    | '/splash'
-    | '/output/$displayId'
-    | '/_app/'
+  to: '/splash' | '/output/$displayId' | '/'
+  id: '__root__' | '/_app' | '/splash' | '/output/$displayId' | '/_app/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
-  AuthRoute: typeof AuthRoute
   SplashRoute: typeof SplashRoute
   OutputDisplayIdRoute: typeof OutputDisplayIdRoute
 }
@@ -88,13 +72,6 @@ declare module '@tanstack/react-router' {
       path: '/splash'
       fullPath: '/splash'
       preLoaderRoute: typeof SplashRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app': {
@@ -133,7 +110,6 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
-  AuthRoute: AuthRoute,
   SplashRoute: SplashRoute,
   OutputDisplayIdRoute: OutputDisplayIdRoute,
 }

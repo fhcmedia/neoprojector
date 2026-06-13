@@ -1,11 +1,14 @@
 package main
 
 import (
+	"context"
 	"database/sql"
+	"fmt"
 	"time"
 
 	"neoprojector/database"
 	"neoprojector/database/seed"
+	"neoprojector/services/updates"
 
 	"github.com/charmbracelet/log"
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -39,6 +42,11 @@ func (a *App) runInit(splash application.Window) {
 	emit := func(name string, data any) {
 		splash.EmitEvent(name, data)
 	}
+
+	// The update gate runs before anything touches the database so the
+	// newest build is always the one that runs migrations. Does not
+	// return if an update applies — the new build relaunches.
+	a.maybeUpdate(emit)
 
 	emit("splash:status", "Opening database...")
 	emit("splash:progress", 10)
@@ -74,12 +82,7 @@ func (a *App) runInit(splash application.Window) {
 	log.Info("seeding complete")
 
 	emit("splash:status", "Preparing workspace...")
-	emit("splash:progress", 88)
-	time.Sleep(300 * time.Millisecond)
-
-	emit("splash:status", "Checking for updates...")
-	emit("splash:progress", 92)
-
+	emit("splash:progress", 90)
 	time.Sleep(300 * time.Millisecond)
 
 	emit("splash:status", "Launching!")
@@ -96,4 +99,44 @@ func (a *App) runInit(splash application.Window) {
 	// Ideally we'd rely solely on WindowRuntimeReady, but for now now this will do.
 	time.Sleep(100 * time.Millisecond)
 	splash.Close()
+}
+
+// maybeUpdate is the blocking-splash auto-update flow: check (short
+// timeout — an offline machine must never hang at boot), download with
+// progress, verify, swap, relaunch. Every failure path logs and
+// returns so the splash continues into the currently-installed
+// version; an update is never allowed to brick a launch.
+func (a *App) maybeUpdate(emit func(string, any)) {
+	if version == "0.0.0-dev" {
+		log.Info("dev build — skipping update check")
+		return
+	}
+
+	emit("splash:status", "Checking for updates...")
+	emit("splash:progress", 4)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	info, err := updates.Check(ctx, version)
+	if err != nil {
+		log.Warn("update check failed", "err", err)
+		return
+	}
+	if info == nil {
+		log.Info("up to date", "version", version)
+		return
+	}
+
+	log.Info("update available", "current", version, "latest", info.Version)
+	emit("splash:status", fmt.Sprintf("Updating to v%s...", info.Version))
+
+	dlCtx, dlCancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer dlCancel()
+	err = updates.Apply(dlCtx, info, func(pct int) {
+		emit("splash:progress", 4+pct*92/100)
+	})
+	// Apply only returns on failure — success relaunches and exits.
+	log.Error("update failed", "err", err)
+	emit("splash:status", "Update failed — starting current version")
+	time.Sleep(1200 * time.Millisecond)
 }

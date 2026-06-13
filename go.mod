@@ -5,8 +5,11 @@ go 1.26.3
 require (
 	github.com/adrg/xdg v0.5.3
 	github.com/charmbracelet/log v1.0.0
+	github.com/minio/selfupdate v0.6.0
 	github.com/pressly/goose/v3 v3.27.0
 )
+
+require aead.dev/minisign v0.2.0 // indirect
 
 require (
 	al.essio.dev/pkg/shellescape v1.6.0 // indirect
@@ -150,7 +153,7 @@ require (
 	golang.org/x/exp v0.0.0-20260218203240-3dfff04db8fa // indirect
 	golang.org/x/exp/typeparams v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/image v0.35.0 // indirect
-	golang.org/x/mod v0.34.0 // indirect
+	golang.org/x/mod v0.34.0
 	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.43.0 // indirect

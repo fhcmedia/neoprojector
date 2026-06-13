@@ -101,7 +101,9 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build universal macOS bundle
-        run: task build:mac:universal
+        # VERSION is stamped into the binary (main.version) so the
+        # auto-updater can compare itself against releases/latest.
+        run: task build:mac:universal VERSION=${{ needs.version.outputs.version }}
       - name: Package .app bundle
         run: |
           cd bin
@@ -150,7 +152,7 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build Windows .exe
         shell: bash
-        run: task build:windows
+        run: task build:windows VERSION=${{ needs.version.outputs.version }}
       - name: Package .exe
         shell: bash
         run: |
@@ -201,7 +203,7 @@ jobs:
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Build Linux binary
-        run: task build:linux
+        run: task build:linux VERSION=${{ needs.version.outputs.version }}
       - name: Package binary
         run: |
           cd bin
@@ -224,6 +226,21 @@ jobs:
           merge-multiple: true
       - name: List artifacts
         run: ls -la artifacts/
+      # Stable releases also carry version-less duplicates so external
+      # links never need updating:
+      #   github.com/fhcmedia/neoprojector/releases/latest/download/neoprojector-mac.zip
+      # (`releases/latest/download/` resolves by asset NAME, so the
+      # name must be identical across releases.) Betas skip this —
+      # `latest` never points at a prerelease anyway.
+      - name: Add stable-named assets
+        if: needs.version.outputs.prerelease == 'false'
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          cp "artifacts/neoprojector-${VERSION}-mac.zip"        artifacts/neoprojector-mac.zip
+          cp "artifacts/neoprojector-${VERSION}-windows.zip"    artifacts/neoprojector-windows.zip
+          cp "artifacts/neoprojector-${VERSION}-linux.tar.gz"   artifacts/neoprojector-linux.tar.gz
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -234,10 +251,9 @@ jobs:
           # same tag — useful when an Action retry doesn't actually
           # mean "a new release is intended."
           fail_on_unmatched_files: true
-          files: |
-            artifacts/neoprojector-*-mac.zip
-            artifacts/neoprojector-*-windows.zip
-            artifacts/neoprojector-*-linux.tar.gz
+          # Everything in artifacts/ — the three versioned archives,
+          # plus the stable-named duplicates on stable releases.
+          files: artifacts/*
           body: |
             Built from `${{ github.sha }}` on `${{ github.ref }}`.
 
@@ -249,40 +265,6 @@ jobs:
             On first launch macOS/Windows users may need to bypass
             Gatekeeper / SmartScreen — this build is not yet signed.
 
-      # --- Public mirror to S3-compatible storage --------------------------
-      # Cloudflare R2 / Backblaze B2 / Railway T3 / any S3-API store.
-      # Skipped automatically when the bucket secret isn't configured, so
-      # the workflow stays useful for forks that don't have a CDN set up.
-      # Writes the artifacts under two prefixes:
-      #   - <version>/  — immutable, version-specific URLs
-      #   - latest/     — overwritten on every STABLE release so the
-      #                    branding site can keep a single link that
-      #                    always points at the most recent build.
-      # Beta builds don't touch /latest so we don't accidentally point
-      # public download links at a prerelease.
-      - name: Mirror artifacts to public S3 bucket
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.S3_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.S3_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.S3_REGION }}
-          S3_BUCKET: ${{ secrets.S3_BUCKET }}
-          S3_ENDPOINT: ${{ secrets.S3_ENDPOINT_URL }}
-          VERSION: ${{ needs.version.outputs.version }}
-          PRERELEASE: ${{ needs.version.outputs.prerelease }}
-        run: |
-          set -euo pipefail
-          # `secrets.*` can't be referenced in `if:` directly, so the
-          # skip check lives here — forks without the S3_BUCKET secret
-          # configured get a no-op step instead of a failed workflow.
-          if [[ -z "${S3_BUCKET:-}" ]]; then
-            echo "S3_BUCKET secret not set — skipping public mirror."
-            exit 0
-          fi
-          aws s3 cp artifacts/ "s3://${S3_BUCKET}/${VERSION}/" \
-            --recursive \
-            --endpoint-url "${S3_ENDPOINT}"
-          if [[ "${PRERELEASE}" == "false" ]]; then
-            aws s3 cp artifacts/ "s3://${S3_BUCKET}/latest/" \
-              --recursive \
-              --endpoint-url "${S3_ENDPOINT}"
-          fi
+            Installed copies on v0.1.1+ pick this release up
+            automatically at next launch (the splash-screen updater
+            follows `releases/latest`, so betas are never offered).
