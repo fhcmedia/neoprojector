@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { createFileRoute } from "@tanstack/react-router"
 import { Events } from "@wailsio/runtime"
-import { GradFlow } from "gradflow"
+import { GradflowGL } from "@/features/backgrounds/engines/gradflow-gl"
 import { App } from "@/bindings/neoprojector"
 import { Progress } from "@/components/progress"
 
@@ -41,7 +41,7 @@ function SplashRoute() {
   return (
     <div className="relative h-screen w-screen flex flex-col items-center justify-center bg-black text-white gap-6 overflow-hidden">
       <div className="absolute inset-0 z-0">
-        <GradFlow
+        <GradflowGL
           config={{
             color1: { r: 226, g: 98, b: 75 },
             color2: { r: 255, g: 255, b: 255 },

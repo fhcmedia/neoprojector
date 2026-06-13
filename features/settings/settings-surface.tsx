@@ -1,6 +1,8 @@
 import { useMemo } from "react"
+import { MinusIcon, PlusIcon } from "lucide-react"
 import { Switch } from "@/components/switch"
 import { Input } from "@/components/input"
+import { useUiScale } from "@/hooks/use-ui-scale"
 import { useAnimations } from "@/hooks/use-animations"
 import { useVimMode } from "@/hooks/use-vim-mode"
 import { useLibraryAutoCollapse } from "@/hooks/use-library-auto-collapse"
@@ -119,6 +121,36 @@ function Row({
   )
 }
 
+function UiScaleStepper() {
+  const { scale, increment, decrement, min, max } = useUiScale()
+  const pct = Math.round(scale * 100)
+  const btn =
+    "grid size-6 place-items-center border border-border/50 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        type="button"
+        aria-label="Decrease UI scale"
+        onClick={decrement}
+        disabled={scale <= min}
+        className={btn}
+      >
+        <MinusIcon className="size-3" />
+      </button>
+      <span className="w-11 text-center text-xs tabular-nums">{pct}%</span>
+      <button
+        type="button"
+        aria-label="Increase UI scale"
+        onClick={increment}
+        disabled={scale >= max}
+        className={btn}
+      >
+        <PlusIcon className="size-3" />
+      </button>
+    </div>
+  )
+}
+
 function AnimationsToggle() {
   const { enabled, setEnabled } = useAnimations()
   return (
@@ -186,6 +218,12 @@ function ServiceNameFormatField() {
 function GeneralPanel() {
   return (
     <div className="divide-y divide-border/40">
+      <Row
+        label="UI scale"
+        description="Size of the operator interface on this machine. Cmd/Ctrl +/− also work; the audience output is never affected."
+      >
+        <UiScaleStepper />
+      </Row>
       <Row
         label="UI animations"
         description="Subtle motion across the app. Disable for an instant, static interface."

@@ -1,5 +1,5 @@
 import { useMemo } from "react"
-import { GradFlow } from "gradflow"
+import { GradflowGL } from "@/features/backgrounds/engines/gradflow-gl"
 import type { BackgroundSnapshot } from "@/bindings/neoprojector/services/displays"
 
 // BackgroundView renders one resolved background snapshot full-bleed.
@@ -39,7 +39,7 @@ export function BackgroundView({
 
   return (
     <div className={className} style={{ position: "absolute", inset: 0 }}>
-      <GradFlow config={config} />
+      <GradflowGL config={config} />
     </div>
   )
 }

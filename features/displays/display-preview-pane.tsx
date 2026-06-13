@@ -54,7 +54,10 @@ import {
   staggerContainerVariants,
 } from "@/features/overlays/stagger"
 import type { Display, Template } from "@/bindings/neoprojector/database"
-import { BackgroundView } from "@/features/backgrounds/background-view"
+import {
+  BackgroundStage,
+  BackgroundMirror,
+} from "@/features/backgrounds/background-stage"
 import { cn } from "@/lib/utils"
 
 // DisplayPreviewPane: stacked tiles, one per configured display. Each
@@ -66,6 +69,9 @@ export function DisplayPreviewPane() {
   const { data: templates } = useTemplates()
   const { live, activeOverlays, serviceBackground } = useLive()
   const reorderMut = useReorderDisplays()
+  // The background is global per live moment (same for every tile), so the
+  // pane resolves it once and a single Stage renders it; tiles mirror it.
+  const resolvedBackground = live?.background ?? serviceBackground ?? null
 
   // Index templates by id once so each tile can resolve its binding in
   // O(1). useTemplates returns defaults + DB rows merged, so negative
@@ -97,6 +103,7 @@ export function DisplayPreviewPane() {
   }
 
   return (
+    <BackgroundStage background={resolvedBackground}>
     <div className="relative h-full w-full bg-background">
       {/* No pane-level "Preview" label — each tile carries its own
           header now, so a stray title would just double up. */}
@@ -131,6 +138,7 @@ export function DisplayPreviewPane() {
         )}
       </div>
     </div>
+    </BackgroundStage>
   )
 }
 
@@ -455,7 +463,7 @@ function PreviewTile({
             className="absolute inset-0 h-full w-full"
           />
         ) : backgroundVisible && background ? (
-          <BackgroundView background={background} />
+          <BackgroundMirror />
         ) : null}
         {/* z1 — overlays sit above the resting layer, below text. */}
         {enabled && overlaysShown && (

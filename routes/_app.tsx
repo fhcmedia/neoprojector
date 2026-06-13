@@ -30,6 +30,7 @@ import { useIsMutating } from "@tanstack/react-query"
 import { useLive } from "@/features/live/live-context"
 import { useKeybinds } from "@/hooks/use-keybinds"
 import { CommandPalette } from "@/features/command-palette/command-palette"
+import { UiScaleProvider } from "@/hooks/use-ui-scale"
 import logo from "@/assets/logo.png"
 
 export const Route = createFileRoute("/_app")({
@@ -85,6 +86,7 @@ function AppShell() {
   }, [])
 
   return (
+    <UiScaleProvider>
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -213,5 +215,6 @@ function AppShell() {
         <Outlet />
       </main>
     </motion.div>
+    </UiScaleProvider>
   )
 }
