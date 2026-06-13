@@ -3,6 +3,7 @@ package overlays
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"neoprojector/database"
 )
@@ -53,6 +54,42 @@ func (s *Service) CreateOverlay(
 		rulesJSON = "{}"
 	}
 	return s.q.CreateOverlayAppend(ctx, database.CreateOverlayAppendParams{
+		Name:        name,
+		Kind:        kind,
+		ConfigJson:  configJSON,
+		LayoutsJson: layoutsJSON,
+		RulesJson:   rulesJSON,
+	})
+}
+
+// SaveWithID upserts a row at an explicit id — the shadow-a-seed path.
+// Editing a frontend default persists its working copy under the
+// seed's negative id; schedule items and activations keep pointing at
+// the same id. Restore = DeleteOverlay(negativeId).
+func (s *Service) SaveWithID(
+	ctx context.Context,
+	id int64,
+	name, kind, configJSON, layoutsJSON, rulesJSON string,
+) (database.Overlay, error) {
+	// 0 falls through both id conventions (negative = seed, positive =
+	// user row) — reject rather than store an invisible row.
+	if id == 0 {
+		return database.Overlay{}, fmt.Errorf("SaveWithID: id 0 is reserved")
+	}
+	if name == "" {
+		name = "Untitled overlay"
+	}
+	if configJSON == "" {
+		configJSON = "{}"
+	}
+	if layoutsJSON == "" {
+		layoutsJSON = "{}"
+	}
+	if rulesJSON == "" {
+		rulesJSON = "{}"
+	}
+	return s.q.SaveOverlayWithID(ctx, database.SaveOverlayWithIDParams{
+		ID:          id,
 		Name:        name,
 		Kind:        kind,
 		ConfigJson:  configJSON,

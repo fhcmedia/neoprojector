@@ -7,11 +7,12 @@ package database
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createService = `-- name: CreateService :one
 INSERT INTO service (name) VALUES (?)
-RETURNING id, name, created_at, updated_at
+RETURNING id, name, background_id, created_at, updated_at
 `
 
 func (q *Queries) CreateService(ctx context.Context, name string) (Service, error) {
@@ -20,6 +21,7 @@ func (q *Queries) CreateService(ctx context.Context, name string) (Service, erro
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
+		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -36,7 +38,7 @@ func (q *Queries) DeleteService(ctx context.Context, id int64) error {
 }
 
 const listServices = `-- name: ListServices :many
-SELECT id, name, created_at, updated_at FROM service ORDER BY created_at DESC
+SELECT id, name, background_id, created_at, updated_at FROM service ORDER BY created_at DESC
 `
 
 func (q *Queries) ListServices(ctx context.Context) ([]Service, error) {
@@ -51,6 +53,7 @@ func (q *Queries) ListServices(ctx context.Context) ([]Service, error) {
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
+			&i.BackgroundID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -71,7 +74,7 @@ const renameService = `-- name: RenameService :one
 UPDATE service
 SET name = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, created_at, updated_at
+RETURNING id, name, background_id, created_at, updated_at
 `
 
 type RenameServiceParams struct {
@@ -85,6 +88,7 @@ func (q *Queries) RenameService(ctx context.Context, arg RenameServiceParams) (S
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
+		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -92,7 +96,7 @@ func (q *Queries) RenameService(ctx context.Context, arg RenameServiceParams) (S
 }
 
 const serviceByID = `-- name: ServiceByID :one
-SELECT id, name, created_at, updated_at FROM service WHERE id = ?
+SELECT id, name, background_id, created_at, updated_at FROM service WHERE id = ?
 `
 
 func (q *Queries) ServiceByID(ctx context.Context, id int64) (Service, error) {
@@ -101,6 +105,7 @@ func (q *Queries) ServiceByID(ctx context.Context, id int64) (Service, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
+		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -108,7 +113,7 @@ func (q *Queries) ServiceByID(ctx context.Context, id int64) (Service, error) {
 }
 
 const serviceByName = `-- name: ServiceByName :one
-SELECT id, name, created_at, updated_at FROM service WHERE name = ?
+SELECT id, name, background_id, created_at, updated_at FROM service WHERE name = ?
 `
 
 func (q *Queries) ServiceByName(ctx context.Context, name string) (Service, error) {
@@ -117,6 +122,32 @@ func (q *Queries) ServiceByName(ctx context.Context, name string) (Service, erro
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
+		&i.BackgroundID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const setServiceBackground = `-- name: SetServiceBackground :one
+UPDATE service
+SET background_id = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING id, name, background_id, created_at, updated_at
+`
+
+type SetServiceBackgroundParams struct {
+	BackgroundID sql.NullInt64 `json:"background_id"`
+	ID           int64         `json:"id"`
+}
+
+func (q *Queries) SetServiceBackground(ctx context.Context, arg SetServiceBackgroundParams) (Service, error) {
+	row := q.db.QueryRowContext(ctx, setServiceBackground, arg.BackgroundID, arg.ID)
+	var i Service
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

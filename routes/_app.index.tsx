@@ -25,11 +25,28 @@ import {
   useAppendPreviousVerse,
   useAppendMediaFromLibrary,
 } from "@/features/schedule/api"
+import { useLive } from "@/features/live/live-context"
+import { useBackgrounds, useServiceRow } from "@/features/backgrounds/api"
+import { snapshotFor } from "@/features/backgrounds/resolve"
+import { parseSurface, type Surface } from "@/features/surfaces/surface-search"
+import { useSurfaceEsc } from "@/features/surfaces/use-surface-esc"
+import { SettingsSurface } from "@/features/settings/settings-surface"
+import { TemplateEditorProvider } from "@/features/templates/editor/template-editor"
+import { TemplateEditorOptions } from "@/features/templates/editor/template-editor-options"
+import { TemplateEditorCanvas } from "@/features/templates/editor/template-editor-canvas"
+import { OverlayEditorProvider } from "@/features/overlays/editor/overlay-editor"
+import { OverlayEditorOptions } from "@/features/overlays/editor/overlay-editor-options"
+import { OverlayEditorCanvas } from "@/features/overlays/editor/overlay-editor-canvas"
+import { BackgroundEditorProvider } from "@/features/backgrounds/editor/background-editor"
+import { BackgroundEditorOptions } from "@/features/backgrounds/editor/background-editor-options"
+import { BackgroundEditorCanvas } from "@/features/backgrounds/editor/background-editor-canvas"
 
 type Search = {
   service?: number
   add?: number // section id to add into
   edit?: number // item id to edit
+  surface?: Surface
+  editId?: number // which row a surface editor edits
 }
 
 // AUTO_RESUME_KEY drives the auto-redirect-on-app-load. Cleared when the
@@ -55,6 +72,8 @@ export const Route = createFileRoute("/_app/")({
     service: toOptionalNumber(search.service),
     add: toOptionalNumber(search.add),
     edit: toOptionalNumber(search.edit),
+    surface: parseSurface(search.surface),
+    editId: toOptionalNumber(search.editId),
   }),
   beforeLoad: ({ search }) => {
     if (search.service) return
@@ -97,13 +116,76 @@ function Pane({
   )
 }
 
+// ServiceBackgroundBridge feeds the active service's default
+// background into the live provider. Lives as a component (not a hook
+// in Projector) so its queries don't re-render the whole page on
+// every service-row refetch. Pushing null on back-out/no-service keeps
+// the resting layer honest — no stale background from a previous
+// service. Mid-live default changes re-derive automatically: mutation
+// invalidates the service-row query, this effect re-fires, the live
+// provider re-pushes.
+function ServiceBackgroundBridge({
+  serviceId,
+}: {
+  serviceId: number | undefined
+}) {
+  const { setServiceBackground } = useLive()
+  const { data: backgrounds } = useBackgrounds()
+  const { data: serviceRow } = useServiceRow(serviceId)
+  // Content guard: snapshotFor mints a fresh object every run, and
+  // pushing an identical-but-new object into the provider re-fires
+  // the broadcast effect (one PushLive per refetch — or per FRAME
+  // when an upstream list isn't memoized). Compare by value and only
+  // set when something actually changed.
+  const lastKeyRef = useRef<string | null>(null)
+  useEffect(() => {
+    const id =
+      serviceId && serviceRow && serviceRow.background_id?.Valid
+        ? serviceRow.background_id.Int64
+        : 0
+    const snap = serviceId && serviceRow ? snapshotFor(id, backgrounds) : null
+    const key = snap ? `${snap.background_id}:${snap.config_json}` : "none"
+    if (lastKeyRef.current === key) return
+    lastKeyRef.current = key
+    setServiceBackground(snap)
+  }, [serviceId, serviceRow, backgrounds, setServiceBackground])
+  return null
+}
+
 function Projector() {
   const navigate = useNavigate({ from: "/" })
   const {
     service: activeServiceId,
     add: addSectionId,
     edit: editItemId,
+    surface,
+    editId,
   } = Route.useSearch()
+
+  // Surfaces overlay the Show-page panes. Closing always drops both
+  // params so a stale editId can't leak into the next open.
+  const closeSurface = useCallback(() => {
+    navigate({
+      search: (prev) => ({ ...prev, surface: undefined, editId: undefined }),
+      replace: true,
+    })
+  }, [navigate])
+
+  // Editors with internal Esc behavior (template: deselect-then-exit)
+  // register a policy here; Esc consults it before closing the surface.
+  const escPolicyRef = useRef<(() => boolean) | null>(null)
+  const registerEscPolicy = useCallback((fn: (() => boolean) | null) => {
+    escPolicyRef.current = fn
+  }, [])
+  const onSurfaceEsc = useCallback(() => {
+    if (escPolicyRef.current && !escPolicyRef.current()) return false
+    closeSurface()
+  }, [closeSurface])
+  useSurfaceEsc(surface !== undefined, onSurfaceEsc)
+
+  const templateEditorOpen = surface === "template" && editId !== undefined
+  const overlayEditorOpen = surface === "overlay" && editId !== undefined
+  const backgroundEditorOpen = surface === "background" && editId !== undefined
   // activeItemId persisted to sessionStorage so leaving for the
   // template editor (or any other route) and coming back lands the
   // user on the same item they were on. Cleared explicitly on
@@ -276,12 +358,21 @@ function Projector() {
     if (editorOpen) setEditorExitMode("slide")
   }, [editorOpen])
 
-  return (
-    <BibleEditProvider>
-      <ResizablePanelGroup orientation="vertical" className="h-full">
-      <ResizablePanel defaultSize="70%" minSize="30%">
+  // The top row (schedule | center | displays) is shared between the
+  // normal projector layout and editor surfaces — editors swap the
+  // left + center pane contents but keep the displays preview live.
+  // Extracted so the editor provider can wrap BOTH panes (they
+  // communicate through its context, not through the route tree).
+  const topRow = (
         <ResizablePanelGroup orientation="horizontal">
           <ResizablePanel defaultSize="20%" minSize="10%" maxSize="40%">
+            {templateEditorOpen ? (
+              <TemplateEditorOptions />
+            ) : overlayEditorOpen ? (
+              <OverlayEditorOptions />
+            ) : backgroundEditorOpen ? (
+              <BackgroundEditorOptions />
+            ) : (
             <div className="relative h-full w-full overflow-hidden">
               {/* No mode="wait" — we want the incoming view to slide on
                  top of the outgoing one. Otherwise the just-created
@@ -341,21 +432,58 @@ function Projector() {
                 onClose={() => closeEditor("fade")}
               />
             </div>
+            )}
           </ResizablePanel>
           <ResizableHandle />
           <ResizablePanel defaultSize="60%" minSize="30%">
-            <ShowPane
-              activeItemId={activeItemId}
-              adHocBibleRef={adHocBibleRef}
-              onAdHocBibleRef={submitAdHocBibleRef}
-              onShowBibleNav={() => setShowBibleNavTick((t) => t + 1)}
-            />
+            {surface === "settings" ? (
+              <SettingsSurface onClose={closeSurface} />
+            ) : templateEditorOpen ? (
+              <TemplateEditorCanvas />
+            ) : overlayEditorOpen ? (
+              <OverlayEditorCanvas />
+            ) : backgroundEditorOpen ? (
+              <BackgroundEditorCanvas />
+            ) : (
+              <ShowPane
+                activeItemId={activeItemId}
+                adHocBibleRef={adHocBibleRef}
+                onAdHocBibleRef={submitAdHocBibleRef}
+                onShowBibleNav={() => setShowBibleNavTick((t) => t + 1)}
+              />
+            )}
           </ResizablePanel>
           <ResizableHandle />
           <ResizablePanel defaultSize="20%" minSize="10%" maxSize="40%">
             <DisplayPreviewPane />
           </ResizablePanel>
         </ResizablePanelGroup>
+  )
+
+  return (
+    <BibleEditProvider>
+      <ServiceBackgroundBridge serviceId={activeServiceId} />
+      <ResizablePanelGroup orientation="vertical" className="h-full">
+      <ResizablePanel defaultSize="70%" minSize="30%">
+        {templateEditorOpen && editId !== undefined ? (
+          <TemplateEditorProvider
+            id={editId}
+            registerEscPolicy={registerEscPolicy}
+            onClose={closeSurface}
+          >
+            {topRow}
+          </TemplateEditorProvider>
+        ) : overlayEditorOpen && editId !== undefined ? (
+          <OverlayEditorProvider id={editId} onClose={closeSurface}>
+            {topRow}
+          </OverlayEditorProvider>
+        ) : backgroundEditorOpen && editId !== undefined ? (
+          <BackgroundEditorProvider id={editId} onClose={closeSurface}>
+            {topRow}
+          </BackgroundEditorProvider>
+        ) : (
+          topRow
+        )}
       </ResizablePanel>
       <ResizableHandle />
       <ResizablePanel

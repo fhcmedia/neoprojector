@@ -20,6 +20,8 @@ import { VerticalSortable, useSortableRow } from "@/features/schedule/sortable"
 import { usePlayed } from "@/features/schedule/played-context"
 import { useLive } from "@/features/live/live-context"
 import { useBibleEdit } from "@/features/schedule/bible-edit-context"
+import { BackgroundPicker } from "@/features/backgrounds/background-picker"
+import { useSetItemBackground } from "@/features/backgrounds/api"
 import { kindColor } from "@/features/schedule/kind-colors"
 import {
   sectionBorderClass,
@@ -163,6 +165,11 @@ function ItemRow({
   const liveText = showingLive && colorInfo ? colorInfo.text : ""
 
   const [pendingDelete, setPendingDelete] = useState(false)
+  const [bgPickerOpen, setBgPickerOpen] = useState(false)
+  const setItemBgMut = useSetItemBackground()
+  // Overlays stack over live content and have no z0 footprint, so a
+  // per-overlay background assignment would be meaningless.
+  const canHaveBackground = !isOverlay
   const rowRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -273,6 +280,41 @@ function ItemRow({
             >
               <PencilIcon className="size-3" />
             </ItemAction>
+          )}
+          {canHaveBackground && (
+            <BackgroundPicker
+              value={item.background_id}
+              inheritLabel="Inherit"
+              open={bgPickerOpen}
+              onOpenChange={setBgPickerOpen}
+              align="end"
+              onPick={(id) =>
+                setItemBgMut.mutate({ itemId: item.id, backgroundId: id })
+              }
+            >
+              <span
+                className={cn(
+                  "grid",
+                  // Pin the action visible while its picker is open —
+                  // the row loses hover the moment the popover takes
+                  // pointer focus.
+                  bgPickerOpen && "[&>button]:opacity-100"
+                )}
+              >
+                <ItemAction
+                  ariaLabel="Item background"
+                  tone="blue"
+                  onClick={() => setBgPickerOpen(true)}
+                >
+                  <ImageIcon
+                    className={cn(
+                      "size-3",
+                      item.background_id !== 0 && "text-sky-500"
+                    )}
+                  />
+                </ItemAction>
+              </span>
+            </BackgroundPicker>
           )}
           <button
             type="button"

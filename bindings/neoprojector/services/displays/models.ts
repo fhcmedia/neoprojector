@@ -6,6 +6,40 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
+ * BackgroundSnapshot is a resolved background document: which row/seed
+ * it came from plus everything needed to render it. ConfigJSON is
+ * opaque to Go — the frontend's engine renderer interprets it.
+ */
+export class BackgroundSnapshot {
+    "background_id": number;
+    "engine": string;
+    "config_json": string;
+
+    /** Creates a new BackgroundSnapshot instance. */
+    constructor($$source: Partial<BackgroundSnapshot> = {}) {
+        if (!("background_id" in $$source)) {
+            this["background_id"] = 0;
+        }
+        if (!("engine" in $$source)) {
+            this["engine"] = "";
+        }
+        if (!("config_json" in $$source)) {
+            this["config_json"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new BackgroundSnapshot instance from a string or object.
+     */
+    static createFrom($$source: any = {}): BackgroundSnapshot {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new BackgroundSnapshot($$parsedSource as Partial<BackgroundSnapshot>);
+    }
+}
+
+/**
  * LiveFill mirrors the frontend SlotFill type. Optional fields stay
  * empty rather than nil pointer-wise so the JSON shape is stable.
  */
@@ -92,84 +126,66 @@ export class LiveMediaRef {
 }
 
 /**
- * LivePayload mirrors the LiveSlide that the main window's
- * LiveProvider holds. Kind "none" means "nothing live — go black."
- * Persisted only in-memory inside this service; the operator never
- * resumes a previous session's live state across app restarts.
+ * LivePayload carries the full live state as independent render
+ * channels, composited bottom-up by every output window:
+ * 
+ * 	z0  Media ?? Background ?? black   (one slot — media wins)
+ * 	z1  ActiveOverlays
+ * 	z2  Slide (templated song/bible text)
+ * 	z3  Presentation
+ * 
+ * All channels are independently nillable; an all-nil payload means
+ * "nothing live — go black". The operator window composes channels
+ * (service defaults + item overrides + manual toggles); this service
+ * stays a cache-and-relay and never interprets the contents.
+ * Persisted only in-memory; live state never survives app restarts.
  */
 export class LivePayload {
-    "kind": string;
-    "fill": LiveFill;
-    "source_item_id": number;
-    "slide_index": number;
+    /**
+     * Background is the z0 resting layer — an animated shader (or
+     * other engine) snapshot resolved by the operator at push time
+     * from the schedule's item -> section -> service config chain.
+     * Snapshot, not id: output windows render without re-fetching
+     * (same discipline as overlay activations).
+     */
+    "background"?: BackgroundSnapshot | null;
+
+    /**
+     * Media is z0 content from media schedule items. When set it
+     * replaces Background for as long as it's live.
+     */
+    "media"?: MediaChannel | null;
+
+    /**
+     * ActiveOverlays render at z1 — above the background, below the
+     * slide text. cover_slide rules still suppress z0+z2 client-side.
+     */
     "active_overlays": OverlayActivation[];
 
     /**
-     * Optional transition override for the audience output. Set when
-     * the live source is a presentation (the per-presentation
-     * transition wins over the template's own — presentation slides
-     * don't go through a template anyway). Empty string in
-     * TransitionKind = "no override, use template default."
+     * Slide is the templated text channel (song lyrics, bible verses).
      */
-    "transition_kind"?: string;
-    "transition_duration_ms"?: number;
+    "slide"?: SlideChannel | null;
 
     /**
-     * Per-template uniform fontSize override for the currently-
-     * broadcasting item. Keyed by template id (as a string, since
-     * JSON maps require string keys). Each entry is a SINGLE fontSize
-     * applied to every fitToBox box in that template — across every
-     * slide in the active item and across every box (primary,
-     * secondary, tertiary, …). Computed by the operator's show-pane
-     * uniform-fit pass: the minimum fontSize across all (slide × box)
-     * pairs that doesn't clip, so a three-translations template
-     * renders every translation at the same size on every verse.
-     * 
-     * Per-template scoping: a lower-thirds template (small box) and a
-     * two-translations template (medium box) need different floors;
-     * they must not bleed into each other. Each audience window looks
-     * up the entry for its own bound template; entries for templates
-     * no display uses just get ignored.
-     * 
-     * Empty for slides that didn't go through the uniform pass.
+     * Presentation is the top channel — opaque slides that cover
+     * everything while live; clearing it reveals what never stopped
+     * being live beneath.
      */
-    "font_size_override_by_template"?: { [_ in string]?: number };
+    "presentation"?: PresentationChannel | null;
 
     /**
      * AudioDisplayID names the single output window that should play
-     * audio when the current slot is video/audio media. Every other
+     * audio when a live channel carries video/audio media. Every other
      * output mutes its <video>. Computed in PushLive as the smallest
-     * active display id — deterministic across pushes so the audio
-     * doesn't hop between screens mid-slide. Zero when no live output
-     * windows are open.
+     * media-capable display id — deterministic across pushes so the
+     * audio doesn't hop between screens mid-slide. Zero when no live
+     * output windows are open.
      */
     "audio_display_id"?: number;
 
-    /**
-     * NextMediaID is the media id the NEXT slide will reference, if
-     * the operator knows what's coming (presentations with a fixed
-     * slide list). Output windows mount a hidden preload element for
-     * this id so the bytes are decoded and warm before the slide
-     * transition fires — fixes the fade stutter with many outputs all
-     * fetching+decoding the same asset concurrently. Zero for non-
-     * presentation slots or when there's no determinate next.
-     */
-    "next_media_id"?: number;
-
     /** Creates a new LivePayload instance. */
     constructor($$source: Partial<LivePayload> = {}) {
-        if (!("kind" in $$source)) {
-            this["kind"] = "";
-        }
-        if (!("fill" in $$source)) {
-            this["fill"] = (new LiveFill());
-        }
-        if (!("source_item_id" in $$source)) {
-            this["source_item_id"] = 0;
-        }
-        if (!("slide_index" in $$source)) {
-            this["slide_index"] = 0;
-        }
         if (!("active_overlays" in $$source)) {
             this["active_overlays"] = [];
         }
@@ -181,20 +197,60 @@ export class LivePayload {
      * Creates a new LivePayload instance from a string or object.
      */
     static createFrom($$source: any = {}): LivePayload {
-        const $$createField1_0 = $$createType2;
-        const $$createField4_0 = $$createType4;
-        const $$createField7_0 = $$createType5;
+        const $$createField0_0 = $$createType3;
+        const $$createField1_0 = $$createType5;
+        const $$createField2_0 = $$createType7;
+        const $$createField3_0 = $$createType9;
+        const $$createField4_0 = $$createType11;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
-        if ("fill" in $$parsedSource) {
-            $$parsedSource["fill"] = $$createField1_0($$parsedSource["fill"]);
+        if ("background" in $$parsedSource) {
+            $$parsedSource["background"] = $$createField0_0($$parsedSource["background"]);
+        }
+        if ("media" in $$parsedSource) {
+            $$parsedSource["media"] = $$createField1_0($$parsedSource["media"]);
         }
         if ("active_overlays" in $$parsedSource) {
-            $$parsedSource["active_overlays"] = $$createField4_0($$parsedSource["active_overlays"]);
+            $$parsedSource["active_overlays"] = $$createField2_0($$parsedSource["active_overlays"]);
         }
-        if ("font_size_override_by_template" in $$parsedSource) {
-            $$parsedSource["font_size_override_by_template"] = $$createField7_0($$parsedSource["font_size_override_by_template"]);
+        if ("slide" in $$parsedSource) {
+            $$parsedSource["slide"] = $$createField3_0($$parsedSource["slide"]);
+        }
+        if ("presentation" in $$parsedSource) {
+            $$parsedSource["presentation"] = $$createField4_0($$parsedSource["presentation"]);
         }
         return new LivePayload($$parsedSource as Partial<LivePayload>);
+    }
+}
+
+/**
+ * MediaChannel is a media schedule item on the z0 slot.
+ */
+export class MediaChannel {
+    "ref": LiveMediaRef;
+    "source_item_id": number;
+
+    /** Creates a new MediaChannel instance. */
+    constructor($$source: Partial<MediaChannel> = {}) {
+        if (!("ref" in $$source)) {
+            this["ref"] = (new LiveMediaRef());
+        }
+        if (!("source_item_id" in $$source)) {
+            this["source_item_id"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new MediaChannel instance from a string or object.
+     */
+    static createFrom($$source: any = {}): MediaChannel {
+        const $$createField0_0 = $$createType0;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("ref" in $$parsedSource) {
+            $$parsedSource["ref"] = $$createField0_0($$parsedSource["ref"]);
+        }
+        return new MediaChannel($$parsedSource as Partial<MediaChannel>);
     }
 }
 
@@ -252,6 +308,47 @@ export class OverlayActivation {
 }
 
 /**
+ * PresentationChannel is presentation playback (z3): the current
+ * slide's media plus the transition the operator configured and the
+ * upcoming slide's media id for decoder pre-warming across outputs.
+ */
+export class PresentationChannel {
+    "ref": LiveMediaRef;
+    "source_item_id": number;
+    "slide_index": number;
+    "transition_kind"?: string;
+    "transition_duration_ms"?: number;
+    "next_media_id"?: number;
+
+    /** Creates a new PresentationChannel instance. */
+    constructor($$source: Partial<PresentationChannel> = {}) {
+        if (!("ref" in $$source)) {
+            this["ref"] = (new LiveMediaRef());
+        }
+        if (!("source_item_id" in $$source)) {
+            this["source_item_id"] = 0;
+        }
+        if (!("slide_index" in $$source)) {
+            this["slide_index"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new PresentationChannel instance from a string or object.
+     */
+    static createFrom($$source: any = {}): PresentationChannel {
+        const $$createField0_0 = $$createType0;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("ref" in $$parsedSource) {
+            $$parsedSource["ref"] = $$createField0_0($$parsedSource["ref"]);
+        }
+        return new PresentationChannel($$parsedSource as Partial<PresentationChannel>);
+    }
+}
+
+/**
  * ScreenInfo is the subset of the Wails Screen we expose to the
  * frontend. The OS-given ID is the stable handle we persist in
  * display.screen_id; the rest is for display/labelling.
@@ -293,10 +390,74 @@ export class ScreenInfo {
     }
 }
 
+/**
+ * SlideChannel is the templated text layer (z2). Kind picks each
+ * display's template binding ("song" -> song_template_id, "bible" ->
+ * bible_template_id).
+ */
+export class SlideChannel {
+    "kind": string;
+    "fill": LiveFill;
+    "source_item_id": number;
+    "slide_index": number;
+
+    /**
+     * Per-template uniform fontSize override for the currently-
+     * broadcasting item. Keyed by template id (string keys — JSON
+     * maps). One fontSize per template, applied to every fitToBox box
+     * across every slide of the item, computed by the operator's
+     * uniform-fit pass so translations stay aligned and verses never
+     * jump size. Empty when no uniform pass has reported.
+     */
+    "font_size_override_by_template"?: { [_ in string]?: number };
+
+    /** Creates a new SlideChannel instance. */
+    constructor($$source: Partial<SlideChannel> = {}) {
+        if (!("kind" in $$source)) {
+            this["kind"] = "";
+        }
+        if (!("fill" in $$source)) {
+            this["fill"] = (new LiveFill());
+        }
+        if (!("source_item_id" in $$source)) {
+            this["source_item_id"] = 0;
+        }
+        if (!("slide_index" in $$source)) {
+            this["slide_index"] = 0;
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new SlideChannel instance from a string or object.
+     */
+    static createFrom($$source: any = {}): SlideChannel {
+        const $$createField1_0 = $$createType12;
+        const $$createField4_0 = $$createType13;
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("fill" in $$parsedSource) {
+            $$parsedSource["fill"] = $$createField1_0($$parsedSource["fill"]);
+        }
+        if ("font_size_override_by_template" in $$parsedSource) {
+            $$parsedSource["font_size_override_by_template"] = $$createField4_0($$parsedSource["font_size_override_by_template"]);
+        }
+        return new SlideChannel($$parsedSource as Partial<SlideChannel>);
+    }
+}
+
 // Private type creation functions
 const $$createType0 = LiveMediaRef.createFrom;
 const $$createType1 = $Create.Nullable($$createType0);
-const $$createType2 = LiveFill.createFrom;
-const $$createType3 = OverlayActivation.createFrom;
-const $$createType4 = $Create.Array($$createType3);
-const $$createType5 = $Create.Map($Create.Any, $Create.Any);
+const $$createType2 = BackgroundSnapshot.createFrom;
+const $$createType3 = $Create.Nullable($$createType2);
+const $$createType4 = MediaChannel.createFrom;
+const $$createType5 = $Create.Nullable($$createType4);
+const $$createType6 = OverlayActivation.createFrom;
+const $$createType7 = $Create.Array($$createType6);
+const $$createType8 = SlideChannel.createFrom;
+const $$createType9 = $Create.Nullable($$createType8);
+const $$createType10 = PresentationChannel.createFrom;
+const $$createType11 = $Create.Nullable($$createType10);
+const $$createType12 = LiveFill.createFrom;
+const $$createType13 = $Create.Map($Create.Any, $Create.Any);

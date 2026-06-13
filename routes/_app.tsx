@@ -10,9 +10,7 @@ import {
 } from "@tanstack/react-router"
 import {
   ArrowUpIcon,
-  BellIcon,
   CircleUserIcon,
-  MonitorIcon,
   PanelsTopLeftIcon,
   SettingsIcon,
   LogOutIcon,
@@ -61,10 +59,13 @@ export const Route = createFileRoute("/_app")({
 })
 
 function AppShell() {
-  const path = useRouterState({ select: (s) => s.location.pathname })
-  const inSettings = path.startsWith("/settings")
-  const inEditor =
-    path.startsWith("/templates/") || path.startsWith("/overlays/")
+  // Surfaces replaced the settings/editor routes — the shell detects
+  // an open surface from the "/" route's search params (the shell
+  // itself has no route params).
+  const surface = useRouterState({
+    select: (s) => (s.location.search as { surface?: string }).surface,
+  })
+  const surfaceOpen = surface !== undefined
   // live mirrors the Go-side IsLive (polled). The local mutation
   // invalidates it on success, so the button reflects actual window
   // state — including external close (monitor unplug, user Cmd-Q on
@@ -92,7 +93,6 @@ function AppShell() {
   }, [mutating])
   const [confirmOffline, setConfirmOffline] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
-  const [hasUnread, setHasUnread] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
 
   useEffect(() => {
@@ -160,32 +160,17 @@ function AppShell() {
               </div>
             </PopoverContent>
           </Popover>
-          <button
-            type="button"
-            aria-label={
-              hasUnread ? "Notifications (unread)" : "Notifications"
+          <Link
+            to="/"
+            search={(prev) =>
+              surfaceOpen
+                ? { ...prev, surface: undefined, editId: undefined }
+                : { ...prev, surface: "settings" }
             }
-            onClick={() => setHasUnread((v) => !v)}
-            className="relative grid w-12 place-items-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
-          >
-            <BellIcon className="h-4 w-4" />
-            {hasUnread && (
-              <span className="absolute right-3.5 top-3 h-1.5 w-1.5 rounded-full bg-red-500" />
-            )}
-          </button>
-          <Link
-            to="/presenter"
-            aria-label="Presenter view"
-            className="grid w-10 place-items-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
-          >
-            <MonitorIcon className="h-4 w-4" />
-          </Link>
-          <Link
-            to={inSettings || inEditor ? "/" : "/settings"}
-            aria-label={inSettings || inEditor ? "Back to projector" : "Settings"}
+            aria-label={surfaceOpen ? "Back to projector" : "Settings"}
             className="grid w-12 place-items-center text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
           >
-            {inSettings || inEditor ? (
+            {surfaceOpen ? (
               <PanelsTopLeftIcon className="h-4 w-4" />
             ) : (
               <SettingsIcon className="h-4 w-4" />

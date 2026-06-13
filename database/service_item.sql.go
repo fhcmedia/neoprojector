@@ -7,12 +7,13 @@ package database
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createServiceItem = `-- name: CreateServiceItem :one
 INSERT INTO service_item (section_id, position)
 VALUES (?, ?)
-RETURNING id, section_id, position, created_at, updated_at
+RETURNING id, section_id, position, background_id, created_at, updated_at
 `
 
 type CreateServiceItemParams struct {
@@ -27,6 +28,7 @@ func (q *Queries) CreateServiceItem(ctx context.Context, arg CreateServiceItemPa
 		&i.ID,
 		&i.SectionID,
 		&i.Position,
+		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -39,7 +41,7 @@ VALUES (
   ?1,
   COALESCE((SELECT MAX(position) + 1 FROM service_item WHERE service_item.section_id = ?1), 0)
 )
-RETURNING id, section_id, position, created_at, updated_at
+RETURNING id, section_id, position, background_id, created_at, updated_at
 `
 
 func (q *Queries) CreateServiceItemAppend(ctx context.Context, sectionID int64) (ServiceItem, error) {
@@ -49,6 +51,7 @@ func (q *Queries) CreateServiceItemAppend(ctx context.Context, sectionID int64) 
 		&i.ID,
 		&i.SectionID,
 		&i.Position,
+		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -65,7 +68,7 @@ func (q *Queries) DeleteServiceItem(ctx context.Context, id int64) error {
 }
 
 const listServiceItems = `-- name: ListServiceItems :many
-SELECT id, section_id, position, created_at, updated_at FROM service_item
+SELECT id, section_id, position, background_id, created_at, updated_at FROM service_item
 WHERE section_id = ?
 ORDER BY position
 `
@@ -83,6 +86,7 @@ func (q *Queries) ListServiceItems(ctx context.Context, sectionID int64) ([]Serv
 			&i.ID,
 			&i.SectionID,
 			&i.Position,
+			&i.BackgroundID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -104,6 +108,10 @@ SELECT
   si.id,
   si.section_id,
   si.position,
+  -- Background resolution inputs (0 = unset/inherit): the show pane
+  -- resolves item -> section -> service default at go-live time.
+  CAST(COALESCE(si.background_id, 0) AS INTEGER) AS background_id,
+  CAST(COALESCE(sec.background_id, 0) AS INTEGER) AS section_background_id,
   CASE
     WHEN sis.item_id IS NOT NULL THEN 'song'
     WHEN sib.item_id IS NOT NULL THEN 'bible'
@@ -126,6 +134,7 @@ SELECT
   CAST(COALESCE(sio.layouts_json, '') AS TEXT) AS overlay_layouts_json,
   CAST(COALESCE(sio.rules_json, '') AS TEXT) AS overlay_rules_json
 FROM service_item si
+LEFT JOIN service_section sec ON sec.id = si.section_id
 LEFT JOIN service_item_song sis ON sis.item_id = si.id
 LEFT JOIN service_item_bible sib ON sib.item_id = si.id
 LEFT JOIN service_item_media sim ON sim.item_id = si.id
@@ -140,23 +149,25 @@ ORDER BY si.position
 `
 
 type ListServiceItemsWithContentRow struct {
-	ID                 int64  `json:"id"`
-	SectionID          int64  `json:"section_id"`
-	Position           int64  `json:"position"`
-	Kind               string `json:"kind"`
-	SongID             int64  `json:"song_id"`
-	Book               string `json:"book"`
-	Chapter            int64  `json:"chapter"`
-	VerseStart         int64  `json:"verse_start"`
-	VerseEnd           int64  `json:"verse_end"`
-	MediaID            int64  `json:"media_id"`
-	PresentationID     int64  `json:"presentation_id"`
-	Label              string `json:"label"`
-	BookKjv            string `json:"book_kjv"`
-	OverlayKind        string `json:"overlay_kind"`
-	OverlayConfigJson  string `json:"overlay_config_json"`
-	OverlayLayoutsJson string `json:"overlay_layouts_json"`
-	OverlayRulesJson   string `json:"overlay_rules_json"`
+	ID                  int64  `json:"id"`
+	SectionID           int64  `json:"section_id"`
+	Position            int64  `json:"position"`
+	BackgroundID        int64  `json:"background_id"`
+	SectionBackgroundID int64  `json:"section_background_id"`
+	Kind                string `json:"kind"`
+	SongID              int64  `json:"song_id"`
+	Book                string `json:"book"`
+	Chapter             int64  `json:"chapter"`
+	VerseStart          int64  `json:"verse_start"`
+	VerseEnd            int64  `json:"verse_end"`
+	MediaID             int64  `json:"media_id"`
+	PresentationID      int64  `json:"presentation_id"`
+	Label               string `json:"label"`
+	BookKjv             string `json:"book_kjv"`
+	OverlayKind         string `json:"overlay_kind"`
+	OverlayConfigJson   string `json:"overlay_config_json"`
+	OverlayLayoutsJson  string `json:"overlay_layouts_json"`
+	OverlayRulesJson    string `json:"overlay_rules_json"`
 }
 
 func (q *Queries) ListServiceItemsWithContent(ctx context.Context, sectionID int64) ([]ListServiceItemsWithContentRow, error) {
@@ -172,6 +183,8 @@ func (q *Queries) ListServiceItemsWithContent(ctx context.Context, sectionID int
 			&i.ID,
 			&i.SectionID,
 			&i.Position,
+			&i.BackgroundID,
+			&i.SectionBackgroundID,
 			&i.Kind,
 			&i.SongID,
 			&i.Book,
@@ -204,7 +217,7 @@ const moveServiceItem = `-- name: MoveServiceItem :one
 UPDATE service_item
 SET section_id = ?, position = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, section_id, position, created_at, updated_at
+RETURNING id, section_id, position, background_id, created_at, updated_at
 `
 
 type MoveServiceItemParams struct {
@@ -220,6 +233,7 @@ func (q *Queries) MoveServiceItem(ctx context.Context, arg MoveServiceItemParams
 		&i.ID,
 		&i.SectionID,
 		&i.Position,
+		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -240,7 +254,7 @@ func (q *Queries) NextServiceItemPosition(ctx context.Context, sectionID int64) 
 }
 
 const serviceItemByID = `-- name: ServiceItemByID :one
-SELECT id, section_id, position, created_at, updated_at FROM service_item WHERE id = ?
+SELECT id, section_id, position, background_id, created_at, updated_at FROM service_item WHERE id = ?
 `
 
 func (q *Queries) ServiceItemByID(ctx context.Context, id int64) (ServiceItem, error) {
@@ -250,6 +264,33 @@ func (q *Queries) ServiceItemByID(ctx context.Context, id int64) (ServiceItem, e
 		&i.ID,
 		&i.SectionID,
 		&i.Position,
+		&i.BackgroundID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const setItemBackground = `-- name: SetItemBackground :one
+UPDATE service_item
+SET background_id = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING id, section_id, position, background_id, created_at, updated_at
+`
+
+type SetItemBackgroundParams struct {
+	BackgroundID sql.NullInt64 `json:"background_id"`
+	ID           int64         `json:"id"`
+}
+
+func (q *Queries) SetItemBackground(ctx context.Context, arg SetItemBackgroundParams) (ServiceItem, error) {
+	row := q.db.QueryRowContext(ctx, setItemBackground, arg.BackgroundID, arg.ID)
+	var i ServiceItem
+	err := row.Scan(
+		&i.ID,
+		&i.SectionID,
+		&i.Position,
+		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -276,7 +317,7 @@ const updateServiceItemPosition = `-- name: UpdateServiceItemPosition :one
 UPDATE service_item
 SET position = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, section_id, position, created_at, updated_at
+RETURNING id, section_id, position, background_id, created_at, updated_at
 `
 
 type UpdateServiceItemPositionParams struct {
@@ -291,6 +332,7 @@ func (q *Queries) UpdateServiceItemPosition(ctx context.Context, arg UpdateServi
 		&i.ID,
 		&i.SectionID,
 		&i.Position,
+		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

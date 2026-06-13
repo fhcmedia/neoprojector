@@ -41,6 +41,8 @@ type DefaultBox = {
   vAlign: "top" | "middle" | "bottom"
   maxLines: number
   lineHeight: number
+  outlineWidth: number
+  outlineColor: string
 }
 
 type DefaultTemplate = {
@@ -86,6 +88,11 @@ function box(o: Partial<DefaultBox> & Pick<DefaultBox, "slot" | "x" | "y" | "w" 
     vAlign: "middle",
     maxLines: 6,
     lineHeight: 1.25,
+    // Black legibility outline on every shipped text box — templates
+    // render transparent over arbitrary (often animated) backgrounds,
+    // so the stroke is what keeps text readable everywhere.
+    outlineWidth: 2,
+    outlineColor: "#000000",
     ...o,
   }
 }

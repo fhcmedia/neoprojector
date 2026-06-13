@@ -7,9 +7,13 @@ export {
 };
 
 export {
+    BackgroundSnapshot,
     LiveFill,
     LiveMediaRef,
     LivePayload,
+    MediaChannel,
     OverlayActivation,
-    ScreenInfo
+    PresentationChannel,
+    ScreenInfo,
+    SlideChannel
 } from "./models.js";

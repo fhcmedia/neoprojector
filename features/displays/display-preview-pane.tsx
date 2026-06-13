@@ -49,7 +49,12 @@ import {
   motionProps,
   type AnimKind,
 } from "@/features/animations/variants"
+import {
+  OverlayParts,
+  staggerContainerVariants,
+} from "@/features/overlays/stagger"
 import type { Display, Template } from "@/bindings/neoprojector/database"
+import { BackgroundView } from "@/features/backgrounds/background-view"
 import { cn } from "@/lib/utils"
 
 // DisplayPreviewPane: stacked tiles, one per configured display. Each
@@ -59,7 +64,7 @@ import { cn } from "@/lib/utils"
 export function DisplayPreviewPane() {
   const { data: displays, isLoading } = useDisplays()
   const { data: templates } = useTemplates()
-  const { live, activeOverlays } = useLive()
+  const { live, activeOverlays, serviceBackground } = useLive()
   const reorderMut = useReorderDisplays()
 
   // Index templates by id once so each tile can resolve its binding in
@@ -117,6 +122,7 @@ export function DisplayPreviewPane() {
                     templateById={templateById}
                     live={live}
                     activeOverlays={activeOverlays}
+                    serviceBackground={serviceBackground}
                   />
                 ))}
               </VerticalSortable>
@@ -134,7 +140,8 @@ function EmptyState() {
       <div className="flex flex-col items-center gap-2 text-xs text-muted-foreground/60">
         <span>No displays configured</span>
         <Link
-          to="/settings"
+          to="/"
+          search={(prev) => ({ ...prev, surface: "settings" })}
           className="inline-flex items-center gap-1.5 text-xs text-foreground transition-colors hover:text-foreground/80"
         >
           <SettingsIcon className="size-3.5" />
@@ -187,26 +194,44 @@ function PreviewOverlay({
     () => parseConfig(overlay.configJSON, def.defaultConfig),
     [overlay.configJSON, def.defaultConfig]
   )
-  const entry = layout.style.entry as AnimKind | undefined
+  // Same stagger switch as the output's OverlayInstance — parity.
+  const entry = (layout.style.entry as AnimKind | undefined) ?? "fade"
   const duration = layout.style.duration_ms as number | undefined
-  const m = motionProps(entry ?? "fade", duration)
+  const staggerMs = (layout.style.stagger_ms as number | undefined) ?? 0
+  const boxStyle: React.CSSProperties = {
+    left: `${(layout.x - layout.w / 2) * 100}%`,
+    top: `${(layout.y - layout.h / 2) * 100}%`,
+    width: `${layout.w * 100}%`,
+    height: `${layout.h * 100}%`,
+    containerType: "size",
+  }
+  const content = (
+    <def.Renderer
+      config={config}
+      style={layout.style}
+      activatedAt={overlay.activatedAt}
+    />
+  )
+  if (staggerMs > 0) {
+    return (
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        exit="hidden"
+        variants={staggerContainerVariants(staggerMs)}
+        className="absolute"
+        style={boxStyle}
+      >
+        <OverlayParts kind={entry} durationMs={duration ?? 220}>
+          {content}
+        </OverlayParts>
+      </motion.div>
+    )
+  }
+  const m = motionProps(entry, duration)
   return (
-    <motion.div
-      {...m}
-      className="absolute"
-      style={{
-        left: `${(layout.x - layout.w / 2) * 100}%`,
-        top: `${(layout.y - layout.h / 2) * 100}%`,
-        width: `${layout.w * 100}%`,
-        height: `${layout.h * 100}%`,
-        containerType: "size",
-      }}
-    >
-      <def.Renderer
-        config={config}
-        style={layout.style}
-        activatedAt={overlay.activatedAt}
-      />
+    <motion.div {...m} className="absolute" style={boxStyle}>
+      {content}
     </motion.div>
   )
 }
@@ -259,11 +284,13 @@ function PreviewTile({
   templateById,
   live,
   activeOverlays,
+  serviceBackground,
 }: {
   display: Display
   templateById: Map<number, Template>
   live: ReturnType<typeof useLive>["live"]
   activeOverlays: ActiveOverlay[]
+  serviceBackground: ReturnType<typeof useLive>["serviceBackground"]
 }) {
   const enabled = display.enabled !== 0
   const setEnabled = useSetDisplayEnabled()
@@ -271,23 +298,29 @@ function PreviewTile({
   const { attributes, listeners, setNodeRef, style, isDragging } =
     useSortableRow(`display-${display.id}`)
 
-  // Per-display routing: a screen whose show_* flag for the live kind
-  // is off stays black even while that kind is broadcasting. This
-  // mirrors the exact suppression the output window applies, so the
-  // operator's preview always matches the audience screen.
-  const slideShown = live ? liveKindShown(display, live.kind) : true
-  const overlaysShown = display.show_overlay !== 0
+  // Channel split — mirrors the output window's compositing exactly:
+  //   z0 media ?? background, z1 overlays, z2 slide text, z3
+  //   presentation. show_media gates z0 AND z3; show_song/show_bible
+  //   gate z2 by slide kind; show_overlay gates z1.
+  const slideLive = live?.channel === "slide" ? live : null
+  const mediaLive = live?.channel === "media" ? live : null
+  const presLive = live?.channel === "presentation" ? live : null
 
-  // Template binding for the live kind (bible/song). Media renders
-  // straight from fill.media with no template. A suppressed kind
-  // resolves to null so the tile falls back to its black surface.
+  const mediaShown = display.show_media !== 0
+  const overlaysShown = display.show_overlay !== 0
+  const slideShown = slideLive
+    ? liveKindShown(display, slideLive.kind)
+    : false
+
+  // Template binding for the slide channel (bible/song). A suppressed
+  // kind resolves to null so the tile falls back to its black surface.
   const bindingId =
-    slideShown && live
-      ? live.kind === "bible"
+    slideShown && slideLive
+      ? slideLive.kind === "bible"
         ? display.bible_template_id.Valid
           ? display.bible_template_id.Int64
           : null
-        : live.kind === "song"
+        : slideLive.kind === "song"
           ? display.song_template_id.Valid
             ? display.song_template_id.Int64
             : null
@@ -296,9 +329,10 @@ function PreviewTile({
 
   const template = bindingId !== null ? templateById.get(bindingId) ?? null : null
 
-  // cover_slide overlays blank the template beneath them — but only
-  // when overlays actually render on this display. A screen routed to
-  // hide overlays keeps showing its slide underneath.
+  // cover_slide overlays blank the slide TEXT beneath them — the z0
+  // slot (background/media) stays visible; overlays are transparent
+  // and render over it. Only overlays that actually render on this
+  // display can blank the text beneath them.
   const overlaysCoverSlide =
     overlaysShown &&
     activeOverlays.some((a) => {
@@ -306,17 +340,30 @@ function PreviewTile({
       return parseRules(a.rulesJSON, def.defaultRules).cover_slide === true
     })
 
-  // Blank the fill when the slide is suppressed so the renderer drops
-  // to a clean black surface rather than freezing on the last shown
-  // content. slideKey uses the output route's slot-identity shape
-  // verbatim — and crucially does NOT change when a routing flag flips
-  // — so a layer toggle refreshes the layer in place (an instant hard
-  // cut) on both surfaces, instead of the preview crossfading while the
-  // audience window hard-cuts. Parity at the toggle edge, not just in
-  // steady state.
-  const fill = slideShown ? live?.fill ?? {} : {}
-  const slideKey = live
-    ? `${live.kind}-${live.sourceItemId ?? "_"}-${live.slideIndex}`
+  // z0 background: item/section override composed over the service
+  // default — identical derivation to buildPayload. Unmounted (not
+  // occluded) when anything opaque covers it, so the preview's WebGL
+  // cost mirrors the output's.
+  const background = live?.background ?? serviceBackground ?? null
+  const backgroundVisible =
+    mediaShown && !!background && !mediaLive && !presLive
+
+  // Slide layer: blank the fill (rather than changing keys) when
+  // suppressed, so a routing toggle refreshes the layer in place — an
+  // instant hard cut on both surfaces, never a preview-only crossfade.
+  // Media/presentation layers UNMOUNT when suppressed or covered,
+  // exactly as the output window unmounts its DualLayerMediaCanvas.
+  const slideFill = slideShown ? slideLive?.fill ?? {} : {}
+  const slideKey = slideLive
+    ? `${slideLive.kind}-${slideLive.sourceItemId ?? "_"}-${slideLive.slideIndex}`
+    : "idle"
+  const mediaVisible = !!mediaLive && mediaShown
+  const mediaKey = mediaLive
+    ? `media-${mediaLive.sourceItemId ?? "_"}`
+    : "idle"
+  const presVisible = !!presLive && mediaShown
+  const presKey = presLive
+    ? `pres-${presLive.sourceItemId ?? "_"}-${presLive.slideIndex}`
     : "idle"
 
   return (
@@ -398,17 +445,48 @@ function PreviewTile({
           !enabled && "opacity-40"
         )}
       >
-        <LiveTemplateView
-          template={overlaysCoverSlide ? null : template}
-          fill={fill}
-          slideKey={slideKey}
-          fontSizeOverride={
-            template ? live?.fontSizeOverrideByTemplate?.[template.id] : undefined
-          }
-          className="absolute inset-0 h-full w-full"
-        />
+        {/* z0 — media item, else the resting background. */}
+        {mediaVisible && mediaLive ? (
+          <LiveTemplateView
+            template={null}
+            fill={mediaLive.fill}
+            slideKey={mediaKey}
+            liveTransparency
+            className="absolute inset-0 h-full w-full"
+          />
+        ) : backgroundVisible && background ? (
+          <BackgroundView background={background} />
+        ) : null}
+        {/* z1 — overlays sit above the resting layer, below text. */}
         {enabled && overlaysShown && (
           <PreviewOverlays displayId={display.id} overlays={activeOverlays} />
+        )}
+        {/* z2 — templated slide text. liveTransparency: the tile is an
+            audience mirror, so transparent templates show the layers
+            beneath (or true black), never the editor checker. */}
+        {slideLive && (
+          <LiveTemplateView
+            template={overlaysCoverSlide ? null : template}
+            fill={slideFill}
+            slideKey={slideKey}
+            fontSizeOverride={
+              template
+                ? slideLive.fontSizeOverrideByTemplate?.[template.id]
+                : undefined
+            }
+            liveTransparency
+            className="absolute inset-0 h-full w-full"
+          />
+        )}
+        {/* z3 — presentation covers everything while live. */}
+        {presVisible && presLive && (
+          <LiveTemplateView
+            template={null}
+            fill={presLive.fill}
+            slideKey={presKey}
+            liveTransparency
+            className="absolute inset-0 h-full w-full"
+          />
         )}
       </div>
     </div>

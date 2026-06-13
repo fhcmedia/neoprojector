@@ -29,58 +29,90 @@ type Service struct {
 	bypassDisplayCheck bool
 }
 
-// LivePayload mirrors the LiveSlide that the main window's
-// LiveProvider holds. Kind "none" means "nothing live — go black."
-// Persisted only in-memory inside this service; the operator never
-// resumes a previous session's live state across app restarts.
+// LivePayload carries the full live state as independent render
+// channels, composited bottom-up by every output window:
+//
+//	z0  Media ?? Background ?? black   (one slot — media wins)
+//	z1  ActiveOverlays
+//	z2  Slide (templated song/bible text)
+//	z3  Presentation
+//
+// All channels are independently nillable; an all-nil payload means
+// "nothing live — go black". The operator window composes channels
+// (service defaults + item overrides + manual toggles); this service
+// stays a cache-and-relay and never interprets the contents.
+// Persisted only in-memory; live state never survives app restarts.
 type LivePayload struct {
-	Kind           string              `json:"kind"`
-	Fill           LiveFill            `json:"fill"`
-	SourceItemID   int64               `json:"source_item_id"`
-	SlideIndex     int64               `json:"slide_index"`
+	// Background is the z0 resting layer — an animated shader (or
+	// other engine) snapshot resolved by the operator at push time
+	// from the schedule's item -> section -> service config chain.
+	// Snapshot, not id: output windows render without re-fetching
+	// (same discipline as overlay activations).
+	Background *BackgroundSnapshot `json:"background,omitempty"`
+	// Media is z0 content from media schedule items. When set it
+	// replaces Background for as long as it's live.
+	Media *MediaChannel `json:"media,omitempty"`
+	// ActiveOverlays render at z1 — above the background, below the
+	// slide text. cover_slide rules still suppress z0+z2 client-side.
 	ActiveOverlays []OverlayActivation `json:"active_overlays"`
-	// Optional transition override for the audience output. Set when
-	// the live source is a presentation (the per-presentation
-	// transition wins over the template's own — presentation slides
-	// don't go through a template anyway). Empty string in
-	// TransitionKind = "no override, use template default."
-	TransitionKind       string `json:"transition_kind,omitempty"`
-	TransitionDurationMs int64  `json:"transition_duration_ms,omitempty"`
-	// Per-template uniform fontSize override for the currently-
-	// broadcasting item. Keyed by template id (as a string, since
-	// JSON maps require string keys). Each entry is a SINGLE fontSize
-	// applied to every fitToBox box in that template — across every
-	// slide in the active item and across every box (primary,
-	// secondary, tertiary, …). Computed by the operator's show-pane
-	// uniform-fit pass: the minimum fontSize across all (slide × box)
-	// pairs that doesn't clip, so a three-translations template
-	// renders every translation at the same size on every verse.
-	//
-	// Per-template scoping: a lower-thirds template (small box) and a
-	// two-translations template (medium box) need different floors;
-	// they must not bleed into each other. Each audience window looks
-	// up the entry for its own bound template; entries for templates
-	// no display uses just get ignored.
-	//
-	// Empty for slides that didn't go through the uniform pass.
-	FontSizeOverrideByTemplate map[string]int64 `json:"font_size_override_by_template,omitempty"`
+	// Slide is the templated text channel (song lyrics, bible verses).
+	Slide *SlideChannel `json:"slide,omitempty"`
+	// Presentation is the top channel — opaque slides that cover
+	// everything while live; clearing it reveals what never stopped
+	// being live beneath.
+	Presentation *PresentationChannel `json:"presentation,omitempty"`
 
 	// AudioDisplayID names the single output window that should play
-	// audio when the current slot is video/audio media. Every other
+	// audio when a live channel carries video/audio media. Every other
 	// output mutes its <video>. Computed in PushLive as the smallest
-	// active display id — deterministic across pushes so the audio
-	// doesn't hop between screens mid-slide. Zero when no live output
-	// windows are open.
+	// media-capable display id — deterministic across pushes so the
+	// audio doesn't hop between screens mid-slide. Zero when no live
+	// output windows are open.
 	AudioDisplayID int64 `json:"audio_display_id,omitempty"`
+}
 
-	// NextMediaID is the media id the NEXT slide will reference, if
-	// the operator knows what's coming (presentations with a fixed
-	// slide list). Output windows mount a hidden preload element for
-	// this id so the bytes are decoded and warm before the slide
-	// transition fires — fixes the fade stutter with many outputs all
-	// fetching+decoding the same asset concurrently. Zero for non-
-	// presentation slots or when there's no determinate next.
-	NextMediaID int64 `json:"next_media_id,omitempty"`
+// BackgroundSnapshot is a resolved background document: which row/seed
+// it came from plus everything needed to render it. ConfigJSON is
+// opaque to Go — the frontend's engine renderer interprets it.
+type BackgroundSnapshot struct {
+	BackgroundID int64  `json:"background_id"`
+	Engine       string `json:"engine"`
+	ConfigJSON   string `json:"config_json"`
+}
+
+// MediaChannel is a media schedule item on the z0 slot.
+type MediaChannel struct {
+	Ref          LiveMediaRef `json:"ref"`
+	SourceItemID int64        `json:"source_item_id"`
+}
+
+// SlideChannel is the templated text layer (z2). Kind picks each
+// display's template binding ("song" -> song_template_id, "bible" ->
+// bible_template_id).
+type SlideChannel struct {
+	Kind         string   `json:"kind"`
+	Fill         LiveFill `json:"fill"`
+	SourceItemID int64    `json:"source_item_id"`
+	SlideIndex   int64    `json:"slide_index"`
+	// Per-template uniform fontSize override for the currently-
+	// broadcasting item. Keyed by template id (string keys — JSON
+	// maps). One fontSize per template, applied to every fitToBox box
+	// across every slide of the item, computed by the operator's
+	// uniform-fit pass so translations stay aligned and verses never
+	// jump size. Empty when no uniform pass has reported.
+	FontSizeOverrideByTemplate map[string]int64 `json:"font_size_override_by_template,omitempty"`
+}
+
+// PresentationChannel is presentation playback (z3): the current
+// slide's media plus the transition the operator configured and the
+// upcoming slide's media id for decoder pre-warming across outputs.
+type PresentationChannel struct {
+	Ref                  LiveMediaRef `json:"ref"`
+	SourceItemID         int64        `json:"source_item_id"`
+	SlideIndex           int64        `json:"slide_index"`
+	TransitionKind       string       `json:"transition_kind,omitempty"`
+	TransitionDurationMs int64        `json:"transition_duration_ms,omitempty"`
+	NextMediaID          int64        `json:"next_media_id,omitempty"`
 }
 
 // OverlayActivation is a schedule-item overlay currently toggled on.
@@ -513,9 +545,6 @@ func (s *Service) StopLive(_ context.Context) {
 // to all output windows via the "live:slot" event. Output webviews
 // subscribe to this event and update their template fill in place.
 func (s *Service) PushLive(ctx context.Context, payload LivePayload) {
-	if payload.Kind == "" {
-		payload.Kind = "none"
-	}
 	// Resolve which displays actually render media before taking the
 	// lock (keeps the DB read off the mutex the other live calls
 	// contend on). A media-suppressed display (show_media=0) mounts no
@@ -574,8 +603,7 @@ func (s *Service) mediaCapableDisplays(ctx context.Context) (map[int64]bool, err
 func (s *Service) CurrentLive(_ context.Context) LivePayload {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.lastSlot.Kind == "" {
-		return LivePayload{Kind: "none"}
-	}
+	// Zero value is the valid "nothing live" payload — all channels
+	// nil, outputs render black.
 	return s.lastSlot
 }

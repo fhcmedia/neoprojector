@@ -22,11 +22,21 @@ SET section_id = ?, position = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
 RETURNING *;
 
+-- name: SetItemBackground :one
+UPDATE service_item
+SET background_id = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING *;
+
 -- name: ListServiceItemsWithContent :many
 SELECT
   si.id,
   si.section_id,
   si.position,
+  -- Background resolution inputs (0 = unset/inherit): the show pane
+  -- resolves item -> section -> service default at go-live time.
+  CAST(COALESCE(si.background_id, 0) AS INTEGER) AS background_id,
+  CAST(COALESCE(sec.background_id, 0) AS INTEGER) AS section_background_id,
   CASE
     WHEN sis.item_id IS NOT NULL THEN 'song'
     WHEN sib.item_id IS NOT NULL THEN 'bible'
@@ -49,6 +59,7 @@ SELECT
   CAST(COALESCE(sio.layouts_json, '') AS TEXT) AS overlay_layouts_json,
   CAST(COALESCE(sio.rules_json, '') AS TEXT) AS overlay_rules_json
 FROM service_item si
+LEFT JOIN service_section sec ON sec.id = si.section_id
 LEFT JOIN service_item_song sis ON sis.item_id = si.id
 LEFT JOIN service_item_bible sib ON sib.item_id = si.id
 LEFT JOIN service_item_media sim ON sim.item_id = si.id

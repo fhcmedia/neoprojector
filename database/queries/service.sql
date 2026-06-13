@@ -19,3 +19,9 @@ RETURNING *;
 
 -- name: DeleteService :exec
 DELETE FROM service WHERE id = ?;
+
+-- name: SetServiceBackground :one
+UPDATE service
+SET background_id = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING *;

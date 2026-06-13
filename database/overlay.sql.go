@@ -153,6 +153,63 @@ func (q *Queries) RenameOverlay(ctx context.Context, arg RenameOverlayParams) (O
 	return i, err
 }
 
+const saveOverlayWithID = `-- name: SaveOverlayWithID :one
+INSERT INTO overlay (id, name, kind, config_json, layouts_json, rules_json, position)
+VALUES (
+  ?1,
+  ?2,
+  ?3,
+  ?4,
+  ?5,
+  ?6,
+  COALESCE((SELECT MAX(position) + 1 FROM overlay), 0)
+)
+ON CONFLICT(id) DO UPDATE SET
+  name         = excluded.name,
+  kind         = excluded.kind,
+  config_json  = excluded.config_json,
+  layouts_json = excluded.layouts_json,
+  rules_json   = excluded.rules_json,
+  updated_at   = CURRENT_TIMESTAMP
+RETURNING id, name, kind, config_json, layouts_json, rules_json, position, created_at, updated_at
+`
+
+type SaveOverlayWithIDParams struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Kind        string `json:"kind"`
+	ConfigJson  string `json:"config_json"`
+	LayoutsJson string `json:"layouts_json"`
+	RulesJson   string `json:"rules_json"`
+}
+
+// Upsert keyed on id: editing a seed default persists a row reusing
+// the seed's negative id (shadowing it); restore deletes the row and
+// the frontend seed shows through again.
+func (q *Queries) SaveOverlayWithID(ctx context.Context, arg SaveOverlayWithIDParams) (Overlay, error) {
+	row := q.db.QueryRowContext(ctx, saveOverlayWithID,
+		arg.ID,
+		arg.Name,
+		arg.Kind,
+		arg.ConfigJson,
+		arg.LayoutsJson,
+		arg.RulesJson,
+	)
+	var i Overlay
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Kind,
+		&i.ConfigJson,
+		&i.LayoutsJson,
+		&i.RulesJson,
+		&i.Position,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const setOverlayConfig = `-- name: SetOverlayConfig :one
 UPDATE overlay
 SET config_json = ?, updated_at = CURRENT_TIMESTAMP

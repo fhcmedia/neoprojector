@@ -31,6 +31,18 @@ export function ListTemplates(): $CancellablePromise<database$0.Template[]> {
     });
 }
 
+/**
+ * SaveWithID upserts a row at an explicit id — the shadow-a-seed path.
+ * Editing a frontend default persists its working copy under the
+ * seed's negative id so every consumer (display bindings included)
+ * keeps pointing at the same id. Restore = DeleteTemplate(negativeId).
+ */
+export function SaveWithID(id: number, name: string, kind: string, viewportW: number, viewportH: number, dataJSON: string): $CancellablePromise<database$0.Template> {
+    return $Call.ByID(3624599829, id, name, kind, viewportW, viewportH, dataJSON).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
 export function TemplateByID(id: number): $CancellablePromise<database$0.Template> {
     return $Call.ByID(3959025523, id).then(($result: any) => {
         return $$createType0($result);

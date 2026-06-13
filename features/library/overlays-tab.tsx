@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import {
   CopyIcon,
-  LockIcon,
+  RotateCcwIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react"
@@ -38,12 +38,13 @@ type Props = {
   onOpen: (overlay: Overlay) => void
 }
 
-// OverlaysTab — tile grid mirroring the Templates tab. Defaults are
-// the locked rows up front (duplicate to edit); user-created overlays
-// follow. A live preview tile renders the widget's actual output so
-// the operator can spot the right one at a glance.
+// OverlaysTab — tile grid mirroring the Templates tab. Defaults sort
+// first and are directly editable (edits shadow the seed; the restore
+// action on an edited default deletes the shadow). A live preview
+// tile renders the widget's actual output on the transparency checker
+// so the operator can spot the right one at a glance.
 export function OverlaysTab({ search, onOpen }: Props) {
-  const { data: overlays, isLoading } = useOverlays()
+  const { data: overlays, rows, isLoading } = useOverlays()
   const createMut = useCreateOverlay()
   const deleteMut = useDeleteOverlay()
   const debounced = useDebounce(search, 200)
@@ -71,6 +72,10 @@ export function OverlaysTab({ search, onOpen }: Props) {
             <OverlayTile
               key={o.id}
               overlay={o}
+              shadowed={
+                isDefaultOverlayId(o.id) &&
+                !!rows?.some((r) => r.id === o.id)
+              }
               onOpen={() => onOpen(o)}
               onDuplicate={() =>
                 createMut.mutate(buildCreateInputFromOverlay(o), {
@@ -102,16 +107,20 @@ export function OverlaysTab({ search, onOpen }: Props) {
 
 function OverlayTile({
   overlay,
+  shadowed,
   onOpen,
   onDuplicate,
   onDelete,
 }: {
   overlay: Overlay
+  shadowed: boolean
   onOpen: () => void
   onDuplicate: () => void
   onDelete: () => void
 }) {
   const isDefault = isDefaultOverlayId(overlay.id)
+  // Pristine seeds have no DB row — nothing to delete or restore.
+  const deletable = !isDefault || shadowed
   const [pendingDelete, setPendingDelete] = useState(false)
   const tileRef = useRef<HTMLDivElement | null>(null)
 
@@ -145,7 +154,18 @@ function OverlayTile({
       <button
         type="button"
         onClick={onOpen}
-        className="relative block aspect-video w-full bg-black text-left"
+        className="relative block aspect-video w-full text-left"
+        style={{
+          // Overlays are always transparent — the checker (same
+          // theme-aware pattern as the editors) makes that visible
+          // instead of implying a black background.
+          backgroundColor: "var(--background)",
+          backgroundImage:
+            "repeating-conic-gradient(" +
+            "color-mix(in oklch, var(--foreground) 7%, transparent) 0% 25%, " +
+            "transparent 0% 50%)",
+          backgroundSize: "20px 20px",
+        }}
       >
         {/* Mini canvas mirroring the output. Layout coords are 0..1
             normalized; the wrapper applies them as percentages and
@@ -165,15 +185,6 @@ function OverlayTile({
             <def.Renderer config={config} style={layout.style} />
           </div>
         </div>
-        {isDefault && (
-          <span
-            aria-label="Default — duplicate to edit"
-            title="Default — duplicate to edit"
-            className="pointer-events-none absolute left-1.5 top-1.5 grid size-5 place-items-center rounded bg-background/70 text-muted-foreground backdrop-blur"
-          >
-            <LockIcon className="size-3" />
-          </span>
-        )}
         <div className="absolute right-1.5 top-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           <span
             role="button"
@@ -194,10 +205,17 @@ function OverlayTile({
           >
             <CopyIcon className="size-3.5" />
           </span>
-          {!isDefault && (
+          {deletable && (
             <span
               role="button"
-              aria-label={pendingDelete ? "Confirm delete" : "Delete"}
+              aria-label={
+                pendingDelete
+                  ? "Confirm"
+                  : isDefault
+                    ? "Restore default"
+                    : "Delete"
+              }
+              title={isDefault ? "Restore default" : "Delete"}
               tabIndex={0}
               onClick={(e) => {
                 e.stopPropagation()
@@ -229,6 +247,8 @@ function OverlayTile({
             >
               {pendingDelete ? (
                 <XIcon className="size-3.5" />
+              ) : isDefault ? (
+                <RotateCcwIcon className="size-3.5" />
               ) : (
                 <Trash2Icon className="size-3.5" />
               )}

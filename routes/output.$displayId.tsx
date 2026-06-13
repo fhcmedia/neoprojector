@@ -27,6 +27,11 @@ import {
 } from "@/features/templates/types"
 import { motionProps } from "@/features/animations/variants"
 import type { AnimKind } from "@/features/animations/variants"
+import {
+  OverlayParts,
+  staggerContainerVariants,
+} from "@/features/overlays/stagger"
+import { BackgroundView } from "@/features/backgrounds/background-view"
 
 // /output/$displayId is rendered inside each fullscreen secondary
 // window opened by Displays.StartLive. It listens to the broadcast
@@ -87,107 +92,87 @@ function OutputWindow() {
     }
   }, [])
 
-  // Per-display routing: this window renders only the live kinds its
-  // show_* flags allow. A suppressed kind blanks to black here exactly
-  // as it does in the operator's preview tile. The flags live on the
-  // display row this window already refetches on displays:changed, so
-  // toggling routing takes effect mid-live with no live re-push.
-  const slideShown =
-    !display || !slot || slot.kind === "none"
-      ? true
-      : slot.kind === "song"
-        ? display.show_song !== 0
-        : slot.kind === "bible"
-          ? display.show_bible !== 0
-          : slot.kind === "media"
-            ? display.show_media !== 0
-            : true
+  // Channel extraction. Each channel is independently nullable; the
+  // window composites whatever is present, bottom-up.
+  const slide = slot?.slide ?? null
+  const mediaCh = slot?.media ?? null
+  const presentation = slot?.presentation ?? null
+  const background = slot?.background ?? null
+
+  // Per-display routing: this window renders only the channels its
+  // show_* flags allow. A suppressed channel blanks here exactly as
+  // it does in the operator's preview tile. show_media gates the
+  // whole z0 slot (media AND background) plus the z3 presentation
+  // layer — a lyrics-only stage display wants none of them. The
+  // flags live on the display row this window refetches on
+  // displays:changed, so toggling routing takes effect mid-live with
+  // no re-push.
   const overlaysShown = display ? display.show_overlay !== 0 : true
+  const mediaShown = display ? display.show_media !== 0 : true
+  const slideShown =
+    !!slide &&
+    (!display ||
+      (slide.kind === "song"
+        ? display.show_song !== 0
+        : slide.kind === "bible"
+          ? display.show_bible !== 0
+          : true))
 
   const template = useMemo(() => {
-    if (!display || !slot || slot.kind === "none" || !templates) return null
-    if (!slideShown) return null
+    if (!display || !slide || !templates || !slideShown) return null
     const binding =
-      slot.kind === "bible"
+      slide.kind === "bible"
         ? display.bible_template_id
-        : slot.kind === "song"
+        : slide.kind === "song"
           ? display.song_template_id
           : null
     if (!binding?.Valid) return null
     return templates.find((t) => t.id === binding.Int64) ?? null
-  }, [display, slot, templates, slideShown])
+  }, [display, slide, templates, slideShown])
 
   // Convert the Go-side LiveFill (which has empty-string defaults for
   // every unset field) back into the frontend's optional-field SlotFill
   // so the template renderer's "secondary set?" checks behave correctly.
   const fill = useMemo<SlotFill>(() => {
-    // Suppressed kind → empty fill so both the media fast-path and the
-    // templated path resolve to a clean black surface.
-    if (!slot || !slideShown) return {}
+    // Suppressed slide → empty fill so the templated path resolves to
+    // a clean black surface.
+    if (!slide || !slideShown) return {}
     const f: SlotFill = {}
-    if (slot.fill.primary) f.primary = slot.fill.primary
-    if (slot.fill.secondary) f.secondary = slot.fill.secondary
-    if (slot.fill.tertiary) f.tertiary = slot.fill.tertiary
-    if (slot.fill.caption) f.caption = slot.fill.caption
-    if (slot.fill.media) {
-      const mode = slot.fill.media.mode
-      f.media = {
-        mediaId: slot.fill.media.mediaId,
-        mode:
-          mode === "cover" || mode === "contain" || mode === "loop"
-            ? mode
-            : undefined,
-        playing: slot.fill.media.playing,
-        loop: slot.fill.media.loop,
-        // Exactly one output emits audio — the display whose id Go
-        // tagged as audio_display_id (smallest active id, picked at
-        // PushLive time). Every other output mutes so N displays
-        // presenting the same video don't pile up N parallel audio
-        // streams on the computer's audio device. The operator's
-        // mute toggle still flows through the broadcast `muted` field
-        // — when the operator mutes, even the chosen display goes
-        // silent.
-        muted: slot.fill.media.muted || slot.audio_display_id !== id,
-        restartToken: slot.fill.media.restart_token,
-      }
+    if (slide.fill.primary) f.primary = slide.fill.primary
+    if (slide.fill.secondary) f.secondary = slide.fill.secondary
+    if (slide.fill.tertiary) f.tertiary = slide.fill.tertiary
+    if (slide.fill.caption) f.caption = slide.fill.caption
+    if (slide.fill.media) {
+      f.media = toMediaRef(slide.fill.media, slot?.audio_display_id ?? 0, id)
     }
     return f
-  }, [slot, id, slideShown])
+  }, [slide, id, slideShown, slot?.audio_display_id])
 
-  // slideKey identifies the current slide for AnimatePresence; when
-  // it changes the previous template exits and the new one enters
+  // slideKey identifies the current slide for the template crossfade;
+  // when it changes the previous template exits and the new one enters
   // using the template's chosen transition.
-  const slideKey = slot
-    ? `${slot.kind}-${slot.source_item_id}-${slot.slide_index}`
+  const slideKey = slide
+    ? `${slide.kind}-${slide.source_item_id}-${slide.slide_index}`
     : "idle"
 
   // Operator's uniform-fit pass: single fontSize applied to every
   // fitToBox box in THIS display's bound template, across every
-  // slide in the active item. Undefined unless the show pane has
-  // reported measurements. The show pane measures each enabled
-  // display's template independently and computes one minimum
-  // across every (slide × fitToBox box) — so primary/secondary/
-  // tertiary translations all render at the same size.
-  //
-  // Per-template scoping: a sibling display bound to a different
-  // template doesn't drag our floor with it.
+  // slide in the active item. Per-template scoping: a sibling display
+  // bound to a different template doesn't drag our floor with it.
   const fontSizeOverride = useMemo<number | undefined>(() => {
-    const raw = slot?.font_size_override_by_template
+    const raw = slide?.font_size_override_by_template
     if (!raw || !template) return undefined
     const v = raw[String(template.id)]
     if (typeof v !== "number" || v <= 0) return undefined
     return v
-  }, [slot, template])
+  }, [slide, template])
 
-  // If any active overlay's rules opt in to cover_slide, the
-  // template below is suppressed entirely — used by countdowns /
-  // pre-service screens that own the canvas. Without that gate,
-  // the audience would see verses peek through a centered timer.
-  // parseRules takes the widget kind's defaults as fallback so old
-  // rows (rules_json empty/{}) still get sensible behavior.
-  // Only overlays that actually render on this display can blank the
-  // slide beneath them. A screen routed to hide overlays keeps its
-  // slide, so cover_slide can't reach across the routing toggle.
+  // If any active overlay's rules opt in to cover_slide, the slide
+  // TEXT beneath is suppressed — a countdown shouldn't have verses
+  // peeking through it. The z0 slot (background/media) stays: overlays
+  // are transparent and render OVER the resting layer, never on a
+  // forced black canvas. Only overlays that actually render on this
+  // display can blank the text beneath them.
   const overlaysCoverSlide =
     overlaysShown &&
     (slot?.active_overlays ?? []).some((a) => {
@@ -195,66 +180,107 @@ function OutputWindow() {
       return parseRules(a.rules_json, def.defaultRules).cover_slide === true
     })
 
-  // Transition override from the broadcast. Set for presentation
-  // playback (operator picked a per-presentation transition);
-  // empty/zero means "use the template default" so bible/song stay
-  // on their template-defined fade.
-  const transitionOverride =
-    slot?.transition_kind && slot.transition_kind !== ""
+  // z0 media + background refs.
+  const z0MediaRef = useMemo<MediaRef | null>(() => {
+    if (!mediaCh || !mediaShown) return null
+    return toMediaRef(mediaCh.ref, slot?.audio_display_id ?? 0, id)
+  }, [mediaCh, mediaShown, slot?.audio_display_id, id])
+  // The background renders only when nothing opaque sits on the z0
+  // slot or above it — an invisible gradflow canvas would still burn
+  // GPU in every output window, so unmount instead of occlude.
+  const backgroundVisible =
+    mediaShown && !!background && !z0MediaRef && !presentation
+
+  // z3 presentation media + transition.
+  const presRef = useMemo<MediaRef | null>(() => {
+    if (!presentation || !mediaShown) return null
+    return toMediaRef(presentation.ref, slot?.audio_display_id ?? 0, id)
+  }, [presentation, mediaShown, slot?.audio_display_id, id])
+  const presTransition =
+    presentation?.transition_kind && presentation.transition_kind !== ""
       ? {
-          kind: slot.transition_kind,
-          duration_ms: slot.transition_duration_ms ?? 500,
+          kind: presentation.transition_kind,
+          duration_ms: presentation.transition_duration_ms ?? 500,
         }
       : undefined
-
-  // Preload hint — a hidden <img>/<video> kept off-screen so the
-  // browser fetches+decodes the upcoming slide's bytes BEFORE the
-  // crossfade fires. Without this, 5+ outputs all hitting the same
-  // /media-asset URL at slide-change time produces visible stutter
-  // while each window decodes the asset from scratch. Type is
-  // unknown until the media list is loaded by MediaSurface; we eagerly
-  // render both <img> and <video> for the same src and let the
-  // browser ignore the wrong one — cheap and dependency-free.
-  const nextMediaId = slot?.next_media_id ?? 0
-
-  // Media-only fast path. When the live slot has no template binding
-  // (presentations + single-media items), the dual-layer canvas
-  // ping-pongs persistent <video>/<img> elements so the decoder
-  // doesn't spin up cold on every slide change. With 5+ outputs all
-  // mounting fresh elements at the same broadcast we were seeing the
-  // tail-window stutter the operator reported. Templated slides
-  // (bible, song) keep using LiveTemplateView — their crossfade is
-  // mostly text/SVG which doesn't suffer the same decoder cost.
-  const useFastPath =
-    !overlaysCoverSlide && !template && !!fill.media
+  // Preload hint — the upcoming presentation slide's bytes get decoded
+  // BEFORE the crossfade fires so N outputs don't stutter on the same
+  // asset simultaneously.
+  const nextMediaId = presentation?.next_media_id ?? 0
 
   return (
     <div className="relative h-screen w-screen overflow-hidden bg-black">
-      {useFastPath && fill.media ? (
+      {/* z0 — media item, else background, else the black canvas. */}
+      {z0MediaRef ? (
         <DualLayerMediaCanvas
-          mediaRef={fill.media}
-          nextMediaId={nextMediaId}
-          transition={transitionOverride}
+          mediaRef={z0MediaRef}
+          nextMediaId={0}
+          transition={undefined}
         />
-      ) : (
+      ) : backgroundVisible && background ? (
+        <BackgroundView background={background} />
+      ) : null}
+      {/* z1 — overlays render above the resting layer, below text. */}
+      <OverlayLayer
+        displayId={id}
+        overlays={overlaysShown ? slot?.active_overlays ?? [] : []}
+      />
+      {/* z2 — templated slide text (song/bible). Mounted whenever a
+          slide channel exists — suppression blanks template+fill
+          instead of unmounting, so a routing toggle hard-cuts in
+          place identically on output and preview tile. */}
+      {slide && (
         <LiveTemplateView
           template={overlaysCoverSlide ? null : template}
           fill={fill}
           slideKey={slideKey}
           fontSizeOverride={fontSizeOverride}
-          transitionOverride={transitionOverride}
+          transitionOverride={undefined}
           liveTransparency
         />
       )}
-      <OverlayLayer
-        displayId={id}
-        overlays={overlaysShown ? slot?.active_overlays ?? [] : []}
-      />
-      {!useFastPath && display?.show_media !== 0 && (
-        <NextMediaWarmer mediaId={nextMediaId} />
+      {/* z3 — presentation covers everything while live. */}
+      {presRef && (
+        <DualLayerMediaCanvas
+          mediaRef={presRef}
+          nextMediaId={nextMediaId}
+          transition={presTransition}
+        />
       )}
+      {mediaShown && <NextMediaWarmer mediaId={nextMediaId} />}
     </div>
   )
+}
+
+// toMediaRef converts the broadcast LiveMediaRef into the renderer's
+// MediaRef, applying the single-audio-output rule: exactly one display
+// (audio_display_id, picked Go-side at PushLive) emits audio; every
+// other output mutes so N outputs don't stack N audio streams. The
+// operator's mute toggle still wins — when muted, even the chosen
+// display goes silent.
+function toMediaRef(
+  ref: {
+    mediaId: number
+    mode?: string
+    playing: boolean
+    loop: boolean
+    muted: boolean
+    restart_token: number
+  },
+  audioDisplayId: number,
+  selfId: number
+): MediaRef {
+  return {
+    mediaId: ref.mediaId,
+    mode:
+      ref.mode === "cover" || ref.mode === "contain" || ref.mode === "loop"
+        ? ref.mode
+        : undefined,
+    playing: ref.playing,
+    loop: ref.loop,
+    muted: ref.muted || audioDisplayId !== selfId,
+    restartToken: ref.restart_token,
+  }
 }
 
 // DualLayerMediaCanvas keeps two media slots mounted at all times.
@@ -560,29 +586,47 @@ function OverlayInstance({
     [overlay.config_json, def.defaultConfig]
   )
   // Motion is sourced from the layout's style (entry/exit/duration).
-  // Defaults come from widgets.tsx — each kind ships a sensible
-  // animation that the operator can override per overlay / per
-  // display layout in the editor.
-  const entry = layout.style.entry as AnimKind | undefined
+  // stagger_ms > 0 switches from whole-card motion to per-element:
+  // the container only orchestrates while each <OverlayPart> the
+  // widget declares runs the entry animation individually, then
+  // peels off in reverse when the overlay leaves live.
+  const entry = (layout.style.entry as AnimKind | undefined) ?? "fade"
   const duration = layout.style.duration_ms as number | undefined
-  const m = motionProps(entry ?? "fade", duration)
+  const staggerMs = (layout.style.stagger_ms as number | undefined) ?? 0
+  const boxStyle: React.CSSProperties = {
+    left: `${(layout.x - layout.w / 2) * 100}%`,
+    top: `${(layout.y - layout.h / 2) * 100}%`,
+    width: `${layout.w * 100}%`,
+    height: `${layout.h * 100}%`,
+    containerType: "size",
+  }
+  const content = (
+    <def.Renderer
+      config={config}
+      style={layout.style}
+      activatedAt={overlay.activated_at_ms}
+    />
+  )
+  if (staggerMs > 0) {
+    return (
+      <motion.div
+        initial="hidden"
+        animate="visible"
+        exit="hidden"
+        variants={staggerContainerVariants(staggerMs)}
+        className="absolute"
+        style={boxStyle}
+      >
+        <OverlayParts kind={entry} durationMs={duration ?? 220}>
+          {content}
+        </OverlayParts>
+      </motion.div>
+    )
+  }
+  const m = motionProps(entry, duration)
   return (
-    <motion.div
-      {...m}
-      className="absolute"
-      style={{
-        left: `${(layout.x - layout.w / 2) * 100}%`,
-        top: `${(layout.y - layout.h / 2) * 100}%`,
-        width: `${layout.w * 100}%`,
-        height: `${layout.h * 100}%`,
-        containerType: "size",
-      }}
-    >
-      <def.Renderer
-        config={config}
-        style={layout.style}
-        activatedAt={overlay.activated_at_ms}
-      />
+    <motion.div {...m} className="absolute" style={boxStyle}>
+      {content}
     </motion.div>
   )
 }

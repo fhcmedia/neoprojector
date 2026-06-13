@@ -11,7 +11,12 @@ import { Service as Displays } from "@/bindings/neoprojector/services/displays"
 import {
   LivePayload,
   LiveFill,
+  LiveMediaRef,
   OverlayActivation,
+  SlideChannel,
+  MediaChannel,
+  PresentationChannel,
+  BackgroundSnapshot,
 } from "@/bindings/neoprojector/services/displays"
 import type { SlotFill } from "@/features/templates/types"
 
@@ -19,8 +24,18 @@ import type { SlotFill } from "@/features/templates/types"
 // once at click time so the preview tiles can fan out the same fill to
 // every display's bound template without re-running content lookups.
 export type LiveSlide = {
+  // channel picks which render layer this content occupies in the
+  // broadcast payload:
+  //   slide        → z2 templated text (song lyrics, bible verses)
+  //   media        → z0 bottom slot (replaces the background while live)
+  //   presentation → z3 top layer (covers everything beneath)
+  // Exactly one item is live at a time operator-side; the channels
+  // exist so the resting background (and later, per-item backgrounds)
+  // composite UNDER text instead of fighting it for one slot.
+  channel: "slide" | "media" | "presentation"
   // kind drives which template binding each display uses (bible_template_id
-  // for kind 'bible', song_template_id for kind 'song').
+  // for kind 'bible', song_template_id for kind 'song'). Media and
+  // presentation content carries kind 'media' (no template binding).
   kind: "bible" | "song" | "media"
   // sourceItemId points back to the schedule item that produced this
   // slide (or null when it came from the bible library ad-hoc search).
@@ -59,6 +74,10 @@ export type LiveSlide = {
   // operator navigates from the show pane). Not part of the broadcast
   // payload; the audience renders from `fill`.
   bibleRef?: { book: string; chapter: number; verse: number }
+  // Item/section background override, resolved by the show pane from
+  // the schedule's config chain at go-live time. Composes over the
+  // service default in buildPayload: item ?? service ?? none.
+  background?: BackgroundSnapshot | null
 }
 
 // ActiveOverlay = an overlay schedule item the operator has toggled
@@ -122,6 +141,11 @@ type Ctx = {
   registerNavigators: (nav: Navigators) => void
   navigateNext: () => void
   navigatePrev: () => void
+  // Service-level default background (the z0 resting layer). Fed by
+  // the active service's row; survives clearLive so Esc re-derives to
+  // it instead of black. Null = no default → black.
+  serviceBackground: BackgroundSnapshot | null
+  setServiceBackground: (b: BackgroundSnapshot | null) => void
 }
 
 const LiveContext = createContext<Ctx>({
@@ -139,6 +163,8 @@ const LiveContext = createContext<Ctx>({
   registerNavigators: () => {},
   navigateNext: () => {},
   navigatePrev: () => {},
+  serviceBackground: null,
+  setServiceBackground: () => {},
 })
 
 // LiveProvider does NOT persist — restarting the app should always
@@ -147,6 +173,11 @@ const LiveContext = createContext<Ctx>({
 export function LiveProvider({ children }: { children: ReactNode }) {
   const [live, setLive] = useState<LiveSlide | null>(null)
   const [activeOverlays, setActiveOverlays] = useState<ActiveOverlay[]>([])
+  // The active service's default background. Esc clears `live` (and
+  // with it any item override) but never this — the resting state is
+  // the service default, not black.
+  const [serviceBackground, setServiceBackground] =
+    useState<BackgroundSnapshot | null>(null)
 
   // toggleOverlay flips an overlay schedule item between active /
   // not. Stamps activatedAt at the moment of the on-toggle so
@@ -243,35 +274,26 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         if (typeof size === "number" && size > 0) overrideByTemplate[tmplId] = size
       }
     }
-    return new LivePayload({
-      kind: live?.kind ?? "none",
-      source_item_id: live?.sourceItemId ?? 0,
-      slide_index: live?.slideIndex ?? 0,
-      font_size_override_by_template: overrideByTemplate,
-      transition_kind: live?.transitionKind ?? "",
-      transition_duration_ms: live?.transitionDurationMs ?? 0,
-      next_media_id: live?.nextMediaId ?? 0,
-      fill: live
-        ? new LiveFill({
-            primary: asString(live.fill.primary),
-            secondary: asString(live.fill.secondary),
-            tertiary: asString(live.fill.tertiary),
-            caption: asString(live.fill.caption),
-            media: live.fill.media
-              ? {
-                  mediaId: live.fill.media.mediaId,
-                  mode: live.fill.media.mode ?? "",
-                  // Default to playing/unmuted/no-loop when the
-                  // operator hasn't touched the controls yet —
-                  // matches the "send to live and it plays" expectation.
-                  playing: live.fill.media.playing ?? true,
-                  loop: live.fill.media.loop ?? false,
-                  muted: live.fill.media.muted ?? false,
-                  restart_token: live.fill.media.restartToken ?? 0,
-                }
-              : undefined,
-          })
-        : new LiveFill(),
+    // Operator-driven media playback fields default to playing /
+    // unmuted / no-loop when untouched — matches the "send to live
+    // and it plays" expectation.
+    const mediaRef = live?.fill.media
+      ? new LiveMediaRef({
+          mediaId: live.fill.media.mediaId,
+          mode: live.fill.media.mode ?? "",
+          playing: live.fill.media.playing ?? true,
+          loop: live.fill.media.loop ?? false,
+          muted: live.fill.media.muted ?? false,
+          restart_token: live.fill.media.restartToken ?? 0,
+        })
+      : null
+
+    const payload = new LivePayload({
+      // z0 derivation lives HERE, in one place: the live item's
+      // resolved override wins, the service default is the resting
+      // layer, null = black. Esc clears `live` and the default
+      // re-derives automatically — no history to restore.
+      background: live?.background ?? serviceBackground ?? null,
       active_overlays: activeOverlays.map(
         (a) =>
           new OverlayActivation({
@@ -285,6 +307,41 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           })
       ),
     })
+    if (!live) return payload
+
+    if (live.channel === "slide") {
+      payload.slide = new SlideChannel({
+        kind: live.kind,
+        source_item_id: live.sourceItemId ?? 0,
+        slide_index: live.slideIndex,
+        font_size_override_by_template: overrideByTemplate,
+        fill: new LiveFill({
+          primary: asString(live.fill.primary),
+          secondary: asString(live.fill.secondary),
+          tertiary: asString(live.fill.tertiary),
+          caption: asString(live.fill.caption),
+          // Slide fills can still carry media (template media-slot
+          // content) — that renders inside the template's media box,
+          // not on the z0 slot.
+          media: mediaRef ?? undefined,
+        }),
+      })
+    } else if (live.channel === "media") {
+      payload.media = new MediaChannel({
+        ref: mediaRef ?? new LiveMediaRef(),
+        source_item_id: live.sourceItemId ?? 0,
+      })
+    } else {
+      payload.presentation = new PresentationChannel({
+        ref: mediaRef ?? new LiveMediaRef(),
+        source_item_id: live.sourceItemId ?? 0,
+        slide_index: live.slideIndex,
+        transition_kind: live.transitionKind ?? "",
+        transition_duration_ms: live.transitionDurationMs ?? 0,
+        next_media_id: live.nextMediaId ?? 0,
+      })
+    }
+    return payload
   }
 
   // Mirror to the Go side so every output webview can render the
@@ -301,7 +358,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
       // CurrentLive if the broadcast missed.
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, activeOverlays])
+  }, [live, activeOverlays, serviceBackground])
 
   // Called by the Go Live button after StartLive resolves. The new
   // output windows query CurrentLive on mount, but their event
@@ -348,6 +405,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         registerNavigators,
         navigateNext,
         navigatePrev,
+        serviceBackground,
+        setServiceBackground,
       }}
     >
       {children}

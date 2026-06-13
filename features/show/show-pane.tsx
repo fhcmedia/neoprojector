@@ -13,6 +13,11 @@ import {
   type Slide,
 } from "@/features/live/slides"
 import { useLive } from "@/features/live/live-context"
+import { useBackgrounds } from "@/features/backgrounds/api"
+import {
+  resolveBackgroundId,
+  snapshotFor,
+} from "@/features/backgrounds/resolve"
 import { useDisplays } from "@/features/displays/api"
 import { useTemplates } from "@/features/library/templates-api"
 import { parseTemplateBody, type SlotName } from "@/features/templates/types"
@@ -187,6 +192,23 @@ export function ShowPane({
 
   const { live, setLive, isLive, registerNavigators } = useLive()
 
+  // Item/section background override, resolved once per item against
+  // the merged (seeds + DB) background list. Stamped onto every
+  // go-live below; buildPayload composes it over the service default
+  // (item ?? section ?? service ?? none). Null when this item inherits
+  // — the stamp is omitted and the service default shows through.
+  const { data: allBackgrounds } = useBackgrounds()
+  const itemBackground = useMemo(
+    () =>
+      item
+        ? snapshotFor(
+            resolveBackgroundId(item.background_id, item.section_background_id),
+            allBackgrounds
+          )
+        : null,
+    [item, allBackgrounds]
+  )
+
   // Latest "advance into the next/previous verse" actions. The arrow-key
   // navigators are registered in an effect defined ABOVE selectPeek
   // (const TDZ), so they reach these through refs — read at keypress
@@ -340,6 +362,7 @@ export function ShowPane({
     const slide = adHocSlides.slides[idx]
     if (!slide) return
     setLive({
+      channel: "slide",
       kind: slide.kind,
       sourceItemId,
       slideIndex: idx,
@@ -375,6 +398,14 @@ export function ShowPane({
       const s = slides[idx]
       if (!s) return
       setLive({
+        // Presentation items route to the z3 channel (their slides
+        // carry kind "media"); plain media items take z0; song/bible
+        // go through templates on z2.
+        channel: playback
+          ? "presentation"
+          : s.kind === "media"
+            ? "media"
+            : "slide",
         kind: s.kind,
         sourceItemId,
         slideIndex: idx,
@@ -384,6 +415,7 @@ export function ShowPane({
         transitionDurationMs: playback?.transitionDurationMs,
         nextMediaId: nextMediaIdAfter(idx),
         bibleRef: s.bibleRef,
+        background: itemBackground ?? undefined,
       })
       if (s.kind === "bible") onShowBibleNavRef.current?.()
     }
@@ -439,6 +471,7 @@ export function ShowPane({
     qc,
     bibleTranslations.primary,
     updateBibleItem,
+    itemBackground,
   ])
 
   // Auto-advance loop. Runs ONLY when a presentation item is live
@@ -466,6 +499,7 @@ export function ShowPane({
       // because auto-advance runs in loop mode by definition here.
       const after = (next + 1) % slides.length
       setLive({
+        channel: "presentation",
         kind: s.kind,
         sourceItemId,
         slideIndex: next,
@@ -474,6 +508,7 @@ export function ShowPane({
         transitionKind: playback.transitionKind,
         transitionDurationMs: playback.transitionDurationMs,
         nextMediaId: slides[after]?.fill.media?.mediaId,
+        background: itemBackground ?? undefined,
       })
     }, Math.max(250, playback.intervalMs))
     return () => window.clearInterval(id)
@@ -486,6 +521,7 @@ export function ShowPane({
     isLive,
     setLive,
     templateMins,
+    itemBackground,
   ])
 
   // Pick the template per-kind from the first enabled display. Both
@@ -542,16 +578,18 @@ export function ShowPane({
         return
       }
       setLive({
+        channel: slide.kind === "media" ? "media" : "slide",
         kind: slide.kind,
         sourceItemId,
         slideIndex: idx,
         fill: slide.fill,
         fontSizeOverrideByTemplate: templateMins,
         bibleRef: slide.bibleRef,
+        background: itemBackground ?? undefined,
       })
       if (slide.kind === "bible") onShowBibleNavRef.current?.()
     },
-    [slides, sourceItemId, isLive, setLive, templateMins]
+    [slides, sourceItemId, isLive, setLive, templateMins, itemBackground]
   )
 
   // Click the dimmed next-verse preview: grow the passage to include
@@ -594,16 +632,19 @@ export function ShowPane({
       // The grown verse appends at the end of the list — broadcast it
       // now so going live doesn't wait on the mutation round-trip.
       setLive({
+        channel: "slide",
         kind: "bible",
         sourceItemId,
         slideIndex: slides.length,
         fill: peek.fill,
         fontSizeOverrideByTemplate: templateMins,
         bibleRef: peek.bibleRef,
+        background: itemBackground ?? undefined,
       })
     }
   }, [
     peek,
+    itemBackground,
     adHocBibleRef,
     onAdHocBibleRef,
     item,
@@ -653,16 +694,19 @@ export function ShowPane({
         },
       })
       setLive({
+        channel: "slide",
         kind: "bible",
         sourceItemId,
         slideIndex: 0,
         fill: peekBack.fill,
         fontSizeOverrideByTemplate: templateMins,
         bibleRef: peekBack.bibleRef,
+        background: itemBackground ?? undefined,
       })
     }
   }, [
     peekBack,
+    itemBackground,
     adHocBibleRef,
     onAdHocBibleRef,
     item,
@@ -734,7 +778,7 @@ export function ShowPane({
               <MediaPreview item={item} onSend={() => {
                 const slide = slides[0]
                 if (!slide) return
-                setLive({ kind: slide.kind as "media", sourceItemId: item.id, slideIndex: 0, fill: slide.fill })
+                setLive({ channel: "media", kind: slide.kind as "media", sourceItemId: item.id, slideIndex: 0, fill: slide.fill, background: itemBackground ?? undefined })
               }} />
             </motion.div>
           ) : slideKind === "song" ? (
@@ -890,6 +934,11 @@ export function ShowPane({
                             ? slides[nextIdx]?.fill.media?.mediaId
                             : undefined
                         setLive({
+                          channel: playback
+                            ? "presentation"
+                            : slide.kind === "media"
+                              ? "media"
+                              : "slide",
                           kind: slide.kind,
                           sourceItemId,
                           slideIndex: idx,
@@ -898,6 +947,7 @@ export function ShowPane({
                           transitionKind: playback?.transitionKind,
                           transitionDurationMs: playback?.transitionDurationMs,
                           nextMediaId,
+                          background: itemBackground ?? undefined,
                         })
                       }}
                     />

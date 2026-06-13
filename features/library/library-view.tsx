@@ -34,6 +34,7 @@ import { MediaTab } from "@/features/library/media-tab"
 import { TemplatesTab } from "@/features/library/templates-tab"
 import { OverlaysTab } from "@/features/library/overlays-tab"
 import { PresentationsTab } from "@/features/library/presentations-tab"
+import { BackgroundsTab } from "@/features/library/backgrounds-tab"
 import { parseBibleRef } from "@/features/schedule/bible-ref"
 import { formatBibleRef } from "@/features/bible/categories"
 
@@ -44,6 +45,7 @@ type Tab =
   | "presentations"
   | "templates"
   | "overlays"
+  | "backgrounds"
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "bible", label: "Bible" },
@@ -52,6 +54,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "presentations", label: "Presentations" },
   { key: "templates", label: "Templates" },
   { key: "overlays", label: "Overlays" },
+  { key: "backgrounds", label: "Backgrounds" },
 ]
 
 // Each tab that corresponds to a schedule item kind takes that kind's
@@ -161,6 +164,10 @@ export function LibraryView({
   )
   const [presentationSearch, setPresentationSearch] = useSessionState<string>(
     "neoprojector.presentationSearch",
+    ""
+  )
+  const [backgroundSearch, setBackgroundSearch] = useSessionState<string>(
+    "neoprojector.backgroundSearch",
     ""
   )
 
@@ -370,6 +377,21 @@ export function LibraryView({
                 />
               </motion.div>
             )}
+            {activeTab === "backgrounds" && (
+              <motion.div
+                key="backgrounds-controls"
+                initial={{ opacity: 0, x: 6 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -6 }}
+                transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
+                className="flex h-full w-full items-center gap-2"
+              >
+                <BackgroundSearchInput
+                  value={backgroundSearch}
+                  onChange={setBackgroundSearch}
+                />
+              </motion.div>
+            )}
           </AnimatePresence>
         </div>
         {/* Manual collapse/expand. Pinned to the right of the tab bar so
@@ -423,8 +445,12 @@ export function LibraryView({
                 search={templateSearch}
                 onOpen={(t) =>
                   navigate({
-                    to: "/templates/$templateId",
-                    params: { templateId: t.id },
+                    to: "/",
+                    search: (prev) => ({
+                      ...prev,
+                      surface: "template",
+                      editId: t.id,
+                    }),
                   })
                 }
               />
@@ -434,19 +460,30 @@ export function LibraryView({
                 search={overlaySearch}
                 onOpen={(o) =>
                   navigate({
-                    to: "/overlays/$overlayId",
-                    params: { overlayId: String(o.id) },
+                    to: "/",
+                    search: (prev) => ({
+                      ...prev,
+                      surface: "overlay",
+                      editId: o.id,
+                    }),
                   })
                 }
               />
             )}
             {activeTab === "presentations" && (
-              <PresentationsTab
-                search={presentationSearch}
-                onOpen={(p) =>
+              <PresentationsTab search={presentationSearch} />
+            )}
+            {activeTab === "backgrounds" && (
+              <BackgroundsTab
+                search={backgroundSearch}
+                onOpen={(b) =>
                   navigate({
-                    to: "/presentations/$presentationId",
-                    params: { presentationId: String(p.id) },
+                    to: "/",
+                    search: (prev) => ({
+                      ...prev,
+                      surface: "background",
+                      editId: b.id,
+                    }),
                   })
                 }
               />
@@ -739,6 +776,27 @@ function SongSearchInput({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Search songs"
+        data-library-search
+        className="h-6 rounded-none border-0 bg-transparent pl-7 pr-2 py-0 text-xs shadow-none focus-visible:ring-0 dark:bg-transparent"
+      />
+    </div>
+  )
+}
+
+function BackgroundSearchInput({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <div className="relative h-6 w-full max-w-[260px]">
+      <SearchIcon className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Search backgrounds"
         data-library-search
         className="h-6 rounded-none border-0 bg-transparent pl-7 pr-2 py-0 text-xs shadow-none focus-visible:ring-0 dark:bg-transparent"
       />

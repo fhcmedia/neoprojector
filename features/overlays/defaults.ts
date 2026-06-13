@@ -3,10 +3,10 @@ import { widgetDef } from "@/features/overlays/widgets"
 import type { OverlayLayouts, WidgetKind } from "@/features/overlays/types"
 
 // Default overlays live in the frontend (mirroring template defaults).
-// Negative ids are the marker — DB rows are always positive. The
-// library merges defaults + DB rows so the user can duplicate a
-// default and start editing the copy. Default rows themselves are
-// not editable.
+// Negative ids are the marker. Defaults are directly editable: the
+// first edit persists a shadow row in the DB reusing the seed's
+// negative id, and the library merge resolves that row over the seed.
+// Restore (library tile / settings) deletes the shadow.
 
 export function isDefaultOverlayId(id: number): boolean {
   return id < 0

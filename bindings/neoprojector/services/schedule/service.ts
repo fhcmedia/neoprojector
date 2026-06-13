@@ -132,6 +132,18 @@ export function ServiceByID(id: number): $CancellablePromise<database$0.Service>
     });
 }
 
+export function SetItemBackground(id: number, backgroundID: number): $CancellablePromise<database$0.ServiceItem> {
+    return $Call.ByID(1582814708, id, backgroundID).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+export function SetSectionBackground(id: number, backgroundID: number): $CancellablePromise<database$0.ServiceSection> {
+    return $Call.ByID(862888770, id, backgroundID).then(($result: any) => {
+        return $$createType1($result);
+    });
+}
+
 /**
  * SetSectionColor stores a color key (e.g. "red", "blue", or "" for none).
  * The frontend maps this key to concrete styling.
@@ -139,6 +151,12 @@ export function ServiceByID(id: number): $CancellablePromise<database$0.Service>
 export function SetSectionColor(id: number, color: string): $CancellablePromise<database$0.ServiceSection> {
     return $Call.ByID(3673670661, id, color).then(($result: any) => {
         return $$createType1($result);
+    });
+}
+
+export function SetServiceBackground(id: number, backgroundID: number): $CancellablePromise<database$0.Service> {
+    return $Call.ByID(2444954, id, backgroundID).then(($result: any) => {
+        return $$createType2($result);
     });
 }
 

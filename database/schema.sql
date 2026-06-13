@@ -1,26 +1,33 @@
 CREATE TABLE IF NOT EXISTS service (
-  id          INTEGER PRIMARY KEY,
-  name        TEXT UNIQUE NOT NULL DEFAULT (strftime('%m-%d-%y', 'now')),
-  created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  id            INTEGER PRIMARY KEY,
+  name          TEXT UNIQUE NOT NULL DEFAULT (strftime('%m-%d-%y', 'now')),
+  -- Background assignment, nearest wins: item -> section -> service ->
+  -- none. No FK anywhere background_id appears: negative ids reference
+  -- frontend seed presets (template-binding convention), and a deleted
+  -- background row resolves to "inherit" instead of blocking deletion.
+  background_id INTEGER,
+  created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS service_section (
-  id          INTEGER PRIMARY KEY,
-  service_id  INTEGER NOT NULL REFERENCES service(id) ON DELETE CASCADE,
-  name        TEXT NOT NULL,
-  position    INTEGER NOT NULL,
-  color       TEXT NOT NULL DEFAULT '',
-  created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  id            INTEGER PRIMARY KEY,
+  service_id    INTEGER NOT NULL REFERENCES service(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL,
+  position      INTEGER NOT NULL,
+  color         TEXT NOT NULL DEFAULT '',
+  background_id INTEGER,
+  created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS service_item (
-  id          INTEGER PRIMARY KEY,
-  section_id  INTEGER NOT NULL REFERENCES service_section(id) ON DELETE CASCADE,
-  position    INTEGER NOT NULL,
-  created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  id            INTEGER PRIMARY KEY,
+  section_id    INTEGER NOT NULL REFERENCES service_section(id) ON DELETE CASCADE,
+  position      INTEGER NOT NULL,
+  background_id INTEGER,
+  created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS bible (
@@ -154,6 +161,19 @@ CREATE TABLE IF NOT EXISTS overlay (
   position      INTEGER NOT NULL DEFAULT 0,
   created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Backgrounds are first-class documents (animated shader configs;
+-- engine leaves room for other renderers). Seed defaults live in the
+-- frontend with negative ids; a row with a negative id is a user-
+-- edited shadow of that seed (same convention as templates).
+CREATE TABLE IF NOT EXISTS background (
+  id          INTEGER PRIMARY KEY,
+  name        TEXT NOT NULL,
+  engine      TEXT NOT NULL DEFAULT 'gradflow',
+  config_json TEXT NOT NULL DEFAULT '{}',
+  created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS display (

@@ -9,6 +9,7 @@ import {
   Trash2Icon,
   PencilIcon,
   GripVerticalIcon,
+  ImageIcon,
   PaletteIcon,
   XIcon,
 } from "lucide-react"
@@ -32,6 +33,9 @@ import {
   useRenameService,
 } from "@/features/schedule/api"
 import { ItemList } from "@/features/schedule/item-list"
+import { DefaultsSection } from "@/features/schedule/defaults-section"
+import { BackgroundPicker } from "@/features/backgrounds/background-picker"
+import { useSetSectionBackground } from "@/features/backgrounds/api"
 import {
   DndContext,
   PointerSensor,
@@ -299,6 +303,7 @@ export function ScheduleView({
           </div>
         ) : (
           <>
+            <DefaultsSection serviceId={serviceId} />
             {sections && sections.length > 0 && (
               <DndContext
                 sensors={sensors}
@@ -357,6 +362,7 @@ function SectionRow({
   const renameMut = useRenameSection(serviceId)
   const deleteMut = useDeleteSection(serviceId)
   const setColorMut = useSetSectionColor(serviceId)
+  const setBgMut = useSetSectionBackground(serviceId)
   // Empty sections delete without confirm — there's nothing to lose, so the
   // confirm step is just friction. Pull the items list from cache so this
   // doesn't trigger an extra fetch.
@@ -373,6 +379,10 @@ function SectionRow({
   const [editing, setEditing] = useState(false)
   const [pendingDelete, setPendingDelete] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [bgPickerOpen, setBgPickerOpen] = useState(false)
+  const sectionBgId = section.background_id?.Valid
+    ? section.background_id.Int64
+    : 0
   const headerRef = useRef<HTMLDivElement>(null)
 
   // Reset transient state (pending-delete, open palette) when the user
@@ -450,7 +460,7 @@ function SectionRow({
             // the text disappears cleanly under them. Palette-open and
             // pending-delete pin it visible regardless of hover.
             "absolute inset-y-0 right-1.5 grid items-center bg-gradient-to-l from-background via-background to-transparent pl-10 transition-opacity",
-            paletteOpen || pendingDelete
+            paletteOpen || pendingDelete || bgPickerOpen
               ? "opacity-100"
               : "pointer-events-none opacity-0 group-hover:pointer-events-auto group-hover:opacity-100"
           )}
@@ -515,6 +525,34 @@ function SectionRow({
                 >
                   <PaletteIcon className="size-3" />
                 </SectionAction>
+                <BackgroundPicker
+                  value={sectionBgId}
+                  inheritLabel="Inherit"
+                  open={bgPickerOpen}
+                  onOpenChange={setBgPickerOpen}
+                  align="end"
+                  onPick={(id) =>
+                    setBgMut.mutate({ sectionId: section.id, backgroundId: id })
+                  }
+                >
+                  {/* Filled icon state marks a configured override so
+                      the operator can spot section backgrounds at a
+                      glance without opening the picker. */}
+                  <span className="grid">
+                    <SectionAction
+                      ariaLabel="Section background"
+                      tone="green"
+                      onClick={() => setBgPickerOpen(true)}
+                    >
+                      <ImageIcon
+                        className={cn(
+                          "size-3",
+                          sectionBgId !== 0 && "text-emerald-500"
+                        )}
+                      />
+                    </SectionAction>
+                  </span>
+                </BackgroundPicker>
                 <button
                   type="button"
                   aria-label={pendingDelete ? "Confirm delete" : "Delete"}

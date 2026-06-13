@@ -3,8 +3,8 @@ import { AnimatePresence, motion } from "motion/react"
 import {
   BookOpenIcon,
   CopyIcon,
-  LockIcon,
   MusicIcon,
+  RotateCcwIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react"
@@ -35,7 +35,7 @@ type Props = {
 }
 
 export function TemplatesTab({ search, onOpen }: Props) {
-  const { data: templates, isLoading } = useTemplates()
+  const { data: templates, rows, isLoading } = useTemplates()
   const dupMut = useDuplicateTemplate()
   const createMut = useCreateTemplate()
   const delMut = useDeleteTemplate()
@@ -80,6 +80,10 @@ export function TemplatesTab({ search, onOpen }: Props) {
             <TemplateTile
               key={t.id}
               template={t}
+              shadowed={
+                isDefaultTemplateId(t.id) &&
+                !!rows?.some((r) => r.id === t.id)
+              }
               onOpen={() => onOpen(t)}
               onDuplicate={() => {
                 // Defaults aren't in the DB — duplicating one means
@@ -147,16 +151,20 @@ function AddTemplateTile({
 
 function TemplateTile({
   template,
+  shadowed,
   onOpen,
   onDuplicate,
   onDelete,
 }: {
   template: Template
+  shadowed: boolean
   onOpen: () => void
   onDuplicate: () => void
   onDelete: () => void
 }) {
   const isDefault = isDefaultTemplateId(template.id)
+  // Pristine seeds have no DB row — nothing to delete or restore.
+  const deletable = !isDefault || shadowed
   const [pendingDelete, setPendingDelete] = useState(false)
   const sample = sampleFor(template.kind)
   const tileRef = useRef<HTMLDivElement | null>(null)
@@ -194,15 +202,6 @@ function TemplateTile({
           measure
           style={{ width: "100%", height: "100%" }}
         />
-        {isDefault && (
-          <span
-            aria-label="Default — duplicate to edit"
-            title="Default — duplicate to edit"
-            className="pointer-events-none absolute left-1.5 top-1.5 grid size-5 place-items-center rounded bg-background/70 text-muted-foreground backdrop-blur"
-          >
-            <LockIcon className="size-3" />
-          </span>
-        )}
         <div className="absolute right-1.5 top-1.5 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
           <span
             role="button"
@@ -223,10 +222,17 @@ function TemplateTile({
           >
             <CopyIcon className="size-3.5" />
           </span>
-          {!isDefault && (
+          {deletable && (
             <span
               role="button"
-              aria-label={pendingDelete ? "Confirm delete" : "Delete"}
+              aria-label={
+                pendingDelete
+                  ? "Confirm"
+                  : isDefault
+                    ? "Restore default"
+                    : "Delete"
+              }
+              title={isDefault ? "Restore default" : "Delete"}
               tabIndex={0}
               onClick={(e) => {
                 e.stopPropagation()
@@ -258,6 +264,8 @@ function TemplateTile({
             >
               {pendingDelete ? (
                 <XIcon className="size-3.5" />
+              ) : isDefault ? (
+                <RotateCcwIcon className="size-3.5" />
               ) : (
                 <Trash2Icon className="size-3.5" />
               )}

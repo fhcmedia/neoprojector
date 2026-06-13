@@ -44,6 +44,29 @@ SET rules_json = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
 RETURNING *;
 
+-- name: SaveOverlayWithID :one
+-- Upsert keyed on id: editing a seed default persists a row reusing
+-- the seed's negative id (shadowing it); restore deletes the row and
+-- the frontend seed shows through again.
+INSERT INTO overlay (id, name, kind, config_json, layouts_json, rules_json, position)
+VALUES (
+  sqlc.arg(id),
+  sqlc.arg(name),
+  sqlc.arg(kind),
+  sqlc.arg(config_json),
+  sqlc.arg(layouts_json),
+  sqlc.arg(rules_json),
+  COALESCE((SELECT MAX(position) + 1 FROM overlay), 0)
+)
+ON CONFLICT(id) DO UPDATE SET
+  name         = excluded.name,
+  kind         = excluded.kind,
+  config_json  = excluded.config_json,
+  layouts_json = excluded.layouts_json,
+  rules_json   = excluded.rules_json,
+  updated_at   = CURRENT_TIMESTAMP
+RETURNING *;
+
 -- name: SetOverlayPosition :exec
 UPDATE overlay
 SET position = ?, updated_at = CURRENT_TIMESTAMP

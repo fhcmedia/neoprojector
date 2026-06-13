@@ -112,6 +112,7 @@ function SongPreview({ songId }: { songId: number | null }) {
       .map((l) => l.text)
       .join("\n")
     setLive({
+      channel: "slide",
       kind: "song",
       sourceItemId: null,
       slideIndex: idx,

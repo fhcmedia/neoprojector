@@ -9,6 +9,47 @@ import { Create as $Create } from "@wailsio/runtime";
 // @ts-ignore: Unused imports
 import * as sql$0 from "../../database/sql/models.js";
 
+export class Background {
+    "id": number;
+    "name": string;
+    "engine": string;
+    "config_json": string;
+    "created_at": string;
+    "updated_at": string;
+
+    /** Creates a new Background instance. */
+    constructor($$source: Partial<Background> = {}) {
+        if (!("id" in $$source)) {
+            this["id"] = 0;
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+        if (!("engine" in $$source)) {
+            this["engine"] = "";
+        }
+        if (!("config_json" in $$source)) {
+            this["config_json"] = "";
+        }
+        if (!("created_at" in $$source)) {
+            this["created_at"] = "";
+        }
+        if (!("updated_at" in $$source)) {
+            this["updated_at"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new Background instance from a string or object.
+     */
+    static createFrom($$source: any = {}): Background {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new Background($$parsedSource as Partial<Background>);
+    }
+}
+
 export class Bible {
     "translation": string;
     "name": string;
@@ -217,6 +258,8 @@ export class ListServiceItemsWithContentRow {
     "id": number;
     "section_id": number;
     "position": number;
+    "background_id": number;
+    "section_background_id": number;
     "kind": string;
     "song_id": number;
     "book": string;
@@ -242,6 +285,12 @@ export class ListServiceItemsWithContentRow {
         }
         if (!("position" in $$source)) {
             this["position"] = 0;
+        }
+        if (!("background_id" in $$source)) {
+            this["background_id"] = 0;
+        }
+        if (!("section_background_id" in $$source)) {
+            this["section_background_id"] = 0;
         }
         if (!("kind" in $$source)) {
             this["kind"] = "";
@@ -489,6 +538,7 @@ export class PresentationSlide {
 export class Service {
     "id": number;
     "name": string;
+    "background_id": sql$0.NullInt64;
     "created_at": string;
     "updated_at": string;
 
@@ -499,6 +549,9 @@ export class Service {
         }
         if (!("name" in $$source)) {
             this["name"] = "";
+        }
+        if (!("background_id" in $$source)) {
+            this["background_id"] = (new sql$0.NullInt64());
         }
         if (!("created_at" in $$source)) {
             this["created_at"] = "";
@@ -514,7 +567,11 @@ export class Service {
      * Creates a new Service instance from a string or object.
      */
     static createFrom($$source: any = {}): Service {
+        const $$createField2_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("background_id" in $$parsedSource) {
+            $$parsedSource["background_id"] = $$createField2_0($$parsedSource["background_id"]);
+        }
         return new Service($$parsedSource as Partial<Service>);
     }
 }
@@ -523,6 +580,7 @@ export class ServiceItem {
     "id": number;
     "section_id": number;
     "position": number;
+    "background_id": sql$0.NullInt64;
     "created_at": string;
     "updated_at": string;
 
@@ -536,6 +594,9 @@ export class ServiceItem {
         }
         if (!("position" in $$source)) {
             this["position"] = 0;
+        }
+        if (!("background_id" in $$source)) {
+            this["background_id"] = (new sql$0.NullInt64());
         }
         if (!("created_at" in $$source)) {
             this["created_at"] = "";
@@ -551,7 +612,11 @@ export class ServiceItem {
      * Creates a new ServiceItem instance from a string or object.
      */
     static createFrom($$source: any = {}): ServiceItem {
+        const $$createField3_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("background_id" in $$parsedSource) {
+            $$parsedSource["background_id"] = $$createField3_0($$parsedSource["background_id"]);
+        }
         return new ServiceItem($$parsedSource as Partial<ServiceItem>);
     }
 }
@@ -562,6 +627,7 @@ export class ServiceSection {
     "name": string;
     "position": number;
     "color": string;
+    "background_id": sql$0.NullInt64;
     "created_at": string;
     "updated_at": string;
 
@@ -582,6 +648,9 @@ export class ServiceSection {
         if (!("color" in $$source)) {
             this["color"] = "";
         }
+        if (!("background_id" in $$source)) {
+            this["background_id"] = (new sql$0.NullInt64());
+        }
         if (!("created_at" in $$source)) {
             this["created_at"] = "";
         }
@@ -596,7 +665,11 @@ export class ServiceSection {
      * Creates a new ServiceSection instance from a string or object.
      */
     static createFrom($$source: any = {}): ServiceSection {
+        const $$createField5_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        if ("background_id" in $$parsedSource) {
+            $$parsedSource["background_id"] = $$createField5_0($$parsedSource["background_id"]);
+        }
         return new ServiceSection($$parsedSource as Partial<ServiceSection>);
     }
 }

@@ -8,6 +8,15 @@ import (
 	"database/sql"
 )
 
+type Background struct {
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	Engine     string `json:"engine"`
+	ConfigJson string `json:"config_json"`
+	CreatedAt  string `json:"created_at"`
+	UpdatedAt  string `json:"updated_at"`
+}
+
 type Bible struct {
 	Translation string `json:"translation"`
 	Name        string `json:"name"`
@@ -99,18 +108,20 @@ type PresentationSlide struct {
 }
 
 type Service struct {
-	ID        int64  `json:"id"`
-	Name      string `json:"name"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID           int64         `json:"id"`
+	Name         string        `json:"name"`
+	BackgroundID sql.NullInt64 `json:"background_id"`
+	CreatedAt    string        `json:"created_at"`
+	UpdatedAt    string        `json:"updated_at"`
 }
 
 type ServiceItem struct {
-	ID        int64  `json:"id"`
-	SectionID int64  `json:"section_id"`
-	Position  int64  `json:"position"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID           int64         `json:"id"`
+	SectionID    int64         `json:"section_id"`
+	Position     int64         `json:"position"`
+	BackgroundID sql.NullInt64 `json:"background_id"`
+	CreatedAt    string        `json:"created_at"`
+	UpdatedAt    string        `json:"updated_at"`
 }
 
 type ServiceItemBible struct {
@@ -156,13 +167,14 @@ type ServiceItemSong struct {
 }
 
 type ServiceSection struct {
-	ID        int64  `json:"id"`
-	ServiceID int64  `json:"service_id"`
-	Name      string `json:"name"`
-	Position  int64  `json:"position"`
-	Color     string `json:"color"`
-	CreatedAt string `json:"created_at"`
-	UpdatedAt string `json:"updated_at"`
+	ID           int64         `json:"id"`
+	ServiceID    int64         `json:"service_id"`
+	Name         string        `json:"name"`
+	Position     int64         `json:"position"`
+	Color        string        `json:"color"`
+	BackgroundID sql.NullInt64 `json:"background_id"`
+	CreatedAt    string        `json:"created_at"`
+	UpdatedAt    string        `json:"updated_at"`
 }
 
 type Song struct {

@@ -5,7 +5,6 @@ import {
   MusicIcon,
   ImageIcon,
   LayersIcon,
-  LayoutTemplateIcon,
   SettingsIcon,
   RadioIcon,
   XIcon,
@@ -69,16 +68,17 @@ export function CommandPalette({ open, onOpenChange }: Props) {
             Projector
           </CommandItem>
           <CommandItem
-            onSelect={() => run(() => navigate({ to: "/settings" }))}
+            onSelect={() =>
+              run(() =>
+                navigate({
+                  to: "/",
+                  search: (prev) => ({ ...prev, surface: "settings" }),
+                })
+              )
+            }
           >
             <SettingsIcon />
             Settings
-          </CommandItem>
-          <CommandItem
-            onSelect={() => run(() => navigate({ to: "/presenter" }))}
-          >
-            <LayoutTemplateIcon />
-            Presenter View
           </CommandItem>
         </CommandGroup>
 

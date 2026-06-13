@@ -62,6 +62,18 @@ export function ReorderOverlays(ids: number[]): $CancellablePromise<void> {
 }
 
 /**
+ * SaveWithID upserts a row at an explicit id — the shadow-a-seed path.
+ * Editing a frontend default persists its working copy under the
+ * seed's negative id; schedule items and activations keep pointing at
+ * the same id. Restore = DeleteOverlay(negativeId).
+ */
+export function SaveWithID(id: number, name: string, kind: string, configJSON: string, layoutsJSON: string, rulesJSON: string): $CancellablePromise<database$0.Overlay> {
+    return $Call.ByID(2234091981, id, name, kind, configJSON, layoutsJSON, rulesJSON).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+/**
  * SetConfig replaces the function-specific config wholesale.
  */
 export function SetConfig(id: number, configJSON: string): $CancellablePromise<database$0.Overlay> {

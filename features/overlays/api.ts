@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Service as Overlays } from "@/bindings/neoprojector/services/overlays"
 import type { Overlay } from "@/bindings/neoprojector/database"
@@ -17,33 +18,73 @@ export const overlayKeys = {
 }
 
 // Library list = built-in defaults (negative ids) then user overlays
-// from the DB. Defaults sort first; user list keeps the position
-// order the server returns.
+// from the DB. Defaults sort first and are SHADOWED by a DB row saved
+// under the same negative id — editing a default persists such a row;
+// deleting it restores the pristine seed. `rows` exposes the raw DB
+// list so callers can detect shadowing.
 export function useOverlays() {
-  return useQuery({
+  const query = useQuery({
     queryKey: overlayKeys.list,
-    queryFn: async () => {
-      const dbRows = (await Overlays.ListOverlays()) as unknown as Overlay[]
-      return [...DEFAULT_OVERLAYS, ...dbRows]
-    },
+    queryFn: () => Overlays.ListOverlays() as unknown as Promise<Overlay[]>,
   })
+  // Memoized so downstream deps keyed on this list only fire when the
+  // underlying data actually changes.
+  const merged = useMemo<Overlay[] | undefined>(
+    () =>
+      query.data
+        ? [
+            ...DEFAULT_OVERLAYS.map(
+              (seed) => query.data.find((row) => row.id === seed.id) ?? seed
+            ),
+            ...query.data.filter((row) => row.id > 0),
+          ]
+        : query.data,
+    [query.data]
+  )
+  return { ...query, data: merged, rows: query.data }
 }
 
 export function useOverlay(id: number | undefined) {
   return useQuery({
     queryKey: id !== undefined ? overlayKeys.byId(id) : ["overlays", "by-id"],
-    // Default overlays live in the frontend — short-circuit the IPC.
-    // The DEFAULT_OVERLAYS array is the authoritative source.
+    // Negative ids resolve shadow-first: a DB row at the seed's id is
+    // the edited version; the frontend seed is the fallback.
     queryFn: async () => {
       if (id === undefined) return undefined
       if (isDefaultOverlayId(id)) {
-        const found = DEFAULT_OVERLAYS.find((o) => o.id === id)
-        if (!found) throw new Error(`Unknown default overlay ${id}`)
-        return found
+        try {
+          return (await Overlays.OverlayByID(id)) as unknown as Overlay
+        } catch {
+          const found = DEFAULT_OVERLAYS.find((o) => o.id === id)
+          if (!found) throw new Error(`Unknown default overlay ${id}`)
+          return found
+        }
       }
       return (await Overlays.OverlayByID(id)) as unknown as Overlay
     },
     enabled: id !== undefined,
+  })
+}
+
+// SaveWithID is the shadow-a-seed path: the editor routes commits on
+// default overlays here so the edit persists a full row reusing the
+// seed's negative id. Restore = useDeleteOverlay(negativeId).
+export function useSaveOverlayWithID() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (input: CreateOverlayInput & { id: number }) =>
+      Overlays.SaveWithID(
+        input.id,
+        input.name,
+        input.kind,
+        input.configJSON,
+        input.layoutsJSON,
+        input.rulesJSON
+      ) as unknown as Promise<Overlay>,
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: overlayKeys.list })
+      qc.invalidateQueries({ queryKey: overlayKeys.byId(vars.id) })
+    },
   })
 }
 
@@ -117,7 +158,12 @@ export function useDeleteOverlay() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => Overlays.DeleteOverlay(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: overlayKeys.list }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: overlayKeys.list })
+      // Deleting a shadow row restores the seed — the by-id cache for
+      // that id must refetch or it keeps serving the deleted edit.
+      qc.invalidateQueries({ queryKey: ["overlays", "by-id"] })
+    },
   })
 }
 

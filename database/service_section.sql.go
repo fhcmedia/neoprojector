@@ -7,6 +7,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 )
 
 const countServiceSections = `-- name: CountServiceSections :one
@@ -23,7 +24,7 @@ func (q *Queries) CountServiceSections(ctx context.Context, serviceID int64) (in
 const createServiceSection = `-- name: CreateServiceSection :one
 INSERT INTO service_section (service_id, name, position)
 VALUES (?, ?, ?)
-RETURNING id, service_id, name, position, color, created_at, updated_at
+RETURNING id, service_id, name, position, color, background_id, created_at, updated_at
 `
 
 type CreateServiceSectionParams struct {
@@ -41,6 +42,7 @@ func (q *Queries) CreateServiceSection(ctx context.Context, arg CreateServiceSec
 		&i.Name,
 		&i.Position,
 		&i.Color,
+		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -55,7 +57,7 @@ VALUES (
   COALESCE((SELECT MAX(position) + 1 FROM service_section WHERE service_section.service_id = ?1), 0),
   ?3
 )
-RETURNING id, service_id, name, position, color, created_at, updated_at
+RETURNING id, service_id, name, position, color, background_id, created_at, updated_at
 `
 
 type CreateServiceSectionAppendParams struct {
@@ -73,6 +75,7 @@ func (q *Queries) CreateServiceSectionAppend(ctx context.Context, arg CreateServ
 		&i.Name,
 		&i.Position,
 		&i.Color,
+		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -89,7 +92,7 @@ func (q *Queries) DeleteServiceSection(ctx context.Context, id int64) error {
 }
 
 const listServiceSections = `-- name: ListServiceSections :many
-SELECT id, service_id, name, position, color, created_at, updated_at FROM service_section
+SELECT id, service_id, name, position, color, background_id, created_at, updated_at FROM service_section
 WHERE service_id = ?
 ORDER BY position
 `
@@ -109,6 +112,7 @@ func (q *Queries) ListServiceSections(ctx context.Context, serviceID int64) ([]S
 			&i.Name,
 			&i.Position,
 			&i.Color,
+			&i.BackgroundID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -142,7 +146,7 @@ const renameServiceSection = `-- name: RenameServiceSection :one
 UPDATE service_section
 SET name = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, service_id, name, position, color, created_at, updated_at
+RETURNING id, service_id, name, position, color, background_id, created_at, updated_at
 `
 
 type RenameServiceSectionParams struct {
@@ -159,6 +163,7 @@ func (q *Queries) RenameServiceSection(ctx context.Context, arg RenameServiceSec
 		&i.Name,
 		&i.Position,
 		&i.Color,
+		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -166,7 +171,7 @@ func (q *Queries) RenameServiceSection(ctx context.Context, arg RenameServiceSec
 }
 
 const serviceSectionByID = `-- name: ServiceSectionByID :one
-SELECT id, service_id, name, position, color, created_at, updated_at FROM service_section WHERE id = ?
+SELECT id, service_id, name, position, color, background_id, created_at, updated_at FROM service_section WHERE id = ?
 `
 
 func (q *Queries) ServiceSectionByID(ctx context.Context, id int64) (ServiceSection, error) {
@@ -178,6 +183,35 @@ func (q *Queries) ServiceSectionByID(ctx context.Context, id int64) (ServiceSect
 		&i.Name,
 		&i.Position,
 		&i.Color,
+		&i.BackgroundID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const setSectionBackground = `-- name: SetSectionBackground :one
+UPDATE service_section
+SET background_id = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING id, service_id, name, position, color, background_id, created_at, updated_at
+`
+
+type SetSectionBackgroundParams struct {
+	BackgroundID sql.NullInt64 `json:"background_id"`
+	ID           int64         `json:"id"`
+}
+
+func (q *Queries) SetSectionBackground(ctx context.Context, arg SetSectionBackgroundParams) (ServiceSection, error) {
+	row := q.db.QueryRowContext(ctx, setSectionBackground, arg.BackgroundID, arg.ID)
+	var i ServiceSection
+	err := row.Scan(
+		&i.ID,
+		&i.ServiceID,
+		&i.Name,
+		&i.Position,
+		&i.Color,
+		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -188,7 +222,7 @@ const setServiceSectionColor = `-- name: SetServiceSectionColor :one
 UPDATE service_section
 SET color = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, service_id, name, position, color, created_at, updated_at
+RETURNING id, service_id, name, position, color, background_id, created_at, updated_at
 `
 
 type SetServiceSectionColorParams struct {
@@ -205,6 +239,7 @@ func (q *Queries) SetServiceSectionColor(ctx context.Context, arg SetServiceSect
 		&i.Name,
 		&i.Position,
 		&i.Color,
+		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -231,7 +266,7 @@ const updateServiceSection = `-- name: UpdateServiceSection :one
 UPDATE service_section
 SET name = ?, position = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, service_id, name, position, color, created_at, updated_at
+RETURNING id, service_id, name, position, color, background_id, created_at, updated_at
 `
 
 type UpdateServiceSectionParams struct {
@@ -249,6 +284,7 @@ func (q *Queries) UpdateServiceSection(ctx context.Context, arg UpdateServiceSec
 		&i.Name,
 		&i.Position,
 		&i.Color,
+		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

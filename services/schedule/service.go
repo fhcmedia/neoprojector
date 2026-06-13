@@ -101,6 +101,41 @@ func (s *Service) SetSectionColor(ctx context.Context, id int64, color string) (
 	})
 }
 
+// --- background assignment -------------------------------------------------
+// Nearest-wins resolution (item -> section -> service) happens client-
+// side at go-live time; these setters just persist the references.
+// backgroundID == 0 writes NULL (clear / inherit from the next level
+// up). Negative ids reference frontend seed presets and are stored
+// verbatim — no FK, same convention as template bindings.
+
+func nullableID(id int64) sql.NullInt64 {
+	if id == 0 {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: id, Valid: true}
+}
+
+func (s *Service) SetServiceBackground(ctx context.Context, id, backgroundID int64) (database.Service, error) {
+	return s.q.SetServiceBackground(ctx, database.SetServiceBackgroundParams{
+		ID:           id,
+		BackgroundID: nullableID(backgroundID),
+	})
+}
+
+func (s *Service) SetSectionBackground(ctx context.Context, id, backgroundID int64) (database.ServiceSection, error) {
+	return s.q.SetSectionBackground(ctx, database.SetSectionBackgroundParams{
+		ID:           id,
+		BackgroundID: nullableID(backgroundID),
+	})
+}
+
+func (s *Service) SetItemBackground(ctx context.Context, id, backgroundID int64) (database.ServiceItem, error) {
+	return s.q.SetItemBackground(ctx, database.SetItemBackgroundParams{
+		ID:           id,
+		BackgroundID: nullableID(backgroundID),
+	})
+}
+
 // ReorderSections sets section positions to match the given id order.
 func (s *Service) ReorderSections(ctx context.Context, ids []int64) error {
 	return s.inTx(ctx, func(q *database.Queries) error {
@@ -305,14 +340,17 @@ func (s *Service) ReorderItems(ctx context.Context, ids []int64) error {
 	})
 }
 
-// inTx runs fn inside a transaction. Rolls back on error.
+// inTx runs fn inside a transaction. defer-Rollback fires after Commit
+// too (no-op on a committed tx), so the connection always returns to
+// the pool even if Commit panics — same discipline as the displays
+// service.
 func (s *Service) inTx(ctx context.Context, fn func(*database.Queries) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
+	defer tx.Rollback()
 	if err := fn(s.q.WithTx(tx)); err != nil {
-		_ = tx.Rollback()
 		return err
 	}
 	return tx.Commit()

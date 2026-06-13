@@ -18,6 +18,7 @@ import type {
   WidgetKind,
 } from "@/features/overlays/types"
 import { Input } from "@/components/input"
+import { OverlayPart } from "@/features/overlays/stagger"
 
 // A WidgetDef bundles everything the rest of the app needs to know
 // about a widget kind. The runtime renderer reads `config` and
@@ -335,40 +336,49 @@ const PreacherNameRenderer: WidgetDef<PreacherNameConfig>["Renderer"] = ({
   config,
   style,
 }) => {
-  // Motion is owned by OverlayInstance (driven by style.entry / .exit
-  // through the shared variants registry). The renderer just paints
-  // the card — no per-widget motion knobs here.
+  // Whole-card motion is owned by OverlayInstance. The three visual
+  // portions — card panel, name, subtitle — are each an OverlayPart:
+  // when the layout sets stagger_ms, they animate in on their own
+  // accord (panel → name → subtitle) and peel off in reverse when the
+  // overlay leaves live. With stagger off (or in tiles/editor) the
+  // parts render as plain divs and the card moves as one.
   const color = (style.color as string | undefined) ?? "#ffffff"
   const accent = (style.accent as string | undefined) ?? "#10b981"
   return (
-    <div className="flex h-full w-full items-center">
-      <div
-        className="flex w-full flex-col justify-center"
+    <div className="relative flex h-full w-full items-center">
+      <OverlayPart
         style={{
-          color,
-          fontFamily: "system-ui, sans-serif",
+          position: "absolute",
+          inset: 0,
           borderLeft: `0.4cqh solid ${accent}`,
           background: "rgba(0,0,0,0.55)",
           backdropFilter: "blur(8px)",
           WebkitBackdropFilter: "blur(8px)",
+        }}
+      />
+      <div
+        className="relative flex w-full flex-col justify-center"
+        style={{
+          color,
+          fontFamily: "system-ui, sans-serif",
           paddingInline: "6cqh",
           paddingBlock: "8cqh",
           gap: "2cqh",
         }}
       >
-        <div
+        <OverlayPart
           className="truncate font-semibold leading-tight"
           style={{ fontSize: "42cqh" }}
         >
           {config.name || "Name"}
-        </div>
+        </OverlayPart>
         {config.subtitle ? (
-          <div
+          <OverlayPart
             className="truncate opacity-75"
             style={{ fontSize: "20cqh", lineHeight: 1.1 }}
           >
             {config.subtitle}
-          </div>
+          </OverlayPart>
         ) : null}
       </div>
     </div>
@@ -416,7 +426,9 @@ const preacherNameDef: WidgetDef<PreacherNameConfig> = {
     y: 0.9,
     w: 0.28,
     h: 0.08,
-    style: { color: "#ffffff", accent: "#10b981", entry: "slide-right", exit: "slide-right", duration_ms: 320 },
+    // stagger_ms > 0: the card's three portions (panel, name,
+    // subtitle) enter individually instead of the card moving as one.
+    style: { color: "#ffffff", accent: "#10b981", entry: "slide-right", exit: "slide-right", duration_ms: 320, stagger_ms: 110 },
   },
   defaultRules: { cover_slide: false },
   Renderer: PreacherNameRenderer,

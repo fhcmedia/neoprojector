@@ -23,6 +23,21 @@ SET name = ?,
 WHERE id = ?
 RETURNING *;
 
+-- name: CreateTemplateWithID :one
+-- Upsert keyed on id: editing a seed default persists a row reusing
+-- the seed's negative id (shadowing it); restore deletes the row and
+-- the frontend seed shows through again.
+INSERT INTO template (id, name, kind, viewport_w, viewport_h, data_json)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  name       = excluded.name,
+  kind       = excluded.kind,
+  viewport_w = excluded.viewport_w,
+  viewport_h = excluded.viewport_h,
+  data_json  = excluded.data_json,
+  updated_at = CURRENT_TIMESTAMP
+RETURNING *;
+
 -- name: DeleteTemplate :exec
 DELETE FROM template WHERE id = ?;
 

@@ -83,6 +83,29 @@ func (s *Service) UpdateTemplate(ctx context.Context, id int64, name, kind strin
 	})
 }
 
+// SaveWithID upserts a row at an explicit id — the shadow-a-seed path.
+// Editing a frontend default persists its working copy under the
+// seed's negative id so every consumer (display bindings included)
+// keeps pointing at the same id. Restore = DeleteTemplate(negativeId).
+func (s *Service) SaveWithID(ctx context.Context, id int64, name, kind string, viewportW, viewportH int64, dataJSON string) (database.Template, error) {
+	// 0 falls through both id conventions (negative = seed, positive =
+	// user row) — reject rather than store an invisible row.
+	if id == 0 {
+		return database.Template{}, fmt.Errorf("SaveWithID: id 0 is reserved")
+	}
+	if name == "" {
+		name = "Untitled template"
+	}
+	return s.q.CreateTemplateWithID(ctx, database.CreateTemplateWithIDParams{
+		ID:        id,
+		Name:      name,
+		Kind:      kindOrDefault(kind),
+		ViewportW: viewportOrDefault(viewportW, 1920),
+		ViewportH: viewportOrDefault(viewportH, 1080),
+		DataJson:  jsonOrEmpty(dataJSON),
+	})
+}
+
 func (s *Service) DeleteTemplate(ctx context.Context, id int64) error {
 	return s.q.DeleteTemplate(ctx, id)
 }

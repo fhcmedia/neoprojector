@@ -33,6 +33,12 @@ SET color = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
 RETURNING *;
 
+-- name: SetSectionBackground :one
+UPDATE service_section
+SET background_id = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING *;
+
 -- name: ServiceSectionByID :one
 SELECT * FROM service_section WHERE id = ?;
 

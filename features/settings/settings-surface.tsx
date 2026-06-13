@@ -1,5 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router"
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import { Switch } from "@/components/switch"
 import { Input } from "@/components/input"
 import { useAnimations } from "@/hooks/use-animations"
@@ -11,6 +10,7 @@ import {
   TOKEN_SPECS,
 } from "@/hooks/use-service-name-format"
 import { DisplaySettings } from "@/features/displays/display-pane"
+import { RestoreDefaultsPanel } from "@/features/settings/restore-defaults"
 import {
   useBypassDisplayCheck,
   useSetBypassDisplayCheck,
@@ -28,22 +28,57 @@ import {
 } from "@/components/dropdown-menu"
 import { cn } from "@/lib/utils"
 
-export const Route = createFileRoute("/_app/settings")({
-  component: Settings,
-})
-
-const sections = [
-  { id: "general", label: "General" },
-  { id: "output", label: "Output" },
-  { id: "display", label: "Display" },
-  { id: "audio", label: "Audio" },
-  { id: "bibles", label: "Bibles" },
-  { id: "songs", label: "Songs" },
-  { id: "hotkeys", label: "Hotkeys" },
-  { id: "advanced", label: "Advanced" },
-] as const
-
-type SectionId = (typeof sections)[number]["id"]
+// SettingsSurface renders all settings as ONE scrollable column in the
+// Show pane — no sidebar, no sub-navigation, no separate page. The
+// schedule, displays preview, and library stay visible around it.
+// Order: General, Output, Displays, Bibles.
+export function SettingsSurface({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto max-w-2xl space-y-10 px-8 py-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-sm font-medium tracking-tight">Settings</h1>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Close (Esc)
+          </button>
+        </div>
+        <section className="space-y-4">
+          <SectionHeader title="General" description="Look and feel." />
+          <GeneralPanel />
+        </section>
+        <section className="space-y-4">
+          <SectionHeader title="Output" description="Go Live behavior." />
+          <OutputPanel />
+        </section>
+        <section className="space-y-4">
+          <SectionHeader
+            title="Displays"
+            description="Configured outputs and their template bindings."
+          />
+          <DisplaySettings />
+        </section>
+        <section className="space-y-4">
+          <SectionHeader
+            title="Bibles"
+            description="Pick which translations fill the slots in multi-translation templates."
+          />
+          <BiblesPanel />
+        </section>
+        <section className="space-y-4">
+          <SectionHeader
+            title="Library defaults"
+            description="Built-in templates, overlays, and backgrounds you've edited. Restore returns one (or all) to its shipped state."
+          />
+          <RestoreDefaultsPanel />
+        </section>
+      </div>
+    </div>
+  )
+}
 
 function SectionHeader({
   title,
@@ -202,14 +237,6 @@ function OutputPanel() {
   )
 }
 
-function Placeholder({ label }: { label: string }) {
-  return (
-    <div className="py-3 text-[11px] text-muted-foreground">
-      {label} settings will live here.
-    </div>
-  )
-}
-
 // BiblesPanel: pick primary / secondary / tertiary translations. The
 // primary always renders; secondary/tertiary are optional and only
 // fill their slots when the bound template has matching boxes.
@@ -338,62 +365,6 @@ function TranslationRow({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
-    </div>
-  )
-}
-
-function Settings() {
-  const [active, setActive] = useState<SectionId>("general")
-  const current = sections.find((s) => s.id === active)!
-
-  return (
-    <div className="grid h-full grid-cols-[200px_1fr]">
-      <aside className="border-r border-border/50 px-2 py-4">
-        <nav className="flex flex-col gap-px">
-          {sections.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => setActive(s.id)}
-              className={
-                "rounded-md px-2 py-1.5 text-left text-xs transition-colors " +
-                (active === s.id
-                  ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground")
-              }
-            >
-              {s.label}
-            </button>
-          ))}
-        </nav>
-      </aside>
-      <section className="overflow-y-auto px-8 py-6">
-        <div className="mx-auto max-w-2xl space-y-6">
-          <SectionHeader
-            title={current.label}
-            description={
-              active === "general"
-                ? "Look and feel."
-                : active === "display"
-                  ? "Configured outputs and their template bindings."
-                  : active === "bibles"
-                    ? "Pick which translations fill the slots in multi-translation templates."
-                    : `${current.label} settings will live here.`
-            }
-          />
-          {active === "general" ? (
-            <GeneralPanel />
-          ) : active === "output" ? (
-            <OutputPanel />
-          ) : active === "display" ? (
-            <DisplaySettings />
-          ) : active === "bibles" ? (
-            <BiblesPanel />
-          ) : (
-            <Placeholder label={current.label} />
-          )}
-        </div>
-      </section>
     </div>
   )
 }

@@ -45,6 +45,54 @@ func (q *Queries) CreateTemplate(ctx context.Context, arg CreateTemplateParams) 
 	return i, err
 }
 
+const createTemplateWithID = `-- name: CreateTemplateWithID :one
+INSERT INTO template (id, name, kind, viewport_w, viewport_h, data_json)
+VALUES (?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET
+  name       = excluded.name,
+  kind       = excluded.kind,
+  viewport_w = excluded.viewport_w,
+  viewport_h = excluded.viewport_h,
+  data_json  = excluded.data_json,
+  updated_at = CURRENT_TIMESTAMP
+RETURNING id, name, kind, viewport_w, viewport_h, data_json, created_at, updated_at
+`
+
+type CreateTemplateWithIDParams struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	Kind      string `json:"kind"`
+	ViewportW int64  `json:"viewport_w"`
+	ViewportH int64  `json:"viewport_h"`
+	DataJson  string `json:"data_json"`
+}
+
+// Upsert keyed on id: editing a seed default persists a row reusing
+// the seed's negative id (shadowing it); restore deletes the row and
+// the frontend seed shows through again.
+func (q *Queries) CreateTemplateWithID(ctx context.Context, arg CreateTemplateWithIDParams) (Template, error) {
+	row := q.db.QueryRowContext(ctx, createTemplateWithID,
+		arg.ID,
+		arg.Name,
+		arg.Kind,
+		arg.ViewportW,
+		arg.ViewportH,
+		arg.DataJson,
+	)
+	var i Template
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Kind,
+		&i.ViewportW,
+		&i.ViewportH,
+		&i.DataJson,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const deleteTemplate = `-- name: DeleteTemplate :exec
 DELETE FROM template WHERE id = ?
 `

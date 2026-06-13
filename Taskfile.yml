@@ -12,10 +12,18 @@ tasks:
       - task --list
     silent: true
 
+  # main.go has `//go:embed all:dist`, which the compiler resolves even in
+  # dev builds — but dist/ is gitignored and dev serves assets from the vite
+  # dev server, never from the embed. On a clean clone (or after `task clean`)
+  # dist/ doesn't exist and `go build` fails with "pattern all:dist: no
+  # matching files found". A placeholder file satisfies the compiler (`all:`
+  # is required for .gitkeep to match); `pnpm build` empties dist, so real
+  # builds never ship it. The dev watcher ignores both dist/ and .gitkeep.
   dev:
     desc: Run app in dev mode with hot reload
     deps: [generate:bindings]
     cmds:
+      - mkdir -p dist && touch dist/.gitkeep
       - go tool wails3 dev -config ./build/config.yml -port 9245
 
   generate:bindings:

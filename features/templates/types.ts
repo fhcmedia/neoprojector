@@ -82,8 +82,21 @@ export type Box = {
   underline?: boolean
   /** Adds a strong drop-shadow so text pops on any background. */
   shadow?: boolean
+  /**
+   * Text outline (stroke) width in native viewport px. Painted BEHIND
+   * the glyph fill (paint-order: stroke) so the letterforms stay
+   * full-weight. 0/undefined = no outline. Default on shipped
+   * bible/song templates for legibility over animated backgrounds.
+   */
+  outlineWidth?: number
+  /** Outline color. CSS color string; defaults to black. */
+  outlineColor?: string
   /** Background fill for the box. CSS color string, default transparent. */
   bgColor?: string
+  /** Border thickness in native viewport px. 0/undefined = no border. */
+  borderWidth?: number
+  /** Border color. CSS color string; defaults to white when width > 0. */
+  borderColor?: string
   /** Horizontal inner padding in native viewport px. */
   paddingX?: number
   /** Vertical inner padding in native viewport px. */

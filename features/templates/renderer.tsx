@@ -164,8 +164,15 @@ export function TemplateCanvas({
         overflow: "hidden",
       }}
     >
+      {/* Templates are text — always transparent. The stored
+          body.background is ignored (legacy data from when the editor
+          offered solid/media backgrounds); the z0 background/media
+          channel owns the pixels behind the text. Editor and
+          thumbnails render the checker, live renders true
+          transparency. fill.media (a media BOX slot) still renders —
+          that's content, not background. */}
       <BackgroundLayer
-        background={body.background}
+        background={{ type: "transparent" }}
         fill={fill}
         scale={scale}
         liveTransparency={liveTransparency}
@@ -282,7 +289,7 @@ export function ScaledTemplate({
 // no real gain.
 //
 // Used by output windows AND in-app surfaces that mirror live state
-// (presenter view, display preview tiles). Consumers that render
+// (display preview tiles). Consumers that render
 // templates with static content should use ScaledTemplate directly.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1059,6 +1066,12 @@ function BoxRenderer({
         cursor: isInteractive ? "pointer" : undefined,
         opacity: box.opacity,
         backgroundColor: box.bgColor,
+        // Border draws inside the box (Tailwind preflight sets
+        // box-sizing: border-box globally) so w/h stay authoritative.
+        border:
+          box.borderWidth && box.borderWidth > 0
+            ? `${box.borderWidth}px solid ${box.borderColor ?? "#ffffff"}`
+            : undefined,
         padding:
           box.paddingX || box.paddingY
             ? `${box.paddingY ?? 0}px ${box.paddingX ?? 0}px`
@@ -1103,6 +1116,17 @@ function BoxRenderer({
             textShadow: box.shadow
               ? "0 2px 8px rgba(0,0,0,0.9), 0 0 2px rgba(0,0,0,0.7)"
               : undefined,
+            // Outline: stroke painted BEHIND the fill (paint-order)
+            // so glyphs keep their full weight — a centered stroke
+            // would eat into thin fonts. The behind-fill half is
+            // hidden, so the stroke is doubled to make the configured
+            // width mean "visible outline px". WebKit supports both.
+            WebkitTextStroke:
+              box.outlineWidth && box.outlineWidth > 0
+                ? `${box.outlineWidth * 2}px ${box.outlineColor ?? "#000000"}`
+                : undefined,
+            paintOrder:
+              box.outlineWidth && box.outlineWidth > 0 ? "stroke fill" : undefined,
           }}
         >
           {renderSlotValue(value)}
@@ -1158,7 +1182,10 @@ function SpanNode({ span }: { span: Span }) {
 // Slot resolution: live fill > box.defaultContent > undefined
 // ─────────────────────────────────────────────────────────────────────────────
 
-function resolveSlot(box: Box, fill: SlotFill): SlotValue | undefined {
+// Exported: the editor canvas resolves the same content to measure
+// text minimums during box resize (clamping so the chosen font size
+// never clips).
+export function resolveSlot(box: Box, fill: SlotFill): SlotValue | undefined {
   const fromFill = fill[box.slot]
   if (fromFill !== undefined && !isMediaSlot(box.slot)) {
     return fromFill as SlotValue

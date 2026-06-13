@@ -1,7 +1,12 @@
 import { useLayoutEffect, useRef, useState } from "react"
-import { TemplateCanvas } from "@/features/templates/renderer"
+import { TemplateCanvas, resolveSlot } from "@/features/templates/renderer"
 import type { RawTemplate } from "@/features/templates/renderer"
-import type { Box, SlotFill, TemplateBody } from "@/features/templates/types"
+import type {
+  Box,
+  SlotFill,
+  SlotValue,
+  TemplateBody,
+} from "@/features/templates/types"
 
 // EditorCanvas: scales-to-fit like ScaledTemplate but adds an
 // interaction overlay layered on top of the pure renderer. The overlay
@@ -119,10 +124,15 @@ export function EditorCanvas({
     function up() {
       document.removeEventListener("pointermove", move)
       document.removeEventListener("pointerup", up)
+      document.removeEventListener("pointercancel", up)
       clearGuides()
     }
     document.addEventListener("pointermove", move)
     document.addEventListener("pointerup", up)
+    // pointercancel fires instead of pointerup when the browser takes
+    // the pointer away (focus loss, system gesture) — without it the
+    // listeners stay attached after an interrupted drag.
+    document.addEventListener("pointercancel", up)
   }
 
   function startResize(
@@ -140,8 +150,16 @@ export function EditorCanvas({
     const startX = e.clientX
     const startY = e.clientY
     const liveScale = scale
-    const minW = 40
-    const minH = 30
+    // Content-aware floor: a text box never resizes below what its
+    // content needs AT THE CHOSEN fontSize. Without this, shrinking a
+    // fitToBox box silently shrinks the font the author picked (and a
+    // fixed box clips) — the box "looks wrong" with no feedback. The
+    // measurer renders the same resolved content offscreen with the
+    // box's text styles; width floor = longest unbreakable word,
+    // height floor = wrapped height at the candidate width.
+    const measurer = createBoxTextMeasurer(startBox, fill)
+    const minW = Math.max(40, measurer?.minW ?? 0)
+    const minHAt = (w: number) => Math.max(30, measurer?.minHFor(w) ?? 0)
     let armed = false
 
     function move(ev: PointerEvent) {
@@ -160,7 +178,8 @@ export function EditorCanvas({
 
       // Each handle adjusts a different combination of edges. Anchors
       // (the opposite edges) stay fixed; the dragged edges move by the
-      // delta. Min sizes prevent collapsing through zero.
+      // delta. Min sizes prevent collapsing through zero — and, for
+      // text boxes, below the content floor.
       if (handle === "l" || handle === "tl" || handle === "bl") {
         const nx = Math.min(startBox.x + dx, startBox.x + startBox.w - minW)
         w = startBox.x + startBox.w - nx
@@ -169,6 +188,9 @@ export function EditorCanvas({
       if (handle === "r" || handle === "tr" || handle === "br") {
         w = Math.max(minW, startBox.w + dx)
       }
+      // Height floor depends on the width we just settled on (narrower
+      // box → more wrapping → taller floor).
+      const minH = minHAt(w)
       if (handle === "t" || handle === "tl" || handle === "tr") {
         const ny = Math.min(startBox.y + dy, startBox.y + startBox.h - minH)
         h = startBox.y + startBox.h - ny
@@ -194,21 +216,38 @@ export function EditorCanvas({
         "resize",
         handle
       )
+      // Snapping can pull a dragged edge a few px past the content
+      // floor — re-clamp after, keeping the opposite edge anchored.
+      let { x: cx, y: cy, w: cw, h: ch } = snapped
+      if (cw < minW) {
+        if (handle === "l" || handle === "tl" || handle === "bl") {
+          cx = startBox.x + startBox.w - minW
+        }
+        cw = minW
+      }
+      const minHSnapped = minHAt(cw)
+      if (ch < minHSnapped) {
+        if (handle === "t" || handle === "tl" || handle === "tr") {
+          cy = startBox.y + startBox.h - minHSnapped
+        }
+        ch = minHSnapped
+      }
       setGuides(snapGuides)
-      change(i, {
-        x: snapped.x,
-        y: snapped.y,
-        w: snapped.w,
-        h: snapped.h,
-      })
+      change(i, { x: cx, y: cy, w: cw, h: ch })
     }
     function up() {
       document.removeEventListener("pointermove", move)
       document.removeEventListener("pointerup", up)
+      document.removeEventListener("pointercancel", up)
+      measurer?.dispose()
       clearGuides()
     }
     document.addEventListener("pointermove", move)
     document.addEventListener("pointerup", up)
+    // pointercancel fires instead of pointerup when the browser takes
+    // the pointer away — without it the offscreen measurer div leaks
+    // on every interrupted resize.
+    document.addEventListener("pointercancel", up)
   }
 
   return (
@@ -571,6 +610,73 @@ function computeYCandidates(
     return [{ value: b.y + b.h }]
   }
   return []
+}
+
+// ─── Content-floor measurement ──────────────────────────────────────────────
+// Offscreen mirror of a text box's content at its CHOSEN fontSize.
+// Measured in native viewport px (CSS transforms don't affect layout
+// metrics, so mounting on document.body is safe regardless of canvas
+// zoom). Lives only for the duration of one resize drag.
+
+function flattenSlotValue(v: SlotValue | undefined): string {
+  if (v === undefined || v === null) return ""
+  if (typeof v === "string") return v
+  return v.map((s) => s.text).join("")
+}
+
+function createBoxTextMeasurer(box: Box, fill: SlotFill) {
+  if (box.slot === "media") return null
+  const text = flattenSlotValue(resolveSlot(box, fill))
+  if (!text.trim()) return null
+
+  const el = document.createElement("div")
+  el.style.position = "fixed"
+  el.style.left = "-100000px"
+  el.style.top = "0"
+  el.style.visibility = "hidden"
+  el.style.pointerEvents = "none"
+  el.style.whiteSpace = "pre-wrap"
+  el.style.fontFamily = box.font
+  el.style.fontWeight = String(box.weight)
+  el.style.fontStyle = box.italic ? "italic" : "normal"
+  el.style.fontSize = `${box.fontSize}px`
+  el.style.lineHeight = String(box.lineHeight)
+  el.style.letterSpacing = box.letterSpacing
+    ? `${box.letterSpacing}em`
+    : "normal"
+  el.style.textTransform = box.uppercase ? "uppercase" : "none"
+  el.textContent = text
+  document.body.appendChild(el)
+
+  const padX = (box.paddingX ?? 0) * 2
+  const padY = (box.paddingY ?? 0) * 2
+
+  // At 1px available width every wrap opportunity is taken, so
+  // scrollWidth is the widest unbreakable run (longest word) — the
+  // narrowest the box can go without mid-word overflow.
+  el.style.width = "1px"
+  const minW = Math.ceil(el.scrollWidth) + padX
+
+  return {
+    minW,
+    // Wrapped height of the content at a candidate box width. When
+    // maxLines clamps rendering, the floor is the clamp height — the
+    // renderer ellipsizes the rest by design.
+    minHFor(w: number): number {
+      el.style.width = `${Math.max(1, w - padX)}px`
+      let h = el.scrollHeight
+      if (box.maxLines > 0) {
+        h = Math.min(
+          h,
+          Math.ceil(box.maxLines * box.lineHeight * box.fontSize)
+        )
+      }
+      return Math.ceil(h) + padY
+    },
+    dispose() {
+      el.remove()
+    },
+  }
 }
 
 // ─── Guide lines ────────────────────────────────────────────────────────────

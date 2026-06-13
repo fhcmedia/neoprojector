@@ -4,9 +4,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { FilmIcon, ImageIcon, Trash2Icon, XIcon } from "lucide-react"
 import { useDebounce } from "@/hooks/use-debounce"
 import { cn } from "@/lib/utils"
-import { AddTile } from "@/features/library/add-tile"
 import {
-  useCreatePresentation,
   useDeletePresentation,
   usePresentations,
   usePresentationSlides,
@@ -15,17 +13,16 @@ import type { Presentation, Medium } from "@/bindings/neoprojector/database"
 
 type Props = {
   search: string
-  onOpen: (presentation: Presentation) => void
 }
 
 // PresentationsTab — tile grid mirroring the Templates / Overlays
 // tabs. Each tile previews the first slide (or shows a placeholder
-// when empty), the presentation name, and a slide count. AddTile
-// creates a fresh presentation and opens the editor immediately so
-// the operator can start dropping slides in.
-export function PresentationsTab({ search, onOpen }: Props) {
+// when empty), the presentation name, and a slide count. Read-only
+// until the Show-surface presentation editor lands: existing rows
+// can be scheduled and played, but there's no editor to create or
+// modify them with, so the add tile is gone.
+export function PresentationsTab({ search }: Props) {
   const { data: presentations, isLoading } = usePresentations()
-  const createMut = useCreatePresentation()
   const deleteMut = useDeletePresentation()
   const debounced = useDebounce(search, 200)
 
@@ -46,25 +43,15 @@ export function PresentationsTab({ search, onOpen }: Props) {
             <PresentationTile
               key={p.id}
               presentation={p}
-              onOpen={() => onOpen(p)}
               onDelete={() => deleteMut.mutate(p.id)}
             />
           ))}
         </AnimatePresence>
-        <AddTile
-          label="Add presentation"
-          sublabel="New"
-          onClick={() =>
-            createMut.mutate("Untitled presentation", {
-              onSuccess: (created) => onOpen(created),
-            })
-          }
-        />
       </div>
       {filtered.length === 0 && (
         <Empty>
           {presentations && presentations.length === 0
-            ? "No presentations yet — click Add presentation to start."
+            ? "No presentations yet."
             : "No matches."}
         </Empty>
       )}
@@ -74,11 +61,9 @@ export function PresentationsTab({ search, onOpen }: Props) {
 
 function PresentationTile({
   presentation,
-  onOpen,
   onDelete,
 }: {
   presentation: Presentation
-  onOpen: () => void
   onDelete: () => void
 }) {
   const { data: slides } = usePresentationSlides(presentation.id)
@@ -118,11 +103,7 @@ function PresentationTile({
       transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
       className="group relative flex flex-col overflow-hidden rounded border border-border/50 bg-background transition-colors hover:border-border"
     >
-      <button
-        type="button"
-        onClick={onOpen}
-        className="block text-left"
-      >
+      <div className="block text-left">
         <div className="relative aspect-video w-full overflow-hidden bg-muted/40">
           {firstMedium?.type === "image" && firstSlide ? (
             <img
@@ -149,7 +130,7 @@ function PresentationTile({
             </span>
           )}
         </div>
-      </button>
+      </div>
       <div className="flex flex-col gap-0.5 border-t border-border/40 px-2 py-1.5">
         <span className="truncate text-[11px] font-medium text-foreground">
           {presentation.name}
