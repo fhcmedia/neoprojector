@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { FilmIcon, ImageIcon, Trash2Icon, XIcon } from "lucide-react"
 import { useDebounce } from "@/hooks/use-debounce"
 import { cn } from "@/lib/utils"
@@ -10,6 +10,8 @@ import {
   usePresentationSlides,
 } from "@/features/presentations/api"
 import type { Presentation, Medium } from "@/bindings/neoprojector/database"
+import { Service as Media } from "@/bindings/neoprojector/services/media"
+import { useVideoAssetUrl } from "@/lib/media-url"
 
 type Props = {
   search: string
@@ -67,17 +69,23 @@ function PresentationTile({
   onDelete: () => void
 }) {
   const { data: slides } = usePresentationSlides(presentation.id)
-  const qc = useQueryClient()
+  const { data: mediaList } = useQuery({
+    queryKey: ["media", "list"],
+    queryFn: () => Media.ListMedia() as unknown as Promise<Medium[]>,
+    staleTime: 60_000,
+  })
   const mediaById = useMemo(() => {
-    const list = qc.getQueryData<Medium[]>(["media", "list"]) ?? []
-    return new Map(list.map((m) => [m.id, m]))
-  }, [qc, slides])
+    return new Map((mediaList ?? []).map((m) => [m.id, m]))
+  }, [mediaList])
   const firstSlide = slides && slides.length > 0 ? slides[0] : null
   const firstMedium =
     firstSlide && firstSlide.media_id !== null
       ? mediaById.get(firstSlide.media_id) ?? null
       : null
   const count = slides?.length ?? 0
+  const videoSrc = useVideoAssetUrl(
+    firstMedium?.type === "video" ? firstSlide?.media_id : undefined
+  )
 
   const [pendingDelete, setPendingDelete] = useState(false)
   const tileRef = useRef<HTMLDivElement | null>(null)
@@ -114,7 +122,7 @@ function PresentationTile({
             />
           ) : firstMedium?.type === "video" && firstSlide ? (
             <video
-              src={`/media-asset/${firstSlide.media_id}`}
+              src={videoSrc}
               className="absolute inset-0 h-full w-full object-cover"
               preload="metadata"
               muted

@@ -5,6 +5,29 @@
 // @ts-ignore: Unused imports
 import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Create } from "@wailsio/runtime";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
+
 export function Initialize(): $CancellablePromise<void> {
     return $Call.ByID(2338951747);
 }
+
+/**
+ * MediaServer returns how to reach the loopback media server, which
+ * serves the same content as the wails-bridged /media-asset/{id}
+ * path but over a plain OS socket, bypassing Wails' Windows WebView2
+ * asset bridge. That bridge (as of wails v3 alpha.89) buffers an
+ * entire HTTP response into memory before handing it to WebView2,
+ * synchronously on the UI thread — fine for small assets, but a
+ * several-minute video response is large enough to freeze or crash
+ * the app on Windows. A real network request streams normally.
+ */
+export function MediaServer(): $CancellablePromise<$models.MediaServerInfo> {
+    return $Call.ByID(2634985592).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+// Private type creation functions
+const $$createType0 = $models.MediaServerInfo.createFrom;

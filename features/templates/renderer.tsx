@@ -24,6 +24,7 @@ import {
 import { UI_FONT } from "@/features/templates/fonts"
 import { Service as Media } from "@/bindings/neoprojector/services/media"
 import type { Medium } from "@/bindings/neoprojector/database"
+import { useVideoAssetUrl } from "@/lib/media-url"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -612,6 +613,7 @@ function MediaSurface({ media }: { media: MediaRef }) {
   })
   const item = list?.find((m) => m.id === media.mediaId)
   const src = `/media-asset/${media.mediaId}`
+  const videoSrc = useVideoAssetUrl(media.mediaId)
   // `mode` is overloaded: legacy values "cover"/"contain" map directly
   // to object-fit; "loop" is a legacy flag that meant "video should
   // loop" before the explicit `loop` boolean existed. We treat
@@ -650,7 +652,7 @@ function MediaSurface({ media }: { media: MediaRef }) {
   if (item.type === "video") {
     return (
       <ControlledVideo
-        src={src}
+        src={videoSrc}
         playing={wantPlaying}
         loop={wantLoop}
         muted={wantMuted}
@@ -706,7 +708,11 @@ function ControlledVideo({
   restartToken,
   objectFit,
 }: {
-  src: string
+  // Undefined until the loopback media-server info resolves (see
+  // useVideoAssetUrl) — renders with no src briefly rather than
+  // falling back to the wails-bridged path, which is exactly the
+  // path this exists to avoid for video.
+  src: string | undefined
   playing: boolean
   loop: boolean
   muted: boolean

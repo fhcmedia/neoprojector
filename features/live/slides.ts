@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Service as Bible } from "@/bindings/neoprojector/services/bible"
 import { Service as Songs } from "@/bindings/neoprojector/services/songs"
@@ -90,54 +91,59 @@ export function usePresentationSlides(
     enabled,
   })
 
+  // Memoized on the underlying query data (not recomputed on every
+  // render): the auto-advance effect in show-pane.tsx depends on
+  // `playback` and `slides` by identity to know when to restart its
+  // setInterval. Rebuilding fresh objects/arrays every render was
+  // resetting that timer before it could ever fire — TanStack Query
+  // keeps stable data references when the underlying rows haven't
+  // changed, so this makes identity track content instead of render.
+  const playback = useMemo<PresentationPlayback | null>(() => {
+    if (!playbackQ.data) return null
+    return {
+      loop: playbackQ.data.loop === 1,
+      intervalMs: playbackQ.data.interval_ms,
+      transitionKind: playbackQ.data.transition_kind,
+      transitionDurationMs: playbackQ.data.transition_duration_ms,
+    }
+  }, [playbackQ.data])
+
+  const slides = useMemo<Slide[]>(() => {
+    if (!slidesQ.data) return []
+    return slidesQ.data.map((s, idx) => {
+      // media_title comes from a LEFT JOIN to keep the slide row even
+      // if the media was deleted (we'd rather show "Slide N" than 404
+      // the whole presentation). The sqlc NullString shape wraps the
+      // string with a Valid flag; unwrap defensively.
+      const title =
+        s.media_title && s.media_title.Valid
+          ? s.media_title.String
+          : `Slide ${idx + 1}`
+      return {
+        kind: "media",
+        caption: title,
+        body: title,
+        presentationSlideId: s.id,
+        fill: {
+          media: {
+            mediaId: s.media_id,
+            // Background-style playback: video slides loop muted by
+            // default so the operator doesn't have to babysit a per-
+            // slide control surface. Tweak in the schedule editor if
+            // you want sound or a one-shot.
+            playing: true,
+            loop: true,
+            muted: true,
+            restartToken: 0,
+          },
+        },
+      }
+    })
+  }, [slidesQ.data])
+
   if (!enabled)
     return { slides: [], isLoading: false, playback: null }
 
-  const playback: PresentationPlayback | null = playbackQ.data
-    ? {
-        loop: playbackQ.data.loop === 1,
-        intervalMs: playbackQ.data.interval_ms,
-        transitionKind: playbackQ.data.transition_kind,
-        transitionDurationMs: playbackQ.data.transition_duration_ms,
-      }
-    : null
-
-  if (!slidesQ.data)
-    return {
-      slides: [],
-      isLoading: slidesQ.isLoading || playbackQ.isLoading,
-      playback,
-    }
-
-  const slides: Slide[] = slidesQ.data.map((s, idx) => {
-    // media_title comes from a LEFT JOIN to keep the slide row even
-    // if the media was deleted (we'd rather show "Slide N" than 404
-    // the whole presentation). The sqlc NullString shape wraps the
-    // string with a Valid flag; unwrap defensively.
-    const title =
-      s.media_title && s.media_title.Valid
-        ? s.media_title.String
-        : `Slide ${idx + 1}`
-    return {
-      kind: "media",
-      caption: title,
-      body: title,
-      presentationSlideId: s.id,
-      fill: {
-        media: {
-          mediaId: s.media_id,
-          // Background-style playback: video slides loop muted by
-          // default so the operator doesn't have to babysit a per-
-          // slide control surface. Tweak in the schedule editor if
-          // you want sound or a one-shot.
-          playing: true,
-          loop: true,
-          muted: true,
-          restartToken: 0,
-        },
-      },
-    }
-  })
   return {
     slides,
     isLoading: slidesQ.isLoading || playbackQ.isLoading,
@@ -322,24 +328,16 @@ export function useAdHocBibleSlides(
 
 // ---- song -----------------------------------------------------------------
 
-export function useSongSlides(
-  item: ListServiceItemsWithContentRow | null
-): { slides: Slide[]; isLoading: boolean } {
-  const enabled = !!item && item.kind === "song" && item.song_id !== null
-  const { data, isLoading } = useQuery({
-    queryKey: ["songs", "full", item?.song_id],
-    queryFn: () =>
-      Songs.GetSong(item!.song_id) as unknown as Promise<SongFull>,
-    enabled,
-  })
-  if (!enabled) return { slides: [], isLoading: false }
-  if (!data) return { slides: [], isLoading }
+// Number sections per type (verse 1, verse 2, chorus 1, …) and split
+// each section's lines into slides on internal blank lines — a
+// 4-line verse with a blank in the middle becomes TWO "Verse 1"
+// slides sharing the section's number, not Verse 1 + 2. Shared by
+// every song-live entry point (schedule items via useSongSlides,
+// the Library Songs tab) so "slide N" means the same thing and
+// arrow-key navigation / live-highlighting stay consistent no
+// matter where the song was sent from.
+export function buildSongSlides(data: SongFull): Slide[] {
   const title = data.song.title || "(untitled)"
-
-  // Number sections per type (verse 1, verse 2, chorus 1, …). Within
-  // a section, a blank line splits the text into separate slides that
-  // still share the section's number — so a 4-line verse with a blank
-  // in the middle renders as two "Verse 1" slides, not Verse 1 + 2.
   const counters: Record<string, number> = {}
   const slides: Slide[] = []
   for (const s of data.sections) {
@@ -386,6 +384,22 @@ export function useSongSlides(
     }
   }
 
+  return slides
+}
+
+export function useSongSlides(
+  item: ListServiceItemsWithContentRow | null
+): { slides: Slide[]; isLoading: boolean } {
+  const enabled = !!item && item.kind === "song" && item.song_id !== null
+  const { data, isLoading } = useQuery({
+    queryKey: ["songs", "full", item?.song_id],
+    queryFn: () =>
+      Songs.GetSong(item!.song_id) as unknown as Promise<SongFull>,
+    enabled,
+  })
+  const slides = useMemo(() => (data ? buildSongSlides(data) : []), [data])
+  if (!enabled) return { slides: [], isLoading: false }
+  if (!data) return { slides: [], isLoading }
   return { slides, isLoading }
 }
 

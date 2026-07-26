@@ -16,6 +16,7 @@ import type { Medium } from "@/bindings/neoprojector/database"
 import { motion } from "motion/react"
 import { Input } from "@/components/input"
 import { cn } from "@/lib/utils"
+import { useMediaServerConn, videoAssetUrl } from "@/lib/media-url"
 import {
   pickerContainerVariants,
   pickerRowVariants,
@@ -43,6 +44,7 @@ export function MediaPicker({
   })
   const [query, setQuery] = useState("")
   const [importing, setImporting] = useState(false)
+  const mediaServerConn = useMediaServerConn()
 
   const filtered = useMemo(() => {
     if (!media) return []
@@ -157,7 +159,7 @@ export function MediaPicker({
                         />
                       ) : m.type === "video" ? (
                         <video
-                          src={`/media-asset/${m.id}`}
+                          src={videoAssetUrl(mediaServerConn, m.id)}
                           className="absolute inset-0 h-full w-full object-cover"
                           preload="metadata"
                           muted
