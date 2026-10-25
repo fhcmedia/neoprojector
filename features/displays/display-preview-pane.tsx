@@ -306,76 +306,6 @@ function PreviewTile({
   const { attributes, listeners, setNodeRef, style, isDragging } =
     useSortableRow(`display-${display.id}`)
 
-  // Channel split — mirrors the output window's compositing exactly:
-  //   z0 media ?? background, z1 overlays, z2 slide text, z3
-  //   presentation. show_media gates z0 AND z3; show_song/show_bible
-  //   gate z2 by slide kind; show_overlay gates z1.
-  const slideLive = live?.channel === "slide" ? live : null
-  const mediaLive = live?.channel === "media" ? live : null
-  const presLive = live?.channel === "presentation" ? live : null
-
-  const mediaShown = display.show_media !== 0
-  const overlaysShown = display.show_overlay !== 0
-  const slideShown = slideLive
-    ? liveKindShown(display, slideLive.kind)
-    : false
-
-  // Template binding for the slide channel (bible/song). A suppressed
-  // kind resolves to null so the tile falls back to its black surface.
-  const bindingId =
-    slideShown && slideLive
-      ? slideLive.kind === "bible"
-        ? display.bible_template_id.Valid
-          ? display.bible_template_id.Int64
-          : null
-        : slideLive.kind === "song"
-          ? display.song_template_id.Valid
-            ? display.song_template_id.Int64
-            : null
-          : null
-      : null
-
-  const template = bindingId !== null ? templateById.get(bindingId) ?? null : null
-
-  // cover_slide overlays blank the slide TEXT beneath them — the z0
-  // slot (background/media) stays visible; overlays are transparent
-  // and render over it. Only overlays that actually render on this
-  // display can blank the text beneath them.
-  // Same per-display routing as the output window: targeted-elsewhere
-  // overlays drop out, sticky ones render above everything.
-  const routed = routeOverlays(
-    enabled && overlaysShown ? activeOverlays : [],
-    display.id,
-    (a) => ({ kind: a.overlayKind, rulesJSON: a.rulesJSON })
-  )
-  const overlaysCoverSlide = routed.coverSlide
-
-  // z0 background: item/section override composed over the service
-  // default — identical derivation to buildPayload. Unmounted (not
-  // occluded) when anything opaque covers it, so the preview's WebGL
-  // cost mirrors the output's.
-  const background = live?.background ?? serviceBackground ?? null
-  const backgroundVisible =
-    mediaShown && !!background && !mediaLive && !presLive
-
-  // Slide layer: blank the fill (rather than changing keys) when
-  // suppressed, so a routing toggle refreshes the layer in place — an
-  // instant hard cut on both surfaces, never a preview-only crossfade.
-  // Media/presentation layers UNMOUNT when suppressed or covered,
-  // exactly as the output window unmounts its DualLayerMediaCanvas.
-  const slideFill = slideShown ? slideLive?.fill ?? {} : {}
-  const slideKey = slideLive
-    ? `${slideLive.kind}-${slideLive.sourceItemId ?? "_"}-${slideLive.slideIndex}`
-    : "idle"
-  const mediaVisible = !!mediaLive && mediaShown
-  const mediaKey = mediaLive
-    ? `media-${mediaLive.sourceItemId ?? "_"}`
-    : "idle"
-  const presVisible = !!presLive && mediaShown
-  const presKey = presLive
-    ? `pres-${presLive.sourceItemId ?? "_"}-${presLive.slideIndex}`
-    : "idle"
-
   return (
     <div
       ref={setNodeRef}
@@ -447,58 +377,165 @@ function PreviewTile({
         </div>
       </div>
 
-      {/* 16:9 audience surface — true black so an idle or disabled
-          output reads like a real dark screen. */}
-      <div
-        className={cn(
-          "relative aspect-video w-full overflow-hidden bg-black",
-          !enabled && "opacity-40"
-        )}
-      >
-        {/* z0 — media item, else the resting background. */}
-        {mediaVisible && mediaLive ? (
-          <LiveTemplateView
-            template={null}
-            fill={mediaLive.fill}
-            slideKey={mediaKey}
-            liveTransparency
-            className="absolute inset-0 h-full w-full"
-          />
-        ) : backgroundVisible && background ? (
-          <BackgroundMirror />
-        ) : null}
-        {/* z1 — overlays sit above the resting layer, below text. */}
-        <PreviewOverlays displayId={display.id} overlays={routed.under} />
-        {/* z2 — templated slide text. liveTransparency: the tile is an
-            audience mirror, so transparent templates show the layers
-            beneath (or true black), never the editor checker. */}
-        {slideLive && (
-          <LiveTemplateView
-            template={overlaysCoverSlide ? null : template}
-            fill={slideFill}
-            slideKey={slideKey}
-            fontSizeOverride={
-              template
-                ? slideLive.fontSizeOverrideByTemplate?.[template.id]
-                : undefined
-            }
-            liveTransparency
-            className="absolute inset-0 h-full w-full"
-          />
-        )}
-        {/* z3 — presentation covers everything while live. */}
-        {presVisible && presLive && (
-          <LiveTemplateView
-            template={null}
-            fill={presLive.fill}
-            slideKey={presKey}
-            liveTransparency
-            className="absolute inset-0 h-full w-full"
-          />
-        )}
-        {/* Sticky overlays — pinned above every layer, like the output. */}
-        <PreviewOverlays displayId={display.id} overlays={routed.top} />
-      </div>
+      <DisplaySurface
+        display={display}
+        templateById={templateById}
+        live={live}
+        activeOverlays={activeOverlays}
+        serviceBackground={serviceBackground}
+      />
+    </div>
+  )
+}
+
+// DisplaySurface is one display's 16:9 audience mirror — exactly the
+// output window's compositing (z0 media/background, z1 overlays, z2
+// slide text, z3 presentation, sticky overlays on top). Used by the
+// preview tiles and by the overlay editor's screen picker. `children`
+// render above everything (the picker uses it for a draft overlay).
+// BackgroundMirror needs an enclosing <BackgroundStage>.
+export function DisplaySurface({
+  display,
+  templateById,
+  live,
+  activeOverlays,
+  serviceBackground,
+  className,
+  children,
+}: {
+  display: Display
+  templateById: Map<number, Template>
+  live: ReturnType<typeof useLive>["live"]
+  activeOverlays: ActiveOverlay[]
+  serviceBackground: ReturnType<typeof useLive>["serviceBackground"]
+  className?: string
+  children?: ReactNode
+}) {
+  const enabled = display.enabled !== 0
+  // Channel split — mirrors the output window's compositing exactly:
+  //   z0 media ?? background, z1 overlays, z2 slide text, z3
+  //   presentation. show_media gates z0 AND z3; show_song/show_bible
+  //   gate z2 by slide kind; show_overlay gates z1.
+  const slideLive = live?.channel === "slide" ? live : null
+  const mediaLive = live?.channel === "media" ? live : null
+  const presLive = live?.channel === "presentation" ? live : null
+
+  const mediaShown = display.show_media !== 0
+  const overlaysShown = display.show_overlay !== 0
+  const slideShown = slideLive
+    ? liveKindShown(display, slideLive.kind)
+    : false
+
+  // Template binding for the slide channel (bible/song). A suppressed
+  // kind resolves to null so the tile falls back to its black surface.
+  const bindingId =
+    slideShown && slideLive
+      ? slideLive.kind === "bible"
+        ? display.bible_template_id.Valid
+          ? display.bible_template_id.Int64
+          : null
+        : slideLive.kind === "song"
+          ? display.song_template_id.Valid
+            ? display.song_template_id.Int64
+            : null
+          : null
+      : null
+
+  const template = bindingId !== null ? templateById.get(bindingId) ?? null : null
+
+  // cover_slide overlays blank the slide TEXT beneath them — the z0
+  // slot (background/media) stays visible; overlays are transparent
+  // and render over it. Only overlays that actually render on this
+  // display can blank the text beneath them.
+  // Same per-display routing as the output window: targeted-elsewhere
+  // overlays drop out, sticky ones render above everything.
+  const routed = routeOverlays(
+    enabled && overlaysShown ? activeOverlays : [],
+    display.id,
+    (a) => ({ kind: a.overlayKind, rulesJSON: a.rulesJSON })
+  )
+  const overlaysCoverSlide = routed.coverSlide
+
+  // z0 background: item/section override composed over the service
+  // default — identical derivation to buildPayload. Unmounted (not
+  // occluded) when anything opaque covers it, so the preview's WebGL
+  // cost mirrors the output's.
+  const background = live?.background ?? serviceBackground ?? null
+  const backgroundVisible =
+    mediaShown && !!background && !mediaLive && !presLive
+
+  // Slide layer: blank the fill (rather than changing keys) when
+  // suppressed, so a routing toggle refreshes the layer in place — an
+  // instant hard cut on both surfaces, never a preview-only crossfade.
+  // Media/presentation layers UNMOUNT when suppressed or covered,
+  // exactly as the output window unmounts its DualLayerMediaCanvas.
+  const slideFill = slideShown ? slideLive?.fill ?? {} : {}
+  const slideKey = slideLive
+    ? `${slideLive.kind}-${slideLive.sourceItemId ?? "_"}-${slideLive.slideIndex}`
+    : "idle"
+  const mediaVisible = !!mediaLive && mediaShown
+  const mediaKey = mediaLive
+    ? `media-${mediaLive.sourceItemId ?? "_"}`
+    : "idle"
+  const presVisible = !!presLive && mediaShown
+  const presKey = presLive
+    ? `pres-${presLive.sourceItemId ?? "_"}-${presLive.slideIndex}`
+    : "idle"
+
+  // 16:9 audience surface — true black so an idle or disabled output
+  // reads like a real dark screen.
+  return (
+    <div
+      className={cn(
+        "relative aspect-video w-full overflow-hidden bg-black",
+        !enabled && "opacity-40",
+        className
+      )}
+    >
+      {/* z0 — media item, else the resting background. */}
+      {mediaVisible && mediaLive ? (
+        <LiveTemplateView
+          template={null}
+          fill={mediaLive.fill}
+          slideKey={mediaKey}
+          liveTransparency
+          className="absolute inset-0 h-full w-full"
+        />
+      ) : backgroundVisible && background ? (
+        <BackgroundMirror />
+      ) : null}
+      {/* z1 — overlays sit above the resting layer, below text. */}
+      <PreviewOverlays displayId={display.id} overlays={routed.under} />
+      {/* z2 — templated slide text. liveTransparency: the tile is an
+          audience mirror, so transparent templates show the layers
+          beneath (or true black), never the editor checker. */}
+      {slideLive && (
+        <LiveTemplateView
+          template={overlaysCoverSlide ? null : template}
+          fill={slideFill}
+          slideKey={slideKey}
+          fontSizeOverride={
+            template
+              ? slideLive.fontSizeOverrideByTemplate?.[template.id]
+              : undefined
+          }
+          liveTransparency
+          className="absolute inset-0 h-full w-full"
+        />
+      )}
+      {/* z3 — presentation covers everything while live. */}
+      {presVisible && presLive && (
+        <LiveTemplateView
+          template={null}
+          fill={presLive.fill}
+          slideKey={presKey}
+          liveTransparency
+          className="absolute inset-0 h-full w-full"
+        />
+      )}
+      {/* Sticky overlays — pinned above every layer, like the output. */}
+      <PreviewOverlays displayId={display.id} overlays={routed.top} />
+      {children}
     </div>
   )
 }

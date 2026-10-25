@@ -204,6 +204,13 @@ type ScreenInfo struct {
 	IsPrimary bool   `json:"is_primary"`
 	Width     int    `json:"width"`
 	Height    int    `json:"height"`
+	// Physical (unscaled) placement in the OS desktop arrangement, so
+	// the frontend can draw monitors where they actually sit. Physical
+	// rather than DIP: with mixed scale factors DIP rects can overlap.
+	X        int `json:"x"`
+	Y        int `json:"y"`
+	PxWidth  int `json:"px_width"`
+	PxHeight int `json:"px_height"`
 }
 
 // ListScreens reports every physical screen the OS currently exposes.
@@ -224,6 +231,10 @@ func (s *Service) ListScreens(_ context.Context) []ScreenInfo {
 			IsPrimary: sc.IsPrimary,
 			Width:     sc.Size.Width,
 			Height:    sc.Size.Height,
+			X:         sc.PhysicalBounds.X,
+			Y:         sc.PhysicalBounds.Y,
+			PxWidth:   sc.PhysicalBounds.Width,
+			PxHeight:  sc.PhysicalBounds.Height,
 		})
 	}
 	return out

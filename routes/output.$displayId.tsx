@@ -555,22 +555,24 @@ function NextMediaWarmer({ mediaId }: { mediaId: number }) {
       {type === "image" && (
         <img src={`/media-asset/${mediaId}`} alt="" decoding="async" />
       )}
-      {isVideo && <video
-        src={videoSrc}
-        preload="auto"
-        muted
-        autoPlay
-        playsInline
-        onLoadedMetadata={(e) => {
-          const el = e.currentTarget
-          // Seek a hair past 0 so the first keyframe + decode pipeline
-          // actually runs. Pause so we don't pin the GPU on continuous
-          // hidden playback across N output windows.
-          const t = Math.min(0.1, Math.max(0, (el.duration || 0) - 0.05))
-          if (Number.isFinite(t) && t > 0) el.currentTime = t
-          el.pause()
-        }}
-      />}
+      {isVideo && (
+        <video
+          src={videoSrc}
+          preload="auto"
+          muted
+          autoPlay
+          playsInline
+          onLoadedMetadata={(e) => {
+            const el = e.currentTarget
+            // Seek a hair past 0 so the first keyframe + decode pipeline
+            // actually runs. Pause so we don't pin the GPU on continuous
+            // hidden playback across N output windows.
+            const t = Math.min(0.1, Math.max(0, (el.duration || 0) - 0.05))
+            if (Number.isFinite(t) && t > 0) el.currentTime = t
+            el.pause()
+          }}
+        />
+      )}
     </div>
   )
 }

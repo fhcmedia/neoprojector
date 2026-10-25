@@ -9,6 +9,7 @@ import { Input } from "@/components/input"
 import { ANIM_KINDS, type AnimKind } from "@/features/animations/variants"
 import type { Display } from "@/bindings/neoprojector/database"
 import { useOverlayEditor } from "./overlay-editor"
+import { ScreenPicker } from "./screen-picker"
 
 // OverlayEditorOptions renders in the LEFT (schedule) pane while the
 // overlay-editor surface is open: identity header, widget config,
@@ -126,10 +127,9 @@ export function OverlayEditorOptions() {
         </Section>
         <Section
           title="Show on"
-          help="Which displays this overlay appears on."
+          help="Which screens this overlay appears on."
         >
-          <DisplayTargets
-            displays={displays ?? []}
+          <ScreenPicker
             selected={rules.display_ids}
             onChange={(display_ids) => {
               const next = { ...rules }
@@ -383,60 +383,6 @@ function PerDisplayLayouts({
           </div>
         )
       })}
-    </div>
-  )
-}
-
-// --- display targeting ----------------------------------------------------
-
-// DisplayTargets edits rules.display_ids. Every box ticked stores
-// `undefined` (= all displays, including ones added later) rather
-// than the explicit list, so a new stage display isn't silently
-// excluded.
-function DisplayTargets({
-  displays,
-  selected,
-  onChange,
-}: {
-  displays: Display[]
-  selected: number[] | undefined
-  onChange: (next: number[] | undefined) => void
-}) {
-  if (displays.length === 0) {
-    return (
-      <div className="text-[11px] text-muted-foreground/60">
-        No displays configured. Add one in Settings → Displays first.
-      </div>
-    )
-  }
-  const isOn = (id: number) => !selected || selected.includes(id)
-  const none = displays.every((d) => !isOn(d.id))
-  return (
-    <div className="flex flex-col gap-1.5">
-      {displays.map((d) => (
-        <label
-          key={d.id}
-          className="flex cursor-pointer items-center gap-2 text-[11px] text-foreground"
-        >
-          <input
-            type="checkbox"
-            checked={isOn(d.id)}
-            onChange={(e) => {
-              const on = new Set(displays.filter((x) => isOn(x.id)).map((x) => x.id))
-              if (e.target.checked) on.add(d.id)
-              else on.delete(d.id)
-              onChange(on.size === displays.length ? undefined : [...on])
-            }}
-            className="h-3.5 w-3.5 cursor-pointer accent-foreground"
-          />
-          <span>{d.name}</span>
-        </label>
-      ))}
-      {none && (
-        <span className="text-[10px] text-destructive">
-          Not shown on any display.
-        </span>
-      )}
     </div>
   )
 }

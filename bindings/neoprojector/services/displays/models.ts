@@ -360,6 +360,16 @@ export class ScreenInfo {
     "width": number;
     "height": number;
 
+    /**
+     * Physical (unscaled) placement in the OS desktop arrangement, so
+     * the frontend can draw monitors where they actually sit. Physical
+     * rather than DIP: with mixed scale factors DIP rects can overlap.
+     */
+    "x": number;
+    "y": number;
+    "px_width": number;
+    "px_height": number;
+
     /** Creates a new ScreenInfo instance. */
     constructor($$source: Partial<ScreenInfo> = {}) {
         if (!("id" in $$source)) {
@@ -376,6 +386,18 @@ export class ScreenInfo {
         }
         if (!("height" in $$source)) {
             this["height"] = 0;
+        }
+        if (!("x" in $$source)) {
+            this["x"] = 0;
+        }
+        if (!("y" in $$source)) {
+            this["y"] = 0;
+        }
+        if (!("px_width" in $$source)) {
+            this["px_width"] = 0;
+        }
+        if (!("px_height" in $$source)) {
+            this["px_height"] = 0;
         }
 
         Object.assign(this, $$source);
