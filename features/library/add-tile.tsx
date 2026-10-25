@@ -13,27 +13,29 @@ import { cn } from "@/lib/utils"
 // overlay tiles use under their name. Tabs whose tiles only have a
 // single label line (media) can omit it — the height still lines
 // up because the dashed border is consistent everywhere.
+//
+// Every other button prop (and ref) is forwarded to the <button>:
+// an `asChild` trigger injects its own ref, onPointerDown, aria-* and
+// data-state props, and Radix dropdowns open on pointerdown — dropping
+// them is what made "Add overlay" / "Add template" do nothing.
 export function AddTile({
   label,
   sublabel,
   busyLabel,
   busy,
   disabled,
-  onClick,
   className,
-}: {
+  ...props
+}: Omit<React.ComponentProps<"button">, "children"> & {
   label: string
   sublabel?: string
   busyLabel?: string
   busy?: boolean
-  disabled?: boolean
-  onClick?: () => void
-  className?: string
 }) {
   return (
     <button
       type="button"
-      onClick={onClick}
+      {...props}
       disabled={disabled || busy}
       className={cn(
         "group flex flex-col overflow-hidden rounded border border-dashed border-border/50 bg-background text-muted-foreground/40 transition-colors hover:border-border hover:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
