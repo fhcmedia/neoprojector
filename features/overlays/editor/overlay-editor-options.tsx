@@ -6,6 +6,10 @@ import {
 } from "@/features/overlays/types"
 import { useDisplays } from "@/features/displays/api"
 import { Input } from "@/components/input"
+import { Button } from "@/components/button"
+import { Checkbox } from "@/components/checkbox"
+import { OptionSelect } from "@/components/option-select"
+import { ColorPickerButton } from "@/features/templates/editor/fields"
 import { ANIM_KINDS, type AnimKind } from "@/features/animations/variants"
 import type { Display } from "@/bindings/neoprojector/database"
 import { useOverlayEditor } from "./overlay-editor"
@@ -44,14 +48,15 @@ export function OverlayEditorOptions() {
   return (
     <div className="flex h-full flex-col bg-background">
       <header className="flex h-9 shrink-0 items-center gap-2 border-b border-border/50 px-2">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-xs"
           onClick={onClose}
           aria-label="Close editor"
-          className="grid size-6 place-items-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground"
         >
           <ArrowLeftIcon className="size-3.5" />
-        </button>
+        </Button>
         <Input
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -85,13 +90,12 @@ export function OverlayEditorOptions() {
           help="Rules that govern how this overlay coexists with other content."
         >
           <label className="flex cursor-pointer items-start gap-2 text-[11px] text-muted-foreground">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={rules.cover_slide ?? false}
-              onChange={(e) =>
-                commitRules({ ...rules, cover_slide: e.target.checked })
+              onCheckedChange={(v) =>
+                commitRules({ ...rules, cover_slide: v === true })
               }
-              className="mt-0.5 h-3.5 w-3.5 cursor-pointer accent-foreground"
+              className="mt-0.5"
             />
             <span>
               <span className="block font-medium text-foreground">
@@ -105,13 +109,12 @@ export function OverlayEditorOptions() {
             </span>
           </label>
           <label className="flex cursor-pointer items-start gap-2 text-[11px] text-muted-foreground">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={rules.sticky ?? false}
-              onChange={(e) =>
-                commitRules({ ...rules, sticky: e.target.checked })
+              onCheckedChange={(v) =>
+                commitRules({ ...rules, sticky: v === true })
               }
-              className="mt-0.5 h-3.5 w-3.5 cursor-pointer accent-foreground"
+              className="mt-0.5"
             />
             <span>
               <span className="block font-medium text-foreground">
@@ -207,21 +210,19 @@ function LayoutEditor({
         {field("w", "w")}
         {field("h", "h")}
       </div>
-      <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
         <span className="uppercase tracking-wider">Color</span>
-        <input
-          type="color"
+        <ColorPickerButton
           value={color}
-          disabled={readOnly}
-          onChange={(e) =>
+          readOnly={readOnly}
+          onChange={(c) =>
             onChange({
               ...layout,
-              style: { ...layout.style, color: e.target.value },
+              style: { ...layout.style, color: c },
             })
           }
-          className="h-7 w-12 cursor-pointer rounded border border-border/40 bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
         />
-      </label>
+      </div>
       <AnimSelect
         label="Entry"
         value={entry}
@@ -283,6 +284,8 @@ function LayoutEditor({
   )
 }
 
+const ANIM_OPTIONS = ANIM_KINDS.map((a) => ({ value: a.kind, label: a.label }))
+
 function AnimSelect({
   label,
   value,
@@ -295,21 +298,17 @@ function AnimSelect({
   onChange: (v: AnimKind) => void
 }) {
   return (
-    <label className="flex flex-col gap-1 text-[10px] text-muted-foreground">
+    <div className="flex flex-col gap-1 text-[10px] text-muted-foreground">
       <span className="uppercase tracking-wider">{label}</span>
-      <select
+      <OptionSelect
         value={value}
+        options={ANIM_OPTIONS}
         disabled={disabled}
-        onChange={(e) => onChange(e.target.value as AnimKind)}
-        className="h-7 rounded border border-border/50 bg-background px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50"
-      >
-        {ANIM_KINDS.map((a) => (
-          <option key={a.kind} value={a.kind}>
-            {a.label}
-          </option>
-        ))}
-      </select>
-    </label>
+        onChange={onChange}
+        ariaLabel={label}
+        className="h-7"
+      />
+    </div>
   )
 }
 
@@ -346,8 +345,9 @@ function PerDisplayLayouts({
           >
             <div className="mb-2 flex items-center justify-between">
               <span className="text-[11px] font-medium">{d.name}</span>
-              <button
-                type="button"
+              <Button
+                variant="ghost"
+                size="xs"
                 disabled={readOnly}
                 onClick={() => {
                   const next = { ...layouts.displays }
@@ -359,14 +359,14 @@ function PerDisplayLayouts({
                   onChange({ ...layouts, displays: next })
                 }}
                 className={cn(
-                  "text-[10px] uppercase tracking-wider transition-colors disabled:opacity-50",
+                  "h-5 px-1.5 text-[10px] uppercase tracking-wider",
                   has
-                    ? "text-destructive hover:text-destructive/80"
+                    ? "text-destructive hover:text-destructive"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
                 {has ? "Use default" : "Override"}
-              </button>
+              </Button>
             </div>
             {has && (
               <LayoutEditor

@@ -7,6 +7,7 @@ import {
   PopoverTrigger,
 } from "@/components/popover"
 import { Checkbox } from "@/components/checkbox"
+import { OptionSelect } from "@/components/option-select"
 import { cn } from "@/lib/utils"
 import { FONTS } from "@/features/templates/fonts"
 import type { SlotName } from "@/features/templates/types"
@@ -103,53 +104,75 @@ export function ColorField({
   readOnly: boolean
   onChange: (v: string) => void
 }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <FieldLabel>{label}</FieldLabel>
+      <ColorPickerButton value={value} readOnly={readOnly} onChange={onChange} />
+    </div>
+  )
+}
+
+// ColorPickerButton is the themed colour control on its own (swatch +
+// hex readout opening a picker popover) for panels that lay out their
+// own labels — never use a native <input type="color">.
+export function ColorPickerButton({
+  value,
+  readOnly = false,
+  onChange,
+  className,
+}: {
+  value: string
+  readOnly?: boolean
+  onChange: (v: string) => void
+  className?: string
+}) {
   const [open, setOpen] = useState(false)
   const isHex = HEX_RE.test(value)
   const pickerStart = isHex ? value : "#ffffff"
   return (
-    <div className="flex flex-col gap-0.5">
-      <FieldLabel>{label}</FieldLabel>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            disabled={readOnly}
-            className="flex h-7 items-center gap-2 rounded border border-border/40 bg-muted/30 px-1.5 text-left text-[11px] transition-colors hover:border-border focus-visible:border-border focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <span
-              aria-hidden
-              className="size-4 shrink-0 rounded border border-border/40"
-              style={{ background: value }}
-            />
-            <span
-              className={cn(
-                "truncate",
-                isHex ? "font-mono uppercase" : "italic text-muted-foreground"
-              )}
-            >
-              {isHex ? value.toUpperCase() : "Theme"}
-            </span>
-          </button>
-        </PopoverTrigger>
-        <PopoverContent
-          align="end"
-          sideOffset={6}
-          className="w-auto p-2"
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          disabled={readOnly}
+          className={cn(
+            "flex h-7 items-center gap-2 rounded border border-border/40 bg-muted/30 px-1.5 text-left text-[11px] transition-colors hover:border-border focus-visible:border-border focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60",
+            className
+          )}
         >
-          <HexColorPicker
-            color={pickerStart}
-            onChange={(c) => onChange(c)}
+          <span
+            aria-hidden
+            className="size-4 shrink-0 rounded border border-border/40"
+            style={{ background: value }}
           />
-          <input
-            type="text"
-            value={isHex ? value : ""}
-            placeholder={isHex ? undefined : "Theme color"}
-            onChange={(e) => onChange(e.target.value)}
-            className="mt-2 h-6 w-full rounded border border-border/40 bg-muted/30 px-1.5 font-mono text-[11px] uppercase outline-none placeholder:normal-case placeholder:text-muted-foreground/60 focus-visible:border-border focus-visible:bg-muted/50"
-          />
-        </PopoverContent>
-      </Popover>
-    </div>
+          <span
+            className={cn(
+              "truncate",
+              isHex ? "font-mono uppercase" : "italic text-muted-foreground"
+            )}
+          >
+            {isHex ? value.toUpperCase() : "Theme"}
+          </span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        sideOffset={6}
+        className="w-auto p-2"
+      >
+        <HexColorPicker
+          color={pickerStart}
+          onChange={(c) => onChange(c)}
+        />
+        <input
+          type="text"
+          value={isHex ? value : ""}
+          placeholder={isHex ? undefined : "Theme color"}
+          onChange={(e) => onChange(e.target.value)}
+          className="mt-2 h-6 w-full rounded border border-border/40 bg-muted/30 px-1.5 font-mono text-[11px] uppercase outline-none placeholder:normal-case placeholder:text-muted-foreground/60 focus-visible:border-border focus-visible:bg-muted/50"
+        />
+      </PopoverContent>
+    </Popover>
   )
 }
 
@@ -431,17 +454,13 @@ export function SlotSelect({
     { value: "media", label: "Media" },
   ]
   return (
-    <select
+    <OptionSelect
       value={value}
+      options={slots}
       disabled={readOnly}
-      onChange={(e) => onChange(e.target.value as SlotName)}
-      className="h-7 rounded border border-border/40 bg-muted/30 px-1.5 text-[11px] outline-none focus-visible:border-border disabled:cursor-not-allowed disabled:opacity-60"
-    >
-      {slots.map((s) => (
-        <option key={s.value} value={s.value}>
-          {s.label}
-        </option>
-      ))}
-    </select>
+      onChange={onChange}
+      ariaLabel="Slot"
+      className="h-7 border-border/40 bg-muted/30 px-1.5 text-[11px] dark:bg-muted/30"
+    />
   )
 }

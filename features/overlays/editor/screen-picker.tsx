@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react"
 import { CheckIcon, MonitorIcon, MonitorOffIcon, PlusIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/button"
 import {
   Dialog,
   DialogContent,
@@ -63,10 +64,11 @@ export function ScreenPicker({
 
   return (
     <>
-      <button
-        type="button"
+      <Button
+        variant="outline"
+        size="sm"
         onClick={() => setOpen(true)}
-        className="flex w-full items-center gap-2 rounded border border-border/50 px-2 py-1.5 text-left transition-colors hover:border-border hover:bg-muted/40"
+        className="w-full justify-start gap-2 px-2 font-normal"
       >
         <MonitorIcon className="size-3.5 shrink-0 text-muted-foreground" />
         <span
@@ -80,7 +82,7 @@ export function ScreenPicker({
         <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted-foreground">
           Choose screens
         </span>
-      </button>
+      </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="w-[min(960px,95vw)] max-w-none gap-4 sm:max-w-none">
           <DialogHeader>
@@ -191,21 +193,23 @@ function PickerBody({
             </div>
             <div className="flex flex-wrap gap-2">
               {unplaced.map((d) => (
-                <button
+                <Button
                   key={d.id}
-                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-pressed={isOn(d.id)}
                   onClick={() => toggle(d.id)}
                   className={cn(
-                    "flex items-center gap-2 rounded border px-2.5 py-1.5 text-[11px] transition-colors",
+                    "text-[11px] font-normal",
                     isOn(d.id)
-                      ? "border-chart-1 bg-chart-1/10 text-foreground"
-                      : "border-border/50 text-muted-foreground hover:border-border"
+                      ? "border-chart-1 bg-chart-1/10 text-foreground dark:border-chart-1"
+                      : "text-muted-foreground"
                   )}
                 >
                   <MonitorOffIcon className="size-3.5" />
                   {d.name}
                   {isOn(d.id) && <CheckIcon className="size-3.5 text-chart-1" />}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
@@ -214,14 +218,15 @@ function PickerBody({
           <span className="text-[11px] text-muted-foreground">
             New displays only light up after the next Go Live.
           </span>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => onChange(undefined)}
             disabled={!selected}
-            className="rounded px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+            className="text-[11px] font-normal text-muted-foreground"
           >
             Show on all displays
-          </button>
+          </Button>
         </div>
       </div>
     </BackgroundStage>
@@ -402,13 +407,9 @@ function EmptyMonitor({
             placeholder="Display name, e.g. Stage"
             className="h-7 text-xs"
           />
-          <button
-            type="submit"
-            disabled={busy}
-            className="rounded bg-foreground px-2 py-1 text-[11px] font-medium text-background transition-opacity hover:opacity-90 disabled:opacity-50"
-          >
+          <Button type="submit" size="xs" disabled={busy}>
             {busy ? "Setting up…" : "Use this monitor"}
-          </button>
+          </Button>
         </form>
       ) : (
         <>
@@ -416,14 +417,10 @@ function EmptyMonitor({
             Not used by NeoProjector yet
           </span>
           {onSetUp && (
-            <button
-              type="button"
-              onClick={() => setNaming(true)}
-              className="flex items-center gap-1.5 rounded border border-border/60 px-2 py-1 text-[11px] text-foreground transition-colors hover:border-border hover:bg-muted/40"
-            >
-              <PlusIcon className="size-3" />
+            <Button variant="outline" size="xs" onClick={() => setNaming(true)}>
+              <PlusIcon />
               Set up as a display
-            </button>
+            </Button>
           )}
         </>
       )}

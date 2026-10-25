@@ -18,6 +18,9 @@ import type {
   WidgetKind,
 } from "@/features/overlays/types"
 import { Input } from "@/components/input"
+import { OptionSelect } from "@/components/option-select"
+import { Switch } from "@/components/switch"
+import { ColorPickerButton } from "@/features/templates/editor/fields"
 import { cn } from "@/lib/utils"
 import { OverlayPart } from "@/features/overlays/stagger"
 
@@ -870,17 +873,12 @@ function SelectField<V extends string>({
 }) {
   return (
     <Field label={label}>
-      <select
+      <OptionSelect
         value={value}
-        onChange={(e) => onChange(e.target.value as V)}
-        className="h-8 rounded border border-border/50 bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
+        options={options}
+        onChange={onChange}
+        ariaLabel={label}
+      />
     </Field>
   )
 }
@@ -896,12 +894,7 @@ function ColorField({
 }) {
   return (
     <Field label={label}>
-      <input
-        type="color"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="h-8 w-16 cursor-pointer rounded border border-border/40 bg-transparent"
-      />
+      <ColorPickerButton value={value} onChange={onChange} className="h-8" />
     </Field>
   )
 }
@@ -918,12 +911,7 @@ function Toggle({
   return (
     <label className="flex cursor-pointer items-center justify-between gap-3 text-[11px] text-muted-foreground">
       <span className="uppercase tracking-wider">{label}</span>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="h-4 w-4 cursor-pointer accent-foreground"
-      />
+      <Switch checked={checked} onCheckedChange={onChange} />
     </label>
   )
 }

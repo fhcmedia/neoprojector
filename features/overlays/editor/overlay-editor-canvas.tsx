@@ -1,5 +1,6 @@
 import { useRef, useState } from "react"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/button"
 import { useDisplays } from "@/features/displays/api"
 import {
   overlayShownOn,
@@ -240,17 +241,18 @@ export function OverlayEditorCanvas() {
             {hasOverride ? (
               <>
                 <span>Custom layout for {targetDisplay.name}</span>
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
+                  size="xs"
                   onClick={() => {
                     const next = { ...layouts.displays }
                     delete next[target]
                     commitLayouts({ ...layouts, displays: next })
                   }}
-                  className="uppercase tracking-wider text-destructive transition-colors hover:text-destructive/80"
+                  className="h-5 px-1.5 text-[10px] uppercase tracking-wider text-destructive hover:text-destructive"
                 >
                   Reset to default
-                </button>
+                </Button>
               </>
             ) : (
               <span>Uses the default · dragging here customizes {targetDisplay.name}</span>
@@ -274,19 +276,21 @@ function Chip({
   children: React.ReactNode
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      size="xs"
       title={title}
+      aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "rounded px-2 py-0.5 text-[11px] transition-colors",
+        "h-6 px-2 text-[11px] font-normal",
         active
-          ? "bg-muted text-foreground"
-          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          ? "bg-muted text-foreground hover:bg-muted"
+          : "text-muted-foreground hover:text-foreground"
       )}
     >
       {children}
-    </button>
+    </Button>
   )
 }
 
