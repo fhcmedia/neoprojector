@@ -130,6 +130,7 @@ export class Display {
     "show_overlay": number;
     "created_at": string;
     "updated_at": string;
+    "screen_hint": sql$0.NullString;
 
     /** Creates a new Display instance. */
     constructor($$source: Partial<Display> = {}) {
@@ -172,6 +173,9 @@ export class Display {
         if (!("updated_at" in $$source)) {
             this["updated_at"] = "";
         }
+        if (!("screen_hint" in $$source)) {
+            this["screen_hint"] = (new sql$0.NullString());
+        }
 
         Object.assign(this, $$source);
     }
@@ -183,6 +187,7 @@ export class Display {
         const $$createField4_0 = $$createType0;
         const $$createField5_0 = $$createType0;
         const $$createField6_0 = $$createType1;
+        const $$createField13_0 = $$createType1;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("bible_template_id" in $$parsedSource) {
             $$parsedSource["bible_template_id"] = $$createField4_0($$parsedSource["bible_template_id"]);
@@ -192,6 +197,9 @@ export class Display {
         }
         if ("screen_id" in $$parsedSource) {
             $$parsedSource["screen_id"] = $$createField6_0($$parsedSource["screen_id"]);
+        }
+        if ("screen_hint" in $$parsedSource) {
+            $$parsedSource["screen_hint"] = $$createField13_0($$parsedSource["screen_hint"]);
         }
         return new Display($$parsedSource as Partial<Display>);
     }

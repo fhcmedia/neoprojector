@@ -16,7 +16,7 @@ VALUES (
   ?1,
   COALESCE((SELECT MAX(position) + 1 FROM display), 0)
 )
-RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at
+RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at, screen_hint
 `
 
 // Appends a new display at the end of the list. Position auto-fills
@@ -38,6 +38,7 @@ func (q *Queries) CreateDisplayAppend(ctx context.Context, name string) (Display
 		&i.ShowOverlay,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ScreenHint,
 	)
 	return i, err
 }
@@ -52,7 +53,7 @@ func (q *Queries) DeleteDisplay(ctx context.Context, id int64) error {
 }
 
 const displayByID = `-- name: DisplayByID :one
-SELECT id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at FROM display WHERE id = ?
+SELECT id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at, screen_hint FROM display WHERE id = ?
 `
 
 func (q *Queries) DisplayByID(ctx context.Context, id int64) (Display, error) {
@@ -72,12 +73,13 @@ func (q *Queries) DisplayByID(ctx context.Context, id int64) (Display, error) {
 		&i.ShowOverlay,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ScreenHint,
 	)
 	return i, err
 }
 
 const listDisplays = `-- name: ListDisplays :many
-SELECT id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at FROM display ORDER BY position, id
+SELECT id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at, screen_hint FROM display ORDER BY position, id
 `
 
 func (q *Queries) ListDisplays(ctx context.Context) ([]Display, error) {
@@ -103,6 +105,7 @@ func (q *Queries) ListDisplays(ctx context.Context) ([]Display, error) {
 			&i.ShowOverlay,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ScreenHint,
 		); err != nil {
 			return nil, err
 		}
@@ -121,7 +124,7 @@ const renameDisplay = `-- name: RenameDisplay :one
 UPDATE display
 SET name = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at
+RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at, screen_hint
 `
 
 type RenameDisplayParams struct {
@@ -146,6 +149,7 @@ func (q *Queries) RenameDisplay(ctx context.Context, arg RenameDisplayParams) (D
 		&i.ShowOverlay,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ScreenHint,
 	)
 	return i, err
 }
@@ -154,7 +158,7 @@ const setDisplayBibleTemplate = `-- name: SetDisplayBibleTemplate :one
 UPDATE display
 SET bible_template_id = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at
+RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at, screen_hint
 `
 
 type SetDisplayBibleTemplateParams struct {
@@ -179,6 +183,7 @@ func (q *Queries) SetDisplayBibleTemplate(ctx context.Context, arg SetDisplayBib
 		&i.ShowOverlay,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ScreenHint,
 	)
 	return i, err
 }
@@ -187,7 +192,7 @@ const setDisplayEnabled = `-- name: SetDisplayEnabled :one
 UPDATE display
 SET enabled = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at
+RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at, screen_hint
 `
 
 type SetDisplayEnabledParams struct {
@@ -212,6 +217,7 @@ func (q *Queries) SetDisplayEnabled(ctx context.Context, arg SetDisplayEnabledPa
 		&i.ShowOverlay,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ScreenHint,
 	)
 	return i, err
 }
@@ -236,7 +242,7 @@ const setDisplayScreen = `-- name: SetDisplayScreen :one
 UPDATE display
 SET screen_id = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at
+RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at, screen_hint
 `
 
 type SetDisplayScreenParams struct {
@@ -263,15 +269,34 @@ func (q *Queries) SetDisplayScreen(ctx context.Context, arg SetDisplayScreenPara
 		&i.ShowOverlay,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ScreenHint,
 	)
 	return i, err
+}
+
+const setDisplayScreenHint = `-- name: SetDisplayScreenHint :exec
+UPDATE display
+SET screen_hint = ?
+WHERE id = ?
+`
+
+type SetDisplayScreenHintParams struct {
+	ScreenHint sql.NullString `json:"screen_hint"`
+	ID         int64          `json:"id"`
+}
+
+// Fingerprint of the bound monitor (JSON), refreshed while it's
+// connected. Not an edit, so updated_at is left alone.
+func (q *Queries) SetDisplayScreenHint(ctx context.Context, arg SetDisplayScreenHintParams) error {
+	_, err := q.db.ExecContext(ctx, setDisplayScreenHint, arg.ScreenHint, arg.ID)
+	return err
 }
 
 const setDisplayShowBible = `-- name: SetDisplayShowBible :one
 UPDATE display
 SET show_bible = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at
+RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at, screen_hint
 `
 
 type SetDisplayShowBibleParams struct {
@@ -296,6 +321,7 @@ func (q *Queries) SetDisplayShowBible(ctx context.Context, arg SetDisplayShowBib
 		&i.ShowOverlay,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ScreenHint,
 	)
 	return i, err
 }
@@ -304,7 +330,7 @@ const setDisplayShowMedia = `-- name: SetDisplayShowMedia :one
 UPDATE display
 SET show_media = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at
+RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at, screen_hint
 `
 
 type SetDisplayShowMediaParams struct {
@@ -329,6 +355,7 @@ func (q *Queries) SetDisplayShowMedia(ctx context.Context, arg SetDisplayShowMed
 		&i.ShowOverlay,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ScreenHint,
 	)
 	return i, err
 }
@@ -337,7 +364,7 @@ const setDisplayShowOverlay = `-- name: SetDisplayShowOverlay :one
 UPDATE display
 SET show_overlay = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at
+RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at, screen_hint
 `
 
 type SetDisplayShowOverlayParams struct {
@@ -362,6 +389,7 @@ func (q *Queries) SetDisplayShowOverlay(ctx context.Context, arg SetDisplayShowO
 		&i.ShowOverlay,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ScreenHint,
 	)
 	return i, err
 }
@@ -370,7 +398,7 @@ const setDisplayShowSong = `-- name: SetDisplayShowSong :one
 UPDATE display
 SET show_song = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at
+RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at, screen_hint
 `
 
 type SetDisplayShowSongParams struct {
@@ -395,6 +423,7 @@ func (q *Queries) SetDisplayShowSong(ctx context.Context, arg SetDisplayShowSong
 		&i.ShowOverlay,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ScreenHint,
 	)
 	return i, err
 }
@@ -403,7 +432,7 @@ const setDisplaySongTemplate = `-- name: SetDisplaySongTemplate :one
 UPDATE display
 SET song_template_id = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at
+RETURNING id, name, enabled, position, bible_template_id, song_template_id, screen_id, show_song, show_bible, show_media, show_overlay, created_at, updated_at, screen_hint
 `
 
 type SetDisplaySongTemplateParams struct {
@@ -428,6 +457,7 @@ func (q *Queries) SetDisplaySongTemplate(ctx context.Context, arg SetDisplaySong
 		&i.ShowOverlay,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ScreenHint,
 	)
 	return i, err
 }

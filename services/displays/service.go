@@ -223,12 +223,15 @@ type ScreenInfo struct {
 // The frontend uses it to populate the per-display "Bind to monitor"
 // dropdown — stale screen_id values that no longer match any entry
 // here are rendered as "(disconnected)".
-func (s *Service) ListScreens(_ context.Context) []ScreenInfo {
+func (s *Service) ListScreens(ctx context.Context) []ScreenInfo {
 	app := application.Get()
 	if app == nil {
 		return nil
 	}
 	all := app.Screen.GetAll()
+	if _, err := s.healScreenBindings(ctx, all); err != nil {
+		log.Warn("ListScreens: healing screen bindings failed", "err", err)
+	}
 	out := make([]ScreenInfo, 0, len(all))
 	for _, sc := range all {
 		out = append(out, ScreenInfo{
@@ -343,10 +346,25 @@ func (s *Service) SetDisplayScreen(ctx context.Context, id int64, screenID strin
 		arg.ScreenID = sql.NullString{String: screenID, Valid: true}
 	}
 	out, err := s.q.SetDisplayScreen(ctx, arg)
-	if err == nil {
-		emitChanged()
+	if err != nil {
+		return out, err
 	}
-	return out, err
+	hint := sql.NullString{}
+	if app := application.Get(); app != nil && screenID != "" {
+		for _, sc := range app.Screen.GetAll() {
+			if sc.ID == screenID {
+				hint = sql.NullString{String: fingerprint(sc).json(), Valid: true}
+			}
+		}
+	}
+	if err := s.q.SetDisplayScreenHint(ctx, database.SetDisplayScreenHintParams{
+		ID:         id,
+		ScreenHint: hint,
+	}); err == nil {
+		out.ScreenHint = hint
+	}
+	emitChanged()
+	return out, nil
 }
 
 func (s *Service) SetSongTemplate(ctx context.Context, id int64, templateID int64) (database.Display, error) {
@@ -464,11 +482,13 @@ func (s *Service) StartLive(ctx context.Context) error {
 		})
 	})
 
-	displays, err := s.q.ListDisplays(ctx)
+	allScreens := app.Screen.GetAll()
+	// Re-point bindings whose monitor came back under a new id
+	// (replug / sleep / reboot) before deciding what to open.
+	displays, err := s.healScreenBindings(ctx, allScreens)
 	if err != nil {
 		return err
 	}
-	allScreens := app.Screen.GetAll()
 	byScreenID := make(map[string]*application.Screen)
 	for _, sc := range allScreens {
 		byScreenID[sc.ID] = sc

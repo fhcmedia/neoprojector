@@ -192,7 +192,9 @@ CREATE TABLE IF NOT EXISTS display (
   show_media         INTEGER NOT NULL DEFAULT 1,
   show_overlay       INTEGER NOT NULL DEFAULT 1,
   created_at         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at         TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  -- JSON fingerprint of the bound monitor; see migration 0021.
+  screen_hint        TEXT
 );
 
 CREATE TABLE IF NOT EXISTS presentation (

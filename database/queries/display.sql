@@ -70,6 +70,13 @@ SET screen_id = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
 RETURNING *;
 
+-- name: SetDisplayScreenHint :exec
+-- Fingerprint of the bound monitor (JSON), refreshed while it's
+-- connected. Not an edit, so updated_at is left alone.
+UPDATE display
+SET screen_hint = ?
+WHERE id = ?;
+
 -- name: SetDisplayPosition :exec
 UPDATE display
 SET position = ?, updated_at = CURRENT_TIMESTAMP

@@ -1,4 +1,6 @@
+import { useEffect } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { Events } from "@wailsio/runtime"
 import { Service as Displays } from "@/bindings/neoprojector/services/displays"
 import type { ScreenInfo } from "@/bindings/neoprojector/services/displays"
 import type { Display } from "@/bindings/neoprojector/database"
@@ -81,6 +83,18 @@ export function useStopLive() {
 }
 
 export function useDisplays() {
+  const qc = useQueryClient()
+  // The Go side emits displays:changed for edits made elsewhere —
+  // including bindings it re-points on its own when a replugged monitor
+  // comes back under a new screen id — so refetch on it.
+  useEffect(() => {
+    const off = Events.On("displays:changed", () => {
+      qc.invalidateQueries({ queryKey: displayKeys.list })
+    })
+    return () => {
+      off?.()
+    }
+  }, [qc])
   return useQuery({
     queryKey: displayKeys.list,
     queryFn: () => Displays.ListDisplays() as unknown as Promise<Display[]>,

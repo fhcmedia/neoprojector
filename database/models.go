@@ -63,6 +63,7 @@ type Display struct {
 	ShowOverlay     int64          `json:"show_overlay"`
 	CreatedAt       string         `json:"created_at"`
 	UpdatedAt       string         `json:"updated_at"`
+	ScreenHint      sql.NullString `json:"screen_hint"`
 }
 
 type Medium struct {
