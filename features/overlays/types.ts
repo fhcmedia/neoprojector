@@ -48,6 +48,11 @@ export type OverlayRules = {
   // so they survive the operator jumping between bible references.
   // Only toggling the schedule item (or "Clear all overlays") ends them.
   sticky?: boolean
+  // Steps aside while real content is on a display: hidden whenever a
+  // verse/song, media item or presentation is showing there, back once
+  // it clears. Time-based widgets keep running (activatedAt is
+  // untouched), so a sermon timer never resets while hidden.
+  hide_on_content?: boolean
   // Displays (by id) this overlay renders on. Absent = every display,
   // including ones added later; an empty list = none.
   display_ids?: number[]

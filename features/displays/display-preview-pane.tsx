@@ -449,10 +449,17 @@ export function DisplaySurface({
   // display can blank the text beneath them.
   // Same per-display routing as the output window: targeted-elsewhere
   // overlays drop out, sticky ones render above everything.
+  // hide_on_content overlays step aside while real content shows on
+  // this display — same test as the output window: a templated slide
+  // (template is null unless this display shows that kind), media, or
+  // a presentation.
+  const contentLive =
+    !!template || (!!mediaLive && mediaShown) || (!!presLive && mediaShown)
   const routed = routeOverlays(
     enabled && overlaysShown ? activeOverlays : [],
     display.id,
-    (a) => ({ kind: a.overlayKind, rulesJSON: a.rulesJSON })
+    (a) => ({ kind: a.overlayKind, rulesJSON: a.rulesJSON }),
+    { contentLive }
   )
   const overlaysCoverSlide = routed.coverSlide
 

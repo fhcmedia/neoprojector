@@ -127,6 +127,25 @@ export function OverlayEditorOptions() {
               </span>
             </span>
           </label>
+          <label className="flex cursor-pointer items-start gap-2 text-[11px] text-muted-foreground">
+            <Checkbox
+              checked={rules.hide_on_content ?? false}
+              onCheckedChange={(v) =>
+                commitRules({ ...rules, hide_on_content: v === true })
+              }
+              className="mt-0.5"
+            />
+            <span>
+              <span className="block font-medium text-foreground">
+                Hide while content is on screen
+              </span>
+              <span className="block text-[10px] text-muted-foreground/70">
+                Fades out while a verse, song, video or presentation is
+                showing, and comes back when it's cleared. Timers keep
+                running while hidden.
+              </span>
+            </span>
+          </label>
         </Section>
         <Section
           title="Show on"

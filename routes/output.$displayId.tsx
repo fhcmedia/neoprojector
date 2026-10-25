@@ -175,23 +175,6 @@ function OutputWindow() {
     return v
   }, [slide, template])
 
-  // Per-display overlay routing: overlays targeted elsewhere drop out,
-  // sticky ones render above everything. If any overlay here opts in
-  // to cover_slide, the slide TEXT beneath is suppressed — a countdown
-  // shouldn't have verses peeking through it. The z0 slot
-  // (background/media) stays: overlays are transparent and render OVER
-  // the resting layer, never on a forced black canvas.
-  const routed = useMemo(
-    () =>
-      routeOverlays(
-        overlaysShown ? slot?.active_overlays ?? [] : [],
-        id,
-        (a) => ({ kind: a.kind, rulesJSON: a.rules_json })
-      ),
-    [overlaysShown, slot?.active_overlays, id]
-  )
-  const overlaysCoverSlide = routed.coverSlide
-
   // z0 media + background refs.
   const z0MediaRef = useMemo<MediaRef | null>(() => {
     if (!mediaCh || !mediaShown) return null
@@ -208,6 +191,28 @@ function OutputWindow() {
     if (!presentation || !mediaShown) return null
     return toMediaRef(presentation.ref, slot?.audio_display_id ?? 0, id)
   }, [presentation, mediaShown, slot?.audio_display_id, id])
+  // Per-display overlay routing: overlays targeted elsewhere drop out,
+  // sticky ones render above everything, and hide_on_content ones step
+  // aside while real content shows HERE — a templated verse/song (the
+  // template is null unless this display shows that kind and has a
+  // binding), a media item, or a presentation. If any overlay here opts
+  // in to cover_slide, the slide TEXT beneath is suppressed — a
+  // countdown shouldn't have verses peeking through it. The z0 slot
+  // (background/media) stays: overlays are transparent and render OVER
+  // the resting layer, never on a forced black canvas.
+  const contentLive = !!template || !!z0MediaRef || !!presRef
+  const routed = useMemo(
+    () =>
+      routeOverlays(
+        overlaysShown ? slot?.active_overlays ?? [] : [],
+        id,
+        (a) => ({ kind: a.kind, rulesJSON: a.rules_json }),
+        { contentLive }
+      ),
+    [overlaysShown, slot?.active_overlays, id, contentLive]
+  )
+  const overlaysCoverSlide = routed.coverSlide
+
   const presTransition =
     presentation?.transition_kind && presentation.transition_kind !== ""
       ? {

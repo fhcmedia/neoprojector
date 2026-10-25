@@ -45,6 +45,24 @@ describe("routeOverlays", () => {
     expect(route([o("t", "sermon_timer", { sticky: false })], 1).under).toEqual(["t"])
   })
 
+  it("hide_on_content overlays step aside while content is live", () => {
+    const list = [
+      o("timer", "sermon_timer", { hide_on_content: true }),
+      o("clock", "clock", { cover_slide: false }),
+    ]
+    const live = routeOverlays(list, 1, (x) => x, { contentLive: true })
+    expect(live.top.map((x) => x.id)).toEqual([])
+    expect(live.under.map((x) => x.id)).toEqual(["clock"])
+    // Content cleared -> the timer is back on its sticky top layer.
+    const idle = routeOverlays(list, 1, (x) => x, { contentLive: false })
+    expect(idle.top.map((x) => x.id)).toEqual(["timer"])
+  })
+
+  it("a hidden overlay cannot cover the slide", () => {
+    const list = [o("cd", "countdown", { cover_slide: true, hide_on_content: true })]
+    expect(routeOverlays(list, 1, (x) => x, { contentLive: true }).coverSlide).toBe(false)
+  })
+
   it("only overlays shown on this display can cover the slide", () => {
     const list = [o("cd", "countdown", { cover_slide: true, display_ids: [2] })]
     expect(route(list, 1).cover).toBe(false)
