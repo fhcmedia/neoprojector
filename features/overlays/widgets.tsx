@@ -18,6 +18,7 @@ import type {
   WidgetKind,
 } from "@/features/overlays/types"
 import { Input } from "@/components/input"
+import { cn } from "@/lib/utils"
 import { OverlayPart } from "@/features/overlays/stagger"
 
 // A WidgetDef bundles everything the rest of the app needs to know
@@ -56,6 +57,11 @@ export type WidgetDef<C extends Record<string, unknown> = Record<string, unknown
     config: C
     onChange: (next: C) => void
   }>
+  // previewStates lets the editor canvas simulate a running widget at
+  // interesting moments (e.g. the sermon timer's warning and over-time
+  // phases) so the operator can see colours and effects before going
+  // live. Each entry is how long the widget has been active.
+  previewStates?: (config: C) => { label: string; elapsedMs: number }[]
 }
 
 // --- countdown ------------------------------------------------------------
@@ -231,13 +237,56 @@ const clockDef: WidgetDef<ClockConfig> = {
 
 // --- sermon timer ---------------------------------------------------------
 
-// A sermon timer counts UP from activation, with the preacher's
-// expected length as a soft limit. Once elapsed exceeds `target_seconds`
-// the digits flip red — visible feedback to the operator (and any
-// preacher who can see the cue display) that the slot has run out.
+// A sermon timer runs from activation against the preacher's expected
+// length. It moves through three phases, each with its own colour and
+// optional attention effect, so the preacher notices from the pulpit:
+//
+//   normal  — base colour (layout style)
+//   warning — the last `warn_seconds` before the limit
+//   over    — past the limit
+//
+// `mode` picks what the digits show: elapsed time (count up), or time
+// left (count down), which flips to "+MM:SS" of overtime past the limit.
+export type AttentionEffect = "none" | "pulse" | "flash" | "glow" | "shake"
+
+export const ATTENTION_EFFECTS: { value: AttentionEffect; label: string }[] = [
+  { value: "none", label: "None" },
+  { value: "pulse", label: "Pulse" },
+  { value: "flash", label: "Flash" },
+  { value: "glow", label: "Glow" },
+  { value: "shake", label: "Shake" },
+]
+
 type SermonTimerConfig = {
   target_seconds: number
   label: string
+  mode: "elapsed" | "remaining"
+  warn_seconds: number
+  warn_color: string
+  warn_effect: AttentionEffect
+  over_color: string
+  over_effect: AttentionEffect
+  over_message: string
+  backdrop: boolean
+}
+
+type TimerPhase = "normal" | "warning" | "over"
+
+function sermonPhase(
+  config: SermonTimerConfig,
+  elapsedMs: number,
+  running: boolean
+): TimerPhase {
+  const limitMs = config.target_seconds * 1000
+  if (!running || limitMs <= 0) return "normal"
+  if (elapsedMs >= limitMs) return "over"
+  if (
+    config.warn_seconds > 0 &&
+    elapsedMs >= limitMs - config.warn_seconds * 1000
+  ) {
+    return "warning"
+  }
+  return "normal"
 }
 
 const SermonTimerRenderer: WidgetDef<SermonTimerConfig>["Renderer"] = ({
@@ -246,18 +295,50 @@ const SermonTimerRenderer: WidgetDef<SermonTimerConfig>["Renderer"] = ({
   activatedAt,
 }) => {
   const now = useNow(activatedAt ? 1000 : 0)
-  const elapsedMs =
-    activatedAt !== undefined ? Math.max(0, now - activatedAt) : 0
-  const overLimit =
-    activatedAt !== undefined &&
-    elapsedMs > config.target_seconds * 1000
-  const color = overLimit
-    ? "#ef4444"
-    : ((style.color as string | undefined) ?? "#ffffff")
+  const running = activatedAt !== undefined
+  const elapsedMs = running ? Math.max(0, now - activatedAt) : 0
+  const limitMs = config.target_seconds * 1000
+  const phase = sermonPhase(config, elapsedMs, running)
+
+  const baseColor = (style.color as string | undefined) ?? "#ffffff"
+  const color =
+    phase === "over"
+      ? config.over_color
+      : phase === "warning"
+        ? config.warn_color
+        : baseColor
+  const effect: AttentionEffect =
+    phase === "over"
+      ? config.over_effect
+      : phase === "warning"
+        ? config.warn_effect
+        : "none"
+
+  // Count-down rounds up so the display reads 30:00 for the whole
+  // first second, and never shows 00:00 while time is still left.
+  const text =
+    config.mode === "remaining"
+      ? elapsedMs > limitMs
+        ? `+${formatHMS(elapsedMs - limitMs)}`
+        : formatHMS(limitMs - elapsedMs + 999)
+      : formatHMS(elapsedMs)
+  const showMessage = phase === "over" && !!config.over_message
+
   return (
     <div
-      className="flex h-full w-full flex-col items-center justify-center transition-colors"
-      style={{ color, fontFamily: "system-ui, sans-serif" }}
+      className={cn(
+        "flex h-full w-full flex-col items-center justify-center transition-colors",
+        effect !== "none" && `np-attn-${effect}`
+      )}
+      style={
+        {
+          color,
+          "--np-attn": color,
+          fontFamily: "system-ui, sans-serif",
+          borderRadius: "12cqh",
+          backgroundColor: config.backdrop ? "rgba(0, 0, 0, 0.65)" : undefined,
+        } as React.CSSProperties
+      }
     >
       {config.label ? (
         <div
@@ -271,8 +352,16 @@ const SermonTimerRenderer: WidgetDef<SermonTimerConfig>["Renderer"] = ({
         className="tabular-nums font-semibold leading-none"
         style={{ fontSize: "55cqh" }}
       >
-        {formatHMS(elapsedMs)}
+        {text}
       </div>
+      {showMessage ? (
+        <div
+          className="font-semibold uppercase tracking-[0.1em]"
+          style={{ fontSize: "15cqh" }}
+        >
+          {config.over_message}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -296,6 +385,57 @@ const SermonTimerEditor: WidgetDef<SermonTimerConfig>["ConfigEditor"] = ({
         seconds={config.target_seconds}
         onChange={(s) => onChange({ ...config, target_seconds: s })}
       />
+      <SelectField
+        label="Show"
+        value={config.mode}
+        options={[
+          { value: "elapsed", label: "Time elapsed (count up)" },
+          { value: "remaining", label: "Time left (count down, then +overtime)" },
+        ]}
+        onChange={(mode) => onChange({ ...config, mode })}
+      />
+      <DurationField
+        label="Warn before limit"
+        seconds={config.warn_seconds}
+        onChange={(s) => onChange({ ...config, warn_seconds: s })}
+      />
+      <div className="grid grid-cols-[auto_1fr] items-end gap-2">
+        <ColorField
+          label="Warning"
+          value={config.warn_color}
+          onChange={(warn_color) => onChange({ ...config, warn_color })}
+        />
+        <SelectField
+          label="Warning effect"
+          value={config.warn_effect}
+          options={ATTENTION_EFFECTS}
+          onChange={(warn_effect) => onChange({ ...config, warn_effect })}
+        />
+        <ColorField
+          label="Over time"
+          value={config.over_color}
+          onChange={(over_color) => onChange({ ...config, over_color })}
+        />
+        <SelectField
+          label="Over-time effect"
+          value={config.over_effect}
+          options={ATTENTION_EFFECTS}
+          onChange={(over_effect) => onChange({ ...config, over_effect })}
+        />
+      </div>
+      <Field label="Over-time message">
+        <Input
+          value={config.over_message}
+          onChange={(e) => onChange({ ...config, over_message: e.target.value })}
+          placeholder="e.g. Please wrap up"
+          className="h-8 text-xs"
+        />
+      </Field>
+      <Toggle
+        label="Dark backdrop"
+        checked={config.backdrop}
+        onChange={(backdrop) => onChange({ ...config, backdrop })}
+      />
     </div>
   )
 }
@@ -308,6 +448,14 @@ const sermonTimerDef: WidgetDef<SermonTimerConfig> = {
   defaultConfig: {
     target_seconds: 30 * 60,
     label: "Sermon",
+    mode: "elapsed",
+    warn_seconds: 5 * 60,
+    warn_color: "#f59e0b",
+    warn_effect: "pulse",
+    over_color: "#ef4444",
+    over_effect: "flash",
+    over_message: "",
+    backdrop: false,
   },
   defaultLayout: {
     x: 0.92,
@@ -316,7 +464,23 @@ const sermonTimerDef: WidgetDef<SermonTimerConfig> = {
     h: 0.08,
     style: { color: "#ffffff" },
   },
-  defaultRules: { cover_slide: false },
+  // Sticky: the timer runs for the whole sermon, so it must survive
+  // Esc and stay above the bible verses being put up.
+  defaultRules: { cover_slide: false, sticky: true },
+  previewStates: (config) => {
+    const limit = config.target_seconds * 1000
+    const warn = config.warn_seconds * 1000
+    return [
+      {
+        label: "Running",
+        elapsedMs: Math.max(0, Math.min(limit / 3, limit - warn - 60_000)),
+      },
+      ...(warn > 0
+        ? [{ label: "Warning", elapsedMs: Math.max(0, limit - warn / 2) }]
+        : []),
+      { label: "Over time", elapsedMs: limit + 75_000 },
+    ]
+  },
   Renderer: SermonTimerRenderer,
   ConfigEditor: SermonTimerEditor,
 }
@@ -690,6 +854,55 @@ function Field({
       <span className="uppercase tracking-wider">{label}</span>
       {children}
     </label>
+  )
+}
+
+function SelectField<V extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: V
+  options: { value: V; label: string }[]
+  onChange: (v: V) => void
+}) {
+  return (
+    <Field label={label}>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as V)}
+        className="h-8 rounded border border-border/50 bg-background px-2 text-xs text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
+    </Field>
+  )
+}
+
+function ColorField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: string
+  onChange: (v: string) => void
+}) {
+  return (
+    <Field label={label}>
+      <input
+        type="color"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-8 w-16 cursor-pointer rounded border border-border/40 bg-transparent"
+      />
+    </Field>
   )
 }
 

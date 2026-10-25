@@ -16,10 +16,10 @@ import { widgetDef } from "@/features/overlays/widgets"
 import {
   parseConfig,
   parseLayouts,
-  parseRules,
   resolveLayout,
   type WidgetKind,
 } from "@/features/overlays/types"
+import { routeOverlays } from "@/features/overlays/routing"
 import {
   type MediaRef,
   type SlotFill,
@@ -175,18 +175,22 @@ function OutputWindow() {
     return v
   }, [slide, template])
 
-  // If any active overlay's rules opt in to cover_slide, the slide
-  // TEXT beneath is suppressed — a countdown shouldn't have verses
-  // peeking through it. The z0 slot (background/media) stays: overlays
-  // are transparent and render OVER the resting layer, never on a
-  // forced black canvas. Only overlays that actually render on this
-  // display can blank the text beneath them.
-  const overlaysCoverSlide =
-    overlaysShown &&
-    (slot?.active_overlays ?? []).some((a) => {
-      const def = widgetDef(a.kind as WidgetKind)
-      return parseRules(a.rules_json, def.defaultRules).cover_slide === true
-    })
+  // Per-display overlay routing: overlays targeted elsewhere drop out,
+  // sticky ones render above everything. If any overlay here opts in
+  // to cover_slide, the slide TEXT beneath is suppressed — a countdown
+  // shouldn't have verses peeking through it. The z0 slot
+  // (background/media) stays: overlays are transparent and render OVER
+  // the resting layer, never on a forced black canvas.
+  const routed = useMemo(
+    () =>
+      routeOverlays(
+        overlaysShown ? slot?.active_overlays ?? [] : [],
+        id,
+        (a) => ({ kind: a.kind, rulesJSON: a.rules_json })
+      ),
+    [overlaysShown, slot?.active_overlays, id]
+  )
+  const overlaysCoverSlide = routed.coverSlide
 
   // z0 media + background refs.
   const z0MediaRef = useMemo<MediaRef | null>(() => {
@@ -229,10 +233,7 @@ function OutputWindow() {
         <BackgroundView background={background} />
       ) : null}
       {/* z1 — overlays render above the resting layer, below text. */}
-      <OverlayLayer
-        displayId={id}
-        overlays={overlaysShown ? slot?.active_overlays ?? [] : []}
-      />
+      <OverlayLayer displayId={id} overlays={routed.under} />
       {/* z2 — templated slide text (song/bible). Mounted whenever a
           slide channel exists — suppression blanks template+fill
           instead of unmounting, so a routing toggle hard-cuts in
@@ -255,6 +256,9 @@ function OutputWindow() {
           transition={presTransition}
         />
       )}
+      {/* Sticky overlays (e.g. the sermon timer) are pinned above
+          every layer, presentations included. */}
+      <OverlayLayer displayId={id} overlays={routed.top} />
       {mediaShown && <NextMediaWarmer mediaId={nextMediaId} />}
     </div>
   )

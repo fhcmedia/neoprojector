@@ -38,10 +38,10 @@ import {
 } from "@/features/live/live-context"
 import { LiveTemplateView } from "@/features/templates/renderer"
 import { widgetDef } from "@/features/overlays/widgets"
+import { routeOverlays } from "@/features/overlays/routing"
 import {
   parseConfig,
   parseLayouts,
-  parseRules,
   resolveLayout,
   type WidgetKind,
 } from "@/features/overlays/types"
@@ -341,12 +341,14 @@ function PreviewTile({
   // slot (background/media) stays visible; overlays are transparent
   // and render over it. Only overlays that actually render on this
   // display can blank the text beneath them.
-  const overlaysCoverSlide =
-    overlaysShown &&
-    activeOverlays.some((a) => {
-      const def = widgetDef(a.overlayKind as WidgetKind)
-      return parseRules(a.rulesJSON, def.defaultRules).cover_slide === true
-    })
+  // Same per-display routing as the output window: targeted-elsewhere
+  // overlays drop out, sticky ones render above everything.
+  const routed = routeOverlays(
+    enabled && overlaysShown ? activeOverlays : [],
+    display.id,
+    (a) => ({ kind: a.overlayKind, rulesJSON: a.rulesJSON })
+  )
+  const overlaysCoverSlide = routed.coverSlide
 
   // z0 background: item/section override composed over the service
   // default — identical derivation to buildPayload. Unmounted (not
@@ -466,9 +468,7 @@ function PreviewTile({
           <BackgroundMirror />
         ) : null}
         {/* z1 — overlays sit above the resting layer, below text. */}
-        {enabled && overlaysShown && (
-          <PreviewOverlays displayId={display.id} overlays={activeOverlays} />
-        )}
+        <PreviewOverlays displayId={display.id} overlays={routed.under} />
         {/* z2 — templated slide text. liveTransparency: the tile is an
             audience mirror, so transparent templates show the layers
             beneath (or true black), never the editor checker. */}
@@ -496,6 +496,8 @@ function PreviewTile({
             className="absolute inset-0 h-full w-full"
           />
         )}
+        {/* Sticky overlays — pinned above every layer, like the output. */}
+        <PreviewOverlays displayId={display.id} overlays={routed.top} />
       </div>
     </div>
   )

@@ -137,3 +137,68 @@
     animation-delay: 0s !important;
   }
 }
+
+/* Overlay attention effects (sermon timer warning / over-time phases).
+   Applied to the widget's panel with `--np-attn` set to the phase
+   colour. Content, not UI chrome: output windows never set
+   data-no-anim, so these always run on the audience/stage displays. */
+@keyframes np-attn-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.08);
+  }
+}
+@keyframes np-attn-flash {
+  0% {
+    background-color: var(--np-attn);
+    color: #ffffff;
+  }
+  50% {
+    background-color: transparent;
+    color: var(--np-attn);
+  }
+}
+@keyframes np-attn-glow {
+  0%,
+  100% {
+    text-shadow: 0 0 0 transparent;
+  }
+  50% {
+    text-shadow:
+      0 0 12cqh var(--np-attn),
+      0 0 24cqh var(--np-attn);
+  }
+}
+@keyframes np-attn-shake {
+  0%,
+  30%,
+  100% {
+    transform: translateX(0);
+  }
+  5%,
+  15% {
+    transform: translateX(-4%);
+  }
+  10%,
+  20% {
+    transform: translateX(4%);
+  }
+  25% {
+    transform: translateX(-2%);
+  }
+}
+.np-attn-pulse {
+  animation: np-attn-pulse 1.2s ease-in-out infinite;
+}
+.np-attn-flash {
+  animation: np-attn-flash 1s steps(1, end) infinite;
+}
+.np-attn-glow {
+  animation: np-attn-glow 1.4s ease-in-out infinite;
+}
+.np-attn-shake {
+  animation: np-attn-shake 2.5s ease-in-out infinite;
+}

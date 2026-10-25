@@ -1,5 +1,5 @@
 import { useEffect } from "react"
-import { useLive } from "@/features/live/live-context"
+import { isStickyOverlay, useLive } from "@/features/live/live-context"
 import { useVimMode } from "@/hooks/use-vim-mode"
 
 // useKeybinds installs the operator's global keymap. Arrows always
@@ -41,9 +41,11 @@ export function useKeybinds() {
           e.preventDefault()
           // Priority tree: clear overlays first, then slide.
           // Each press peels back one layer so the operator always
-          // knows what Escape will do next.
-          if (activeOverlays.length > 0) {
-            clearOverlays()
+          // knows what Escape will do next. Sticky overlays (e.g. the
+          // sermon timer) are never cleared by Esc — only by toggling
+          // their schedule item or "Clear all overlays".
+          if (activeOverlays.some((o) => !isStickyOverlay(o))) {
+            clearOverlays({ keepSticky: true })
           } else {
             clearLive()
           }

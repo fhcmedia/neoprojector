@@ -43,9 +43,23 @@ export type OverlayRules = {
   // while this overlay is active. Useful for countdowns/welcome
   // screens where the overlay IS the presentation.
   cover_slide?: boolean
+  // Sticky overlays are pinned: they render above every other layer
+  // (slide text, presentations) and Esc's "clear overlays" skips them,
+  // so they survive the operator jumping between bible references.
+  // Only toggling the schedule item (or "Clear all overlays") ends them.
+  sticky?: boolean
+  // Displays (by id) this overlay renders on. Absent = every display,
+  // including ones added later; an empty list = none.
+  display_ids?: number[]
 }
 
 export const DEFAULT_RULES: OverlayRules = { cover_slide: false }
+
+// overlayShownOn reports whether an overlay with these rules renders
+// on the given display.
+export function overlayShownOn(rules: OverlayRules, displayId: number): boolean {
+  return !rules.display_ids || rules.display_ids.includes(displayId)
+}
 
 // parseRules reads rules_json, falling back to `fallback` for any
 // field the JSON doesn't set. Pass the widget kind's defaultRules so

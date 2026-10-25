@@ -19,6 +19,8 @@ import {
   BackgroundSnapshot,
 } from "@/bindings/neoprojector/services/displays"
 import type { SlotFill } from "@/features/templates/types"
+import { widgetDef } from "@/features/overlays/widgets"
+import { parseRules, type WidgetKind } from "@/features/overlays/types"
 
 // LiveSlide is what's currently broadcasting to the displays. Resolved
 // once at click time so the preview tiles can fan out the same fill to
@@ -113,8 +115,10 @@ type Ctx = {
   // last template snaps to its "no fill" state (black for opaque
   // templates, audience-output canvas color for transparent ones).
   clearLive: () => void
-  // clearOverlays removes all active overlays without touching the slide.
-  clearOverlays: () => void
+  // clearOverlays removes active overlays without touching the slide.
+  // keepSticky leaves pinned overlays (rules.sticky) running — Esc uses
+  // it so a sermon timer survives the operator clearing verses.
+  clearOverlays: (opts?: { keepSticky?: boolean }) => void
   // Active overlays toggle independently — multiple can be on at
   // once, layered over whatever slide is live.
   activeOverlays: ActiveOverlay[]
@@ -200,7 +204,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   )
 
   const clearLive = useCallback(() => setLive(null), [])
-  const clearOverlays = useCallback(() => setActiveOverlays([]), [])
+  const clearOverlays = useCallback(
+    (opts?: { keepSticky?: boolean }) =>
+      setActiveOverlays((prev) =>
+        opts?.keepSticky ? prev.filter(isStickyOverlay) : []
+      ),
+    []
+  )
 
   // Media playback patcher. Updates fill.media on the current slide
   // in-place (preserving every other field) so the push effect picks
@@ -423,4 +433,11 @@ function asString(v: SlotFill[keyof SlotFill] | undefined): string {
   if (typeof v === "string") return v
   if (Array.isArray(v)) return v.map((s) => s.text).join("")
   return ""
+}
+
+// isStickyOverlay reports whether an active overlay is pinned
+// (rules.sticky, falling back to the widget kind's default).
+export function isStickyOverlay(o: ActiveOverlay): boolean {
+  const def = widgetDef(o.overlayKind as WidgetKind)
+  return parseRules(o.rulesJSON, def.defaultRules).sticky === true
 }

@@ -50,6 +50,10 @@ type OverlayEditorCtx = {
   commitLayouts: (next: OverlayLayouts) => void
   rules: OverlayRules
   commitRules: (next: OverlayRules) => void
+  // Which layout the canvas edits: "default", or a display id (as a
+  // string, matching OverlayLayouts.displays keys).
+  layoutTarget: string
+  setLayoutTarget: (t: string) => void
   onClose: () => void
 }
 
@@ -92,6 +96,7 @@ export function OverlayEditorProvider({
     displays: {},
   })
   const [rules, setRules] = useState<OverlayRules>(DEFAULT_RULES)
+  const [layoutTarget, setLayoutTarget] = useState("default")
 
   useEffect(() => {
     if (!overlay || !def) return
@@ -167,6 +172,8 @@ export function OverlayEditorProvider({
         commitLayouts,
         rules,
         commitRules,
+        layoutTarget,
+        setLayoutTarget,
         onClose,
       }}
     >
