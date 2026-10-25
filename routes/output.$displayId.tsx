@@ -54,6 +54,13 @@ function OutputWindow() {
   })
   const { data: templates } = useTemplates()
 
+  // On Windows the Go side creates this window hidden and only shows
+  // (and fullscreens) it once this fires, so the projector never sees
+  // the blank native window WebView2 sits in before its first paint.
+  useEffect(() => {
+    Events.Emit("output:ready")
+  }, [])
+
   // Cross-window invalidation: each output window is a separate
   // webview with its own React Query cache, so mutations in the main
   // window don't reach us through normal cache invalidation. The Go

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"time"
 
 	"neoprojector/database"
 
@@ -28,6 +29,12 @@ type Service struct {
 	// displays are enabled or bound to a monitor. Useful for testing
 	// and development on single-screen machines.
 	bypassDisplayCheck bool
+
+	// pending holds output windows (by window name) that were created
+	// hidden and are waiting for revealOutput. Windows only; guarded
+	// by mu.
+	pending   map[string]*application.WebviewWindow
+	readyOnce sync.Once
 }
 
 // LivePayload carries the full live state as independent render
@@ -168,7 +175,11 @@ type LiveMediaRef struct {
 }
 
 func New(db *sql.DB) *Service {
-	return &Service{db: db, q: database.New(db)}
+	return &Service{
+		db:      db,
+		q:       database.New(db),
+		pending: make(map[string]*application.WebviewWindow),
+	}
 }
 
 func (*Service) ServiceName() string { return "displays" }
@@ -428,6 +439,14 @@ func (s *Service) StartLive(ctx context.Context) error {
 		return fmt.Errorf("application not initialized")
 	}
 
+	// Output pages emit "output:ready" once mounted; the sender is the
+	// output window's name.
+	s.readyOnce.Do(func() {
+		app.Event.On("output:ready", func(e *application.CustomEvent) {
+			s.revealOutput(e.Sender)
+		})
+	})
+
 	displays, err := s.q.ListDisplays(ctx)
 	if err != nil {
 		return err
@@ -489,6 +508,9 @@ func (s *Service) StartLive(ctx context.Context) error {
 			Height:                     sc.Size.Height,
 			BackgroundColour:           application.RGBA{Red: 0, Green: 0, Blue: 0, Alpha: 255},
 			DisableResize:              true,
+			// Windows: start hidden and topmost; revealOutput shows it.
+			Hidden:      runtime.GOOS == "windows",
+			AlwaysOnTop: runtime.GOOS == "windows",
 			// Windows 11's DWM draws a 1px grey border around every
 			// top-level window, which shows as a frame on the projector.
 			// No decorations drops the Aero shadow/rounded corners, and a
@@ -525,29 +547,21 @@ func (s *Service) StartLive(ctx context.Context) error {
 		// screen, this second call snaps it onto the right one
 		// before the audience sees a frame.
 		win.SetScreen(sc)
-		// On Windows a frameless window sized to the monitor still sits
-		// under the taskbar, because the shell only auto-hides it for
-		// real fullscreen windows. Fullscreen() switches to WS_POPUP over
-		// the full monitor rect (MonitorFromWindow — the window is
-		// already on its target screen by now) and topmost keeps the
-		// taskbar from re-raising over it when the operator clicks back
-		// into the main window. macOS is left alone: OS fullscreen there
-		// is what yanked the window back onto the laptop.
+		// On Windows the window was created hidden; revealOutput shows
+		// and fullscreens it once its webview has rendered.
 		if runtime.GOOS == "windows" {
-			win.Fullscreen()
-			win.SetAlwaysOnTop(true)
+			name := win.Name()
+			s.mu.Lock()
+			s.pending[name] = win
+			s.mu.Unlock()
+			// Fallback in case the ready event never arrives (page
+			// error, throttled webview): never leave the audience dark.
+			time.AfterFunc(outputRevealTimeout, func() { s.revealOutput(name) })
 		}
 		log.Info("StartLive: window placed",
 			"display", d.Name,
 		)
 		opened[d.ID] = win
-	}
-	// Fullscreen() focuses the window it fullscreens; hand focus back
-	// to the operator window so keyboard control keeps working.
-	if runtime.GOOS == "windows" && len(opened) > 0 {
-		if main, ok := app.Window.GetByName("main"); ok {
-			main.Focus()
-		}
 	}
 	if len(opened) == 0 && !bypass {
 		return fmt.Errorf("no displays are enabled and bound to a connected monitor")
@@ -560,6 +574,9 @@ func (s *Service) StartLive(ctx context.Context) error {
 	// from the UI but cheap to defend). If so, close what we just
 	// opened so we don't strand a second set of NSWindows.
 	if s.live != nil {
+		for _, w := range opened {
+			delete(s.pending, w.Name())
+		}
 		s.mu.Unlock()
 		for _, w := range opened {
 			w.Close()
@@ -571,11 +588,52 @@ func (s *Service) StartLive(ctx context.Context) error {
 	return nil
 }
 
+// outputRevealTimeout bounds how long a hidden output window waits
+// for its "output:ready" event before revealOutput shows it anyway.
+const outputRevealTimeout = 3 * time.Second
+
+// revealOutput shows a hidden output window (Windows only), makes it
+// fullscreen + topmost, and returns focus to the operator window.
+//
+// Output windows start hidden because Fullscreen() sets WS_VISIBLE
+// straight away, and showing the window before WebView2 has painted
+// flashed a full-white native window (with a title bar) onto the
+// projector for ~250ms. Fullscreen is still needed: a frameless
+// window sized to the monitor sits under the taskbar, because the
+// shell only auto-hides it for real fullscreen windows (WS_POPUP over
+// the full monitor rect). Topmost keeps the taskbar from re-raising
+// over it when the operator clicks back into the main window. macOS
+// never goes through here: OS fullscreen there is what yanked the
+// window back onto the laptop.
+//
+// Called by the output page's ready event and by the fallback timer;
+// whichever comes first wins and the other is a no-op. Also a no-op
+// once live has stopped, because Show() on a closed Wails window
+// would re-create it.
+func (s *Service) revealOutput(name string) {
+	s.mu.Lock()
+	win, ok := s.pending[name]
+	delete(s.pending, name)
+	s.mu.Unlock()
+	if !ok {
+		return
+	}
+	win.Show()
+	win.Fullscreen()
+	// Show() activates the window and Fullscreen() focuses its
+	// webview; hand focus back so keyboard control keeps working.
+	if main, ok := application.Get().Window.GetByName("main"); ok {
+		main.Focus()
+	}
+	log.Info("StartLive: output window revealed", "window", name)
+}
+
 // StopLive closes every output window. Safe to call when not live.
 func (s *Service) StopLive(_ context.Context) {
 	s.mu.Lock()
 	live := s.live
 	s.live = nil
+	clear(s.pending)
 	s.mu.Unlock()
 	for _, w := range live {
 		w.Close()
