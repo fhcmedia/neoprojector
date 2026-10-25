@@ -1282,7 +1282,9 @@ function MediaPreview({
   const isVideo = medium?.type === "video"
   const isImage = medium?.type === "image"
   const isAudio = medium?.type === "audio"
-  const videoSrc = useVideoAssetUrl(isVideo ? mediaId : undefined)
+  // Audio streams from the loopback media server too: a long audio
+  // file through the wails asset bridge freezes the app like video.
+  const videoSrc = useVideoAssetUrl(isVideo || isAudio ? mediaId : undefined)
 
   // Operator-side controls drive the live state. When this media is
   // live (live.fill.media points at this id), the buttons reflect and
@@ -1354,7 +1356,7 @@ function MediaPreview({
           <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground/70">
             <Volume2Icon className="size-10 opacity-60" />
             <audio
-              src={`/media-asset/${mediaId}`}
+              src={videoSrc}
               controls
               className="w-3/4"
               onClick={(e) => e.stopPropagation()}

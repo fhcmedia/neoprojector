@@ -670,7 +670,7 @@ function MediaSurface({ media }: { media: MediaRef }) {
       <>
         <div style={{ position: "absolute", inset: 0, background: "#000" }} />
         <ControlledAudio
-          src={src}
+          src={videoSrc}
           playing={wantPlaying}
           loop={wantLoop}
           muted={wantMuted}
@@ -768,7 +768,9 @@ function ControlledAudio({
   muted,
   restartToken,
 }: {
-  src: string
+  // Undefined until the loopback media-server info resolves, same as
+  // ControlledVideo — never the wails-bridged path.
+  src: string | undefined
   playing: boolean
   loop: boolean
   muted: boolean
