@@ -487,7 +487,11 @@ function MediaLayer({
             objectFit,
           }}
         />
-      ) : item?.type === "image" || !item ? (
+      ) : item?.type === "image" ? (
+        // Images only once the type is known: an <img> pointed at a
+        // video file makes the wails asset bridge buffer the whole file
+        // on the UI thread (seconds-long freeze on a large video). The
+        // black fallback below covers the moment the list is loading.
         <img
           src={src}
           alt=""
@@ -524,8 +528,17 @@ function MediaLayer({
 // change, but the HTTP cache + warmed codec path makes the cold start
 // much shorter than from-scratch.
 function NextMediaWarmer({ mediaId }: { mediaId: number }) {
-  const videoSrc = useVideoAssetUrl(mediaId > 0 ? mediaId : undefined)
-  if (mediaId <= 0) return null
+  const { data: list } = useQuery({
+    queryKey: ["media", "list"],
+    queryFn: () => Media.ListMedia() as unknown as Promise<Medium[]>,
+    staleTime: 60_000,
+  })
+  const type = list?.find((m) => m.id === mediaId)?.type
+  const isVideo = type === "video"
+  const videoSrc = useVideoAssetUrl(isVideo ? mediaId : undefined)
+  // Warm by real type only — an <img> on a video file goes through the
+  // wails asset bridge and buffers the whole file on the UI thread.
+  if (mediaId <= 0 || (type !== "image" && !isVideo)) return null
   return (
     <div
       aria-hidden
@@ -539,8 +552,10 @@ function NextMediaWarmer({ mediaId }: { mediaId: number }) {
         opacity: 0,
       }}
     >
-      <img src={`/media-asset/${mediaId}`} alt="" decoding="async" />
-      <video
+      {type === "image" && (
+        <img src={`/media-asset/${mediaId}`} alt="" decoding="async" />
+      )}
+      {isVideo && <video
         src={videoSrc}
         preload="auto"
         muted
@@ -555,7 +570,7 @@ function NextMediaWarmer({ mediaId }: { mediaId: number }) {
           if (Number.isFinite(t) && t > 0) el.currentTime = t
           el.pause()
         }}
-      />
+      />}
     </div>
   )
 }

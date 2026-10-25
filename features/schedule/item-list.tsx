@@ -13,7 +13,12 @@ import {
   PencilIcon,
   XIcon,
 } from "lucide-react"
-import type { ListServiceItemsWithContentRow } from "@/bindings/neoprojector/database"
+import { useQuery } from "@tanstack/react-query"
+import type {
+  ListServiceItemsWithContentRow,
+  Medium,
+} from "@/bindings/neoprojector/database"
+import { Service as Media } from "@/bindings/neoprojector/services/media"
 import { cn } from "@/lib/utils"
 import { useItems, useDeleteItem } from "@/features/schedule/api"
 import { VerticalSortable, useSortableRow } from "@/features/schedule/sortable"
@@ -49,6 +54,11 @@ export function ItemList({
   const { data: items, isLoading } = useItems(sectionId)
   const deleteMut = useDeleteItem(sectionId)
   const mediaServerConn = useMediaServerConn()
+  const { data: mediaList } = useQuery({
+    queryKey: ["media", "list"],
+    queryFn: () => Media.ListMedia() as unknown as Promise<Medium[]>,
+    staleTime: 60_000,
+  })
 
   if (isLoading) {
     return (
@@ -69,9 +79,16 @@ export function ItemList({
   // instead of spinning while bytes stream in. preload="auto" trusts
   // the browser's heuristics; for very large videos it caps at a few
   // MB rather than pulling the whole file.
-  const mediaIdsToWarm = items
+  //
+  // Each id is warmed by its real type: an <img> pointed at a video
+  // file makes the wails asset bridge buffer the WHOLE file on the UI
+  // thread (an 873 MB video froze the app ~5s every time its service
+  // was opened). Ids whose type isn't known yet are skipped.
+  const mediaTypeById = new Map((mediaList ?? []).map((m) => [m.id, m.type]))
+  const mediaToWarm = items
     .filter((i) => i.kind === "media" && i.media_id > 0)
-    .map((i) => i.media_id)
+    .map((i) => ({ id: i.media_id, type: mediaTypeById.get(i.media_id) }))
+    .filter((m) => m.type === "image" || m.type === "video" || m.type === "audio")
 
   return (
     <VerticalSortable ids={items.map((i) => `item-${i.id}`)}>
@@ -92,7 +109,7 @@ export function ItemList({
           />
         ))}
       </div>
-      {mediaIdsToWarm.length > 0 && (
+      {mediaToWarm.length > 0 && (
         <div
           aria-hidden
           style={{
@@ -105,16 +122,18 @@ export function ItemList({
             opacity: 0,
           }}
         >
-          {mediaIdsToWarm.map((id) => (
-            <span key={id}>
-              <img src={`/media-asset/${id}`} alt="" />
+          {mediaToWarm.map(({ id, type }) =>
+            type === "image" ? (
+              <img key={id} src={`/media-asset/${id}`} alt="" />
+            ) : (
               <video
+                key={id}
                 src={videoAssetUrl(mediaServerConn, id)}
                 preload="auto"
                 muted
               />
-            </span>
-          ))}
+            )
+          )}
         </div>
       )}
     </VerticalSortable>
