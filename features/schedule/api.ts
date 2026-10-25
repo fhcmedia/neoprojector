@@ -237,6 +237,16 @@ export function useUpdateOverlayItemConfig() {
   })
 }
 
+export function useUpdateOverlayItemRules() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ itemId, rulesJSON }: { itemId: number; rulesJSON: string }) =>
+      Schedule.UpdateOverlayItemRules(itemId, rulesJSON),
+    onSettled: () =>
+      qc.invalidateQueries({ queryKey: ["schedule", "items"] }),
+  })
+}
+
 export function useDeleteItem(sectionId: number) {
   const qc = useQueryClient()
   return useMutation({

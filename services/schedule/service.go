@@ -311,6 +311,21 @@ func (s *Service) UpdateOverlayItemConfig(ctx context.Context, itemID int64, con
 	return err
 }
 
+// UpdateOverlayItemRules replaces the behavior rules of an overlay
+// schedule item (sticky, hide-on-content, cover-slide, display
+// targeting) so a scheduled copy can be adjusted without re-adding it.
+// rules_json is opaque to Go, like config_json.
+func (s *Service) UpdateOverlayItemRules(ctx context.Context, itemID int64, rulesJSON string) error {
+	if rulesJSON == "" {
+		rulesJSON = "{}"
+	}
+	_, err := s.q.UpdateServiceItemOverlayRules(ctx, database.UpdateServiceItemOverlayRulesParams{
+		ItemID:    itemID,
+		RulesJson: rulesJSON,
+	})
+	return err
+}
+
 func (s *Service) DeleteItem(ctx context.Context, id int64) error {
 	return s.q.DeleteServiceItem(ctx, id)
 }

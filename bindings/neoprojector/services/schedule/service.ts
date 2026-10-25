@@ -177,6 +177,16 @@ export function UpdateOverlayItemConfig(itemID: number, configJSON: string): $Ca
     return $Call.ByID(3795082333, itemID, configJSON);
 }
 
+/**
+ * UpdateOverlayItemRules replaces the behavior rules of an overlay
+ * schedule item (sticky, hide-on-content, cover-slide, display
+ * targeting) so a scheduled copy can be adjusted without re-adding it.
+ * rules_json is opaque to Go, like config_json.
+ */
+export function UpdateOverlayItemRules(itemID: number, rulesJSON: string): $CancellablePromise<void> {
+    return $Call.ByID(3755316070, itemID, rulesJSON);
+}
+
 // Private type creation functions
 const $$createType0 = database$0.ServiceItem.createFrom;
 const $$createType1 = database$0.ServiceSection.createFrom;

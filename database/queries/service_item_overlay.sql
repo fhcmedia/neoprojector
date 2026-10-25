@@ -12,5 +12,11 @@ SET config_json = ?, updated_at = CURRENT_TIMESTAMP
 WHERE item_id = ?
 RETURNING *;
 
+-- name: UpdateServiceItemOverlayRules :one
+UPDATE service_item_overlay
+SET rules_json = ?, updated_at = CURRENT_TIMESTAMP
+WHERE item_id = ?
+RETURNING *;
+
 -- name: DeleteServiceItemOverlay :exec
 DELETE FROM service_item_overlay WHERE item_id = ?;

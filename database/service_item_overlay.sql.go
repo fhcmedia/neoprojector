@@ -103,3 +103,31 @@ func (q *Queries) UpdateServiceItemOverlayConfig(ctx context.Context, arg Update
 	)
 	return i, err
 }
+
+const updateServiceItemOverlayRules = `-- name: UpdateServiceItemOverlayRules :one
+UPDATE service_item_overlay
+SET rules_json = ?, updated_at = CURRENT_TIMESTAMP
+WHERE item_id = ?
+RETURNING item_id, overlay_kind, overlay_name, config_json, layouts_json, rules_json, created_at, updated_at
+`
+
+type UpdateServiceItemOverlayRulesParams struct {
+	RulesJson string `json:"rules_json"`
+	ItemID    int64  `json:"item_id"`
+}
+
+func (q *Queries) UpdateServiceItemOverlayRules(ctx context.Context, arg UpdateServiceItemOverlayRulesParams) (ServiceItemOverlay, error) {
+	row := q.db.QueryRowContext(ctx, updateServiceItemOverlayRules, arg.RulesJson, arg.ItemID)
+	var i ServiceItemOverlay
+	err := row.Scan(
+		&i.ItemID,
+		&i.OverlayKind,
+		&i.OverlayName,
+		&i.ConfigJson,
+		&i.LayoutsJson,
+		&i.RulesJson,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
