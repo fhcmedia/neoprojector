@@ -389,8 +389,8 @@ const SermonTimerEditor: WidgetDef<SermonTimerConfig>["ConfigEditor"] = ({
         label="Show"
         value={config.mode}
         options={[
-          { value: "elapsed", label: "Time elapsed (count up)" },
           { value: "remaining", label: "Time left (count down, then +overtime)" },
+          { value: "elapsed", label: "Time elapsed (count up)" },
         ]}
         onChange={(mode) => onChange({ ...config, mode })}
       />
@@ -448,7 +448,7 @@ const sermonTimerDef: WidgetDef<SermonTimerConfig> = {
   defaultConfig: {
     target_seconds: 30 * 60,
     label: "Sermon",
-    mode: "elapsed",
+    mode: "remaining",
     warn_seconds: 5 * 60,
     warn_color: "#f59e0b",
     warn_effect: "pulse",
