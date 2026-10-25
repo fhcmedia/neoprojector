@@ -35,6 +35,9 @@ import { SongShowView, BibleShowView } from "@/features/show/show-content-views"
 import { songSectionType } from "@/features/songs/section-types"
 import { cn } from "@/lib/utils"
 import { useVideoAssetUrl } from "@/lib/media-url"
+import { clockFrom, useSyncedPlayback } from "@/lib/media-sync"
+import { Button } from "@/components/button"
+import { Slider } from "@/components/slider"
 import {
   useAddSlide,
   useReorderSlides,
@@ -1288,23 +1291,54 @@ function MediaPreview({
 
   // Operator-side controls drive the live state. When this media is
   // live (live.fill.media points at this id), the buttons reflect and
-  // mutate the shared playback fields; the output windows pick the
-  // change up on the next PushLive.
-  const { live, setMediaPlayback, restartMedia } = useLive()
+  // mutate the shared playhead; every output window and preview tile
+  // follows it (lib/media-sync.ts), so all screens show the same frame.
+  const { live, setMediaPlayback, restartMedia, seekMedia } = useLive()
   const liveMedia =
     live?.kind === "media" && live.fill.media?.mediaId === mediaId
       ? live.fill.media
       : null
   const isLive = !!liveMedia
-  const playing = liveMedia?.playing ?? false
+  // Same default as the live payload: untouched playback = playing.
+  // (Defaulting to false here made the button show "Play" while the
+  // video was already running, so the first press did nothing.)
+  const playing = liveMedia ? liveMedia.playing !== false : false
   const looping = liveMedia?.loop ?? false
   const muted = liveMedia?.muted ?? false
 
+  // The preview is a mirror of the live playhead while live; otherwise
+  // it parks on an early frame as a thumbnail. Always muted — sound
+  // comes from the output window that owns audio.
+  const previewRef = useRef<HTMLMediaElement | null>(null)
+  useSyncedPlayback(previewRef, isLive ? clockFrom(liveMedia) : null)
+  const [position, setPosition] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [scrub, setScrub] = useState<number | null>(null)
+  useEffect(() => {
+    if (!isLive) previewRef.current?.pause()
+  }, [isLive])
+
+  const mediaEvents = {
+    onLoadedMetadata: (e: React.SyntheticEvent<HTMLMediaElement>) => {
+      const el = e.currentTarget
+      setDuration(Number.isFinite(el.duration) ? el.duration : 0)
+      // Not live: show a real frame instead of the (often black) first.
+      if (!isLive) {
+        const t = Math.min(0.5, Math.max(0, (el.duration || 0) - 0.1))
+        if (Number.isFinite(t) && t > 0) el.currentTime = t
+      }
+    },
+    onDurationChange: (e: React.SyntheticEvent<HTMLMediaElement>) => {
+      const d = e.currentTarget.duration
+      setDuration(Number.isFinite(d) ? d : 0)
+    },
+    onTimeUpdate: (e: React.SyntheticEvent<HTMLMediaElement>) =>
+      setPosition(e.currentTarget.currentTime),
+  }
+
   return (
     <div className="flex flex-1 flex-col gap-3 overflow-hidden p-3">
-      {/* Click anywhere on the preview surface sends the media to live.
-          Native <video>/<audio> controls live INSIDE the preview and
-          stop propagation so scrubbing doesn't also trigger a send. */}
+      {/* Click anywhere on the preview surface sends the media to live. */}
       <div
         role="button"
         tabIndex={0}
@@ -1330,36 +1364,28 @@ function MediaPreview({
             className="h-full w-full object-contain"
           />
         ) : isVideo && mediaId ? (
-          // Local preview keeps native controls so the operator can
-          // scrub independently of what the audience sees. The live
-          // output is the controlled surface — this is the monitor.
-          // onClick stopPropagation so scrubber drags don't trigger
-          // the outer "click to send live" handler.
           <video
+            ref={(el) => {
+              previewRef.current = el
+            }}
             src={videoSrc}
-            controls
             muted
             preload="auto"
             playsInline
-            className="h-full w-full"
-            onClick={(e) => e.stopPropagation()}
-            onLoadedMetadata={(e) => {
-              const el = e.currentTarget
-              // Seek to ~0.5s so the preview surface shows a real
-              // frame instead of opening on the first (often-black)
-              // frame. Operator can still scrub freely.
-              const t = Math.min(0.5, Math.max(0, (el.duration || 0) - 0.1))
-              if (Number.isFinite(t) && t > 0) el.currentTime = t
-            }}
+            className="h-full w-full object-contain"
+            {...mediaEvents}
           />
         ) : isAudio && mediaId ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground/70">
             <Volume2Icon className="size-10 opacity-60" />
             <audio
+              ref={(el) => {
+                previewRef.current = el
+              }}
               src={videoSrc}
-              controls
-              className="w-3/4"
-              onClick={(e) => e.stopPropagation()}
+              muted
+              preload="auto"
+              {...mediaEvents}
             />
           </div>
         ) : (
@@ -1374,49 +1400,67 @@ function MediaPreview({
         )}
       </div>
 
-      {/* Control bar — playback controls only matter for video/audio. */}
+      {/* Transport — drives the live playhead on every screen. */}
       {(isVideo || isAudio) && isLive ? (
-        <div className="flex items-center gap-1 rounded-md border border-border/40 bg-muted/20 px-2 py-1.5">
-          <ControlButton
-            label={playing ? "Pause" : "Play"}
-            onClick={() => setMediaPlayback({ playing: !playing })}
-          >
-            {playing ? <PauseIcon className="size-3.5" /> : <PlayIcon className="size-3.5" />}
-          </ControlButton>
-          <ControlButton
-            label="Restart from beginning"
-            onClick={restartMedia}
-          >
-            <RotateCcwIcon className="size-3.5" />
-          </ControlButton>
-          <ControlButton
-            label={looping ? "Looping" : "Loop"}
-            active={looping}
-            onClick={() => setMediaPlayback({ loop: !looping })}
-          >
-            <RepeatIcon className="size-3.5" />
-          </ControlButton>
-          <ControlButton
-            label={muted ? "Unmute output" : "Mute output"}
-            active={muted}
-            onClick={() => setMediaPlayback({ muted: !muted })}
-          >
-            {muted ? <VolumeXIcon className="size-3.5" /> : <Volume2Icon className="size-3.5" />}
-          </ControlButton>
-          <div className="ml-auto text-[10px] uppercase tracking-wider text-muted-foreground/70">
-            Live
+        <div className="flex flex-col gap-2 rounded-md border border-border/40 bg-muted/20 px-2 py-2">
+          <div className="flex items-center gap-2 px-1">
+            <span className="w-10 shrink-0 text-right text-[10px] tabular-nums text-muted-foreground">
+              {formatClock(scrub ?? position)}
+            </span>
+            <Slider
+              aria-label="Seek"
+              min={0}
+              max={duration > 0 ? duration : 1}
+              step={0.1}
+              disabled={duration <= 0}
+              value={[Math.min(scrub ?? position, duration || 0)]}
+              onValueChange={(v) => setScrub(v[0] ?? 0)}
+              onValueCommit={(v) => {
+                seekMedia(v[0] ?? 0)
+                setPosition(v[0] ?? 0)
+                setScrub(null)
+              }}
+              className="flex-1"
+            />
+            <span className="w-10 shrink-0 text-[10px] tabular-nums text-muted-foreground">
+              {formatClock(duration)}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <ControlButton
+              label={playing ? "Pause" : "Resume"}
+              onClick={() => setMediaPlayback({ playing: !playing })}
+            >
+              {playing ? <PauseIcon className="size-3.5" /> : <PlayIcon className="size-3.5" />}
+            </ControlButton>
+            <ControlButton label="Restart from beginning" onClick={restartMedia}>
+              <RotateCcwIcon className="size-3.5" />
+            </ControlButton>
+            <ControlButton
+              label={looping ? "Looping" : "Loop"}
+              active={looping}
+              onClick={() => setMediaPlayback({ loop: !looping })}
+            >
+              <RepeatIcon className="size-3.5" />
+            </ControlButton>
+            <ControlButton
+              label={muted ? "Unmute output" : "Mute output"}
+              active={muted}
+              onClick={() => setMediaPlayback({ muted: !muted })}
+            >
+              {muted ? <VolumeXIcon className="size-3.5" /> : <Volume2Icon className="size-3.5" />}
+            </ControlButton>
+            <div className="ml-auto text-[10px] uppercase tracking-wider text-muted-foreground/70">
+              {playing ? "Live" : "Live · paused"}
+            </div>
           </div>
         </div>
       ) : null}
 
-      <button
-        type="button"
-        onClick={onSend}
-        className="flex items-center justify-center gap-2 rounded-md bg-foreground/10 px-3 py-2 text-xs font-medium transition-colors hover:bg-foreground/15"
-      >
+      <Button variant="secondary" size="sm" onClick={onSend} className="text-xs">
         <PlayIcon className="size-3" />
         {isLive ? "Re-send to Live" : "Send to Live"}
-      </button>
+      </Button>
     </div>
   )
 }
@@ -1433,22 +1477,30 @@ function ControlButton({
   children: React.ReactNode
 }) {
   return (
-    <button
-      type="button"
+    <Button
+      variant="ghost"
+      size="icon-sm"
       title={label}
       aria-label={label}
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "grid size-7 place-items-center rounded transition-colors",
-        active
-          ? "bg-foreground/15 text-foreground"
-          : "text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+        "size-7",
+        active ? "bg-foreground/15 text-foreground" : "text-muted-foreground hover:text-foreground"
       )}
     >
       {children}
-    </button>
+    </Button>
   )
+}
+
+// formatClock renders seconds as m:ss (h:mm:ss past an hour).
+function formatClock(sec: number): string {
+  const t = Math.max(0, Math.floor(Number.isFinite(sec) ? sec : 0))
+  const h = Math.floor(t / 3600)
+  const m = Math.floor((t % 3600) / 60)
+  const ss = String(t % 60).padStart(2, "0")
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`
 }
 
 function Empty({

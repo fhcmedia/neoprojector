@@ -33,6 +33,7 @@ import {
 } from "@/features/overlays/stagger"
 import { BackgroundView } from "@/features/backgrounds/background-view"
 import { useVideoAssetUrl } from "@/lib/media-url"
+import { clockFrom, useSyncedPlayback } from "@/lib/media-sync"
 
 // /output/$displayId is rendered inside each fullscreen secondary
 // window opened by Displays.StartLive. It listens to the broadcast
@@ -283,6 +284,8 @@ function toMediaRef(
     loop: boolean
     muted: boolean
     restart_token: number
+    anchor_ms?: number
+    anchor_pos?: number
   },
   audioDisplayId: number,
   selfId: number
@@ -297,6 +300,8 @@ function toMediaRef(
     loop: ref.loop,
     muted: ref.muted || audioDisplayId !== selfId,
     restartToken: ref.restart_token,
+    anchorMs: ref.anchor_ms || undefined,
+    anchorPos: ref.anchor_pos ?? 0,
   }
 }
 
@@ -409,6 +414,11 @@ function MediaLayer({
   const lastRestart = useRef(live?.restartToken ?? 0)
   const videoRef = useRef<HTMLVideoElement>(null)
 
+  // Shared playhead: with a clock on the live fill, every output
+  // window (and the operator's previews) steer onto the same frame.
+  const clock = item?.type === "video" && live ? clockFrom(live) : null
+  useSyncedPlayback(videoRef, clock)
+
   // Imperatively sync playback state to the visible layer's video
   // element. The hidden layer parks at frame ~0.1s, muted, paused.
   useEffect(() => {
@@ -421,6 +431,10 @@ function MediaLayer({
       el.pause()
       return
     }
+    el.muted = !!live.muted
+    el.loop = !!live.loop
+    // The clock (useSyncedPlayback) owns position and play/pause.
+    if (clockFrom(live)) return
     if (live.restartToken !== undefined && live.restartToken !== lastRestart.current) {
       lastRestart.current = live.restartToken
       el.currentTime = 0

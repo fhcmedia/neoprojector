@@ -78,8 +78,7 @@ export class LiveFill {
  * the main window flows through PushLive and is rebroadcast to every
  * output window. Position/seek is NOT tracked here — the output runs
  * its own clock and the operator controls coarse state only (play,
- * pause, loop, mute, restart). A scrubber is deferred until we need
- * it.
+ * pause, loop, mute, restart, seek via the anchor clock below).
  * 
  * RestartToken is a monotonically increasing counter the operator
  * bumps to force the output to seek back to 0 and resume playback.
@@ -94,6 +93,16 @@ export class LiveMediaRef {
     "loop": boolean;
     "muted": boolean;
     "restart_token": number;
+
+    /**
+     * AnchorMs/AnchorPos are the shared playhead clock: at wall-clock
+     * AnchorMs (epoch ms) the media was at AnchorPos seconds, advancing
+     * in real time while Playing. Every output window and preview seeks
+     * onto the same position from it so all screens stay in sync.
+     * Zero AnchorMs = no clock (legacy payload).
+     */
+    "anchor_ms": number;
+    "anchor_pos": number;
 
     /** Creates a new LiveMediaRef instance. */
     constructor($$source: Partial<LiveMediaRef> = {}) {
@@ -111,6 +120,12 @@ export class LiveMediaRef {
         }
         if (!("restart_token" in $$source)) {
             this["restart_token"] = 0;
+        }
+        if (!("anchor_ms" in $$source)) {
+            this["anchor_ms"] = 0;
+        }
+        if (!("anchor_pos" in $$source)) {
+            this["anchor_pos"] = 0;
         }
 
         Object.assign(this, $$source);

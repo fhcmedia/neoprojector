@@ -20,6 +20,7 @@ import {
 } from "@/bindings/neoprojector/services/displays"
 import type { SlotFill } from "@/features/templates/types"
 import { widgetDef } from "@/features/overlays/widgets"
+import { clockFrom, rawPosition } from "@/lib/media-sync"
 import { parseRules, type WidgetKind } from "@/features/overlays/types"
 
 // LiveSlide is what's currently broadcasting to the displays. Resolved
@@ -134,6 +135,9 @@ type Ctx = {
     muted?: boolean
   }) => void
   restartMedia: () => void
+  // seekMedia moves the shared playhead of the live media to `pos`
+  // seconds; every screen follows (see lib/media-sync.ts).
+  seekMedia: (pos: number) => void
   // republish re-sends the current snapshot to Go. The button uses
   // this after Go Live so that windows just opened by StartLive see
   // the latest payload — their initial CurrentLive() fetch can race
@@ -163,6 +167,7 @@ const LiveContext = createContext<Ctx>({
   isOverlayActive: () => false,
   setMediaPlayback: () => {},
   restartMedia: () => {},
+  seekMedia: () => {},
   republish: () => {},
   registerNavigators: () => {},
   navigateNext: () => {},
@@ -175,7 +180,14 @@ const LiveContext = createContext<Ctx>({
 // start with nothing live, since the operator has no way to confirm
 // what's actually on the screens between sessions.
 export function LiveProvider({ children }: { children: ReactNode }) {
-  const [live, setLive] = useState<LiveSlide | null>(null)
+  const [live, setLiveRaw] = useState<LiveSlide | null>(null)
+  // Every slide that goes live with media but no clock yet (a fresh
+  // send / re-send from the show pane or library) starts its shared
+  // playhead now, at 0. Re-sends therefore restart, matching the
+  // "Re-send to Live" label; playback edits below carry the clock on.
+  const setLive = useCallback((s: LiveSlide | null) => {
+    setLiveRaw(stampMediaClock(s))
+  }, [])
   const [activeOverlays, setActiveOverlays] = useState<ActiveOverlay[]>([])
   // The active service's default background. Esc clears `live` (and
   // with it any item override) but never this — the resting state is
@@ -219,29 +231,32 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   // unconditionally.
   const setMediaPlayback = useCallback(
     (patch: { playing?: boolean; loop?: boolean; muted?: boolean }) => {
-      setLive((prev) => {
+      setLiveRaw((prev) => {
         if (!prev?.fill.media) return prev
-        return {
-          ...prev,
-          fill: {
-            ...prev.fill,
-            media: {
-              ...prev.fill.media,
-              ...patch,
-            },
-          },
+        const media = prev.fill.media
+        const now = Date.now()
+        const next = { ...media, ...patch }
+        // Pause/resume re-anchors the clock so every screen stops on
+        // (and later resumes from) the same frame.
+        const wasPlaying = media.playing !== false
+        if (patch.playing !== undefined && patch.playing !== wasPlaying) {
+          next.anchorPos = media.anchorMs
+            ? rawPosition(clockFrom(media)!, now)
+            : media.anchorPos ?? 0
+          next.anchorMs = now
         }
+        return { ...prev, fill: { ...prev.fill, media: next } }
       })
     },
     []
   )
 
-  // Restart bumps the token, which the output watches for changes.
-  // Date.now() is monotonic enough for human-scale operator clicks
-  // and guarantees uniqueness across reopens of an output window.
+  // Restart bumps the token (legacy surfaces watch it) and re-anchors
+  // the shared clock at 0, playing.
   const restartMedia = useCallback(() => {
-    setLive((prev) => {
+    setLiveRaw((prev) => {
       if (!prev?.fill.media) return prev
+      const now = Date.now()
       return {
         ...prev,
         fill: {
@@ -249,7 +264,26 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           media: {
             ...prev.fill.media,
             playing: true,
-            restartToken: Date.now(),
+            restartToken: now,
+            anchorMs: now,
+            anchorPos: 0,
+          },
+        },
+      }
+    })
+  }, [])
+
+  const seekMedia = useCallback((pos: number) => {
+    setLiveRaw((prev) => {
+      if (!prev?.fill.media) return prev
+      return {
+        ...prev,
+        fill: {
+          ...prev.fill,
+          media: {
+            ...prev.fill.media,
+            anchorMs: Date.now(),
+            anchorPos: Math.max(0, pos),
           },
         },
       }
@@ -295,6 +329,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
           loop: live.fill.media.loop ?? false,
           muted: live.fill.media.muted ?? false,
           restart_token: live.fill.media.restartToken ?? 0,
+          anchor_ms: live.fill.media.anchorMs ?? 0,
+          anchor_pos: live.fill.media.anchorPos ?? 0,
         })
       : null
 
@@ -411,6 +447,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         isOverlayActive,
         setMediaPlayback,
         restartMedia,
+        seekMedia,
         republish,
         registerNavigators,
         navigateNext,
@@ -440,4 +477,15 @@ function asString(v: SlotFill[keyof SlotFill] | undefined): string {
 export function isStickyOverlay(o: ActiveOverlay): boolean {
   const def = widgetDef(o.overlayKind as WidgetKind)
   return parseRules(o.rulesJSON, def.defaultRules).sticky === true
+}
+
+// stampMediaClock gives a newly-live media fill its shared playhead
+// (anchored now, at 0) unless it already carries one.
+function stampMediaClock(s: LiveSlide | null): LiveSlide | null {
+  const media = s?.fill.media
+  if (!s || !media || media.anchorMs) return s
+  return {
+    ...s,
+    fill: { ...s.fill, media: { ...media, anchorMs: Date.now(), anchorPos: 0 } },
+  }
 }

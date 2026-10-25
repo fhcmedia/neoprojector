@@ -25,6 +25,7 @@ import { UI_FONT } from "@/features/templates/fonts"
 import { Service as Media } from "@/bindings/neoprojector/services/media"
 import type { Medium } from "@/bindings/neoprojector/database"
 import { useVideoAssetUrl } from "@/lib/media-url"
+import { clockFrom, useSyncedPlayback, type PlayClock } from "@/lib/media-sync"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -657,6 +658,7 @@ function MediaSurface({ media }: { media: MediaRef }) {
         loop={wantLoop}
         muted={wantMuted}
         restartToken={media.restartToken ?? 0}
+        clock={clockFrom(media)}
         objectFit={objectFit}
       />
     )
@@ -675,6 +677,7 @@ function MediaSurface({ media }: { media: MediaRef }) {
           loop={wantLoop}
           muted={wantMuted}
           restartToken={media.restartToken ?? 0}
+          clock={clockFrom(media)}
         />
       </>
     )
@@ -706,6 +709,7 @@ function ControlledVideo({
   loop,
   muted,
   restartToken,
+  clock,
   objectFit,
 }: {
   // Undefined until the loopback media-server info resolves (see
@@ -717,14 +721,21 @@ function ControlledVideo({
   loop: boolean
   muted: boolean
   restartToken: number
+  // Shared playhead; when set it owns position + play/pause so every
+  // screen shows the same frame (lib/media-sync.ts).
+  clock: PlayClock | null
   objectFit: "cover" | "contain"
 }) {
   const ref = useRef<HTMLVideoElement>(null)
   const lastRestart = useRef(restartToken)
+  useSyncedPlayback(ref, clock)
 
   useEffect(() => {
     const el = ref.current
     if (!el) return
+    el.muted = muted
+    el.loop = loop
+    if (clock) return
     if (restartToken !== lastRestart.current) {
       lastRestart.current = restartToken
       el.currentTime = 0
@@ -739,7 +750,7 @@ function ControlledVideo({
     } else {
       el.pause()
     }
-  }, [playing, loop, muted, restartToken])
+  }, [playing, loop, muted, restartToken, clock])
 
   return (
     <video
@@ -767,6 +778,7 @@ function ControlledAudio({
   loop,
   muted,
   restartToken,
+  clock,
 }: {
   // Undefined until the loopback media-server info resolves, same as
   // ControlledVideo — never the wails-bridged path.
@@ -775,25 +787,28 @@ function ControlledAudio({
   loop: boolean
   muted: boolean
   restartToken: number
+  clock: PlayClock | null
 }) {
   const ref = useRef<HTMLAudioElement>(null)
   const lastRestart = useRef(restartToken)
+  useSyncedPlayback(ref, clock)
 
   useEffect(() => {
     const el = ref.current
     if (!el) return
+    el.muted = muted
+    el.loop = loop
+    if (clock) return
     if (restartToken !== lastRestart.current) {
       lastRestart.current = restartToken
       el.currentTime = 0
     }
-    el.muted = muted
-    el.loop = loop
     if (playing) {
       void el.play().catch(() => {})
     } else {
       el.pause()
     }
-  }, [playing, loop, muted, restartToken])
+  }, [playing, loop, muted, restartToken, clock])
 
   return <audio ref={ref} src={src} autoPlay={playing} muted={muted} loop={loop} />
 }

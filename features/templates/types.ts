@@ -151,6 +151,14 @@ export type MediaRef = {
   loop?: boolean
   muted?: boolean
   restartToken?: number
+  // Shared playhead clock (see lib/media-sync.ts): at wall-clock
+  // `anchorMs` the media was at `anchorPos` seconds; while playing it
+  // advances in real time from there. Every surface showing this media
+  // (output windows, preview tiles, the Show pane) seeks/nudges itself
+  // onto the same position so they stay frame-synced. Unset = legacy
+  // fill with no clock (surfaces just play/pause on their own).
+  anchorMs?: number
+  anchorPos?: number
 }
 
 // Default an empty body so a corrupt or missing data_json still renders

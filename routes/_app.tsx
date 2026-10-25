@@ -141,10 +141,7 @@ function AppShell() {
               if (live) setConfirmOffline(true)
               else
                 startMut.mutate(undefined, {
-                  onError: (e) =>
-                    setStartError(
-                      e instanceof Error ? e.message : String(e)
-                    ),
+                  onError: (e) => setStartError(bindingErrorMessage(e)),
                   onSuccess: () => {
                     // Re-push the current LiveProvider snapshot so
                     // the just-opened output windows pick up
@@ -217,4 +214,23 @@ function AppShell() {
     </motion.div>
     </UiScaleProvider>
   )
+}
+
+// bindingErrorMessage turns a failed Wails binding call into a readable
+// sentence. The runtime rejects with an Error whose message is the
+// JSON-encoded Go error ({"message":…,"cause":…,"kind":…}); showing
+// that raw put JSON in the "Can't go live" dialog.
+function bindingErrorMessage(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e)
+  let msg = raw
+  try {
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed.message === "string") msg = parsed.message
+  } catch {
+    // Not JSON — already a plain message.
+  }
+  msg = msg.trim()
+  if (!msg) return ""
+  const sentence = msg.charAt(0).toUpperCase() + msg.slice(1)
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`
 }
