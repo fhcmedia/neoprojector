@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"runtime"
 	"sync"
 
 	"neoprojector/database"
@@ -396,6 +397,11 @@ func (s *Service) IsLive(_ context.Context) bool {
 	return s.live != nil
 }
 
+// dwmColorNone is DWMWA_COLOR_NONE: tells DWM to draw no window border.
+var dwmColorNone uint32 = 0xFFFFFFFE
+
+var noBorderTheme = &application.WindowTheme{BorderColour: &dwmColorNone}
+
 // StartLive opens an output window for every enabled display whose
 // screen_id matches a currently-connected monitor. Disabled displays
 // and ones without a binding (or whose bound screen is disconnected)
@@ -482,6 +488,22 @@ func (s *Service) StartLive(ctx context.Context) error {
 			Width:                      sc.Size.Width,
 			Height:                     sc.Size.Height,
 			BackgroundColour:           application.RGBA{Red: 0, Green: 0, Blue: 0, Alpha: 255},
+			DisableResize:              true,
+			// Windows 11's DWM draws a 1px grey border around every
+			// top-level window, which shows as a frame on the projector.
+			// No decorations drops the Aero shadow/rounded corners, and a
+			// border colour of DWMWA_COLOR_NONE in every theme state
+			// removes the border (Wails re-applies the theme on every
+			// focus change, so all four states need it).
+			Windows: application.WindowsWindow{
+				DisableFramelessWindowDecorations: true,
+				CustomTheme: application.ThemeSettings{
+					DarkModeActive:    noBorderTheme,
+					DarkModeInactive:  noBorderTheme,
+					LightModeActive:   noBorderTheme,
+					LightModeInactive: noBorderTheme,
+				},
+			},
 			// Collection-behavior flags that (a) keep the window pinned
 			// to its assigned screen across Space switches, (b) make
 			// it look less like a "regular app window" so AeroSpace /
@@ -503,10 +525,29 @@ func (s *Service) StartLive(ctx context.Context) error {
 		// screen, this second call snaps it onto the right one
 		// before the audience sees a frame.
 		win.SetScreen(sc)
+		// On Windows a frameless window sized to the monitor still sits
+		// under the taskbar, because the shell only auto-hides it for
+		// real fullscreen windows. Fullscreen() switches to WS_POPUP over
+		// the full monitor rect (MonitorFromWindow — the window is
+		// already on its target screen by now) and topmost keeps the
+		// taskbar from re-raising over it when the operator clicks back
+		// into the main window. macOS is left alone: OS fullscreen there
+		// is what yanked the window back onto the laptop.
+		if runtime.GOOS == "windows" {
+			win.Fullscreen()
+			win.SetAlwaysOnTop(true)
+		}
 		log.Info("StartLive: window placed",
 			"display", d.Name,
 		)
 		opened[d.ID] = win
+	}
+	// Fullscreen() focuses the window it fullscreens; hand focus back
+	// to the operator window so keyboard control keeps working.
+	if runtime.GOOS == "windows" && len(opened) > 0 {
+		if main, ok := app.Window.GetByName("main"); ok {
+			main.Focus()
+		}
 	}
 	if len(opened) == 0 && !bypass {
 		return fmt.Errorf("no displays are enabled and bound to a connected monitor")
