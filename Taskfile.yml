@@ -28,7 +28,12 @@ tasks:
     deps: [generate:bindings]
     cmds:
       - mkdir -p dist && touch dist/.gitkeep
-      - go tool wails3 dev -config ./build/config.yml -port 9245
+      # config.yml's dev_mode builds and launches ./bin/neoprojector. On
+      # Windows that path has no .exe suffix, so the dev watcher's direct
+      # exec.Command lookup fails with "executable file not found in
+      # %PATH%". build/config.windows.yml is the same file with .exe on
+      # the build output and the primary command.
+      - go tool wails3 dev -config ./build/config{{if eq OS "windows"}}.windows{{end}}.yml -port 9245
 
   generate:bindings:
     desc: Regenerate frontend bindings from Go services
