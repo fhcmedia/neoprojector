@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Events } from "@wailsio/runtime"
 import type {
   ListServiceItemsWithContentRow,
@@ -34,9 +34,11 @@ import { ScaledTemplate } from "@/features/templates/renderer"
 import { SongShowView, BibleShowView } from "@/features/show/show-content-views"
 import { songSectionType } from "@/features/songs/section-types"
 import { cn } from "@/lib/utils"
+import { useVideoAssetUrl } from "@/lib/media-url"
 import {
   useAddSlide,
   useReorderSlides,
+  useUpdatePlayback,
 } from "@/features/presentations/api"
 import { useUpdateBibleItem } from "@/features/schedule/api"
 import { useBibleEdit } from "@/features/schedule/bible-edit-context"
@@ -181,6 +183,7 @@ export function ShowPane({
   const presentationId = isPresentation ? item!.presentation_id : 0
   const addSlide = useAddSlide(presentationId)
   const reorderSlides = useReorderSlides(presentationId)
+  const updatePlayback = useUpdatePlayback(presentationId)
 
   // Bible-grow: pressing arrow past the end (or before the start) of
   // a single bible item's queued range extends the range by one verse
@@ -377,7 +380,17 @@ export function ShowPane({
   // list. Re-registered on every slide-list change so the closure
   // captures the current list. The keybind hook calls the latest
   // registration via a ref, so no consumer re-renders.
+  //
+  // Yields ownership when a Library-sent song is the one actually
+  // live (sourceItemId null, kind song) — that source registers its
+  // own navigators (features/library/songs-tab.tsx) while it's live.
+  // Without this, Show pane would unconditionally reclaim the single
+  // navRef slot on its next re-render (it re-registers on every
+  // dependency change, including background polling) and arrow keys
+  // would silently redirect the live broadcast to whatever's merely
+  // *previewed* here instead of advancing the actually-live song.
   useEffect(() => {
+    if (live?.sourceItemId === null && live?.kind === "song") return
     function liveIndex(): number {
       return slides.findIndex((s, i) => isLive(s.kind, sourceItemId, i))
     }
@@ -465,6 +478,7 @@ export function ShowPane({
     isLive,
     setLive,
     registerNavigators,
+    live,
     templateMins,
     playback,
     item,
@@ -832,15 +846,46 @@ export function ShowPane({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
-              // Drop-target marker is only meaningful for presentations.
-              // The Go side reads the attribute to tag the emitted
-              // event; if absent, the drop is treated as targetless
-              // (and the show-pane listener ignores it).
-              {...(isPresentation
-                ? { "data-file-drop-target": SHOW_PANE_DROP_TARGET }
-                : {})}
-              className="grid flex-1 auto-rows-max grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2 overflow-y-auto p-2 content-start"
+              className="flex flex-1 flex-col overflow-hidden"
             >
+              {isPresentation && (
+                <div className="flex items-center gap-2 border-b border-border/40 px-2 py-1.5">
+                  <ControlButton
+                    label={
+                      playback?.loop
+                        ? "Auto-advance on — click to turn off"
+                        : "Auto-advance off — click to turn on"
+                    }
+                    active={playback?.loop === true}
+                    onClick={() =>
+                      updatePlayback.mutate({
+                        loop: !(playback?.loop ?? false),
+                        interval_ms: playback?.intervalMs ?? 5000,
+                        transition_kind: playback?.transitionKind ?? "fade",
+                        transition_duration_ms:
+                          playback?.transitionDurationMs ?? 500,
+                      })
+                    }
+                  >
+                    <RepeatIcon className="size-3.5" />
+                  </ControlButton>
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
+                    {playback?.loop
+                      ? `Auto-advance every ${((playback?.intervalMs ?? 5000) / 1000).toFixed(1)}s`
+                      : "Auto-advance"}
+                  </span>
+                </div>
+              )}
+              <div
+                // Drop-target marker is only meaningful for presentations.
+                // The Go side reads the attribute to tag the emitted
+                // event; if absent, the drop is treated as targetless
+                // (and the show-pane listener ignores it).
+                {...(isPresentation
+                  ? { "data-file-drop-target": SHOW_PANE_DROP_TARGET }
+                  : {})}
+                className="grid flex-1 auto-rows-max grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2 overflow-y-auto p-2 content-start"
+              >
               {slides.map((slide, idx) => {
                 const active = isLive(slide.kind, sourceItemId, idx)
                 const tmpl = templateForSlide(slide)
@@ -954,6 +999,7 @@ export function ShowPane({
                   </motion.div>
                 )
               })}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -1160,10 +1206,13 @@ function SlideTile({
 // Falls back to a placeholder icon if the media row is missing from
 // the cache (deleted, or query hasn't loaded yet).
 function MediaThumb({ mediaId }: { mediaId: number }) {
-  const qc = useQueryClient()
-  const medium = (qc.getQueryData<Medium[]>(["media", "list"]) ?? []).find(
-    (m) => m.id === mediaId
-  )
+  const { data: list } = useQuery({
+    queryKey: ["media", "list"],
+    queryFn: () => Media.ListMedia() as unknown as Promise<Medium[]>,
+    staleTime: 60_000,
+  })
+  const videoSrc = useVideoAssetUrl(mediaId)
+  const medium = (list ?? []).find((m) => m.id === mediaId)
   if (!medium) {
     return (
       <div className="grid h-full w-full place-items-center bg-muted/30 text-muted-foreground/40">
@@ -1182,7 +1231,7 @@ function MediaThumb({ mediaId }: { mediaId: number }) {
     )
   }
   if (medium.type === "video") {
-    return <VideoThumb src={`/media-asset/${mediaId}`} />
+    return <VideoThumb src={videoSrc} />
   }
   return (
     <div className="grid h-full w-full place-items-center bg-muted/30 text-muted-foreground/40">
@@ -1197,7 +1246,7 @@ function MediaThumb({ mediaId }: { mediaId: number }) {
 // satisfy the seek; once cached, clicking the tile to go live is
 // instant because the same /media-asset URL is already warm in this
 // webview's HTTP cache.
-function VideoThumb({ src }: { src: string }) {
+function VideoThumb({ src }: { src: string | undefined }) {
   const ref = useRef<HTMLVideoElement>(null)
   return (
     <video
@@ -1224,13 +1273,16 @@ function MediaPreview({
   onSend: () => void
 }) {
   const mediaId = item.media_id
-  const qc = useQueryClient()
-  const medium = (qc.getQueryData<Medium[]>(["media", "list"]) ?? []).find(
-    (m) => m.id === mediaId
-  )
+  const { data: mediaList } = useQuery({
+    queryKey: ["media", "list"],
+    queryFn: () => Media.ListMedia() as unknown as Promise<Medium[]>,
+    staleTime: 60_000,
+  })
+  const medium = (mediaList ?? []).find((m) => m.id === mediaId)
   const isVideo = medium?.type === "video"
   const isImage = medium?.type === "image"
   const isAudio = medium?.type === "audio"
+  const videoSrc = useVideoAssetUrl(isVideo ? mediaId : undefined)
 
   // Operator-side controls drive the live state. When this media is
   // live (live.fill.media points at this id), the buttons reflect and
@@ -1282,7 +1334,7 @@ function MediaPreview({
           // onClick stopPropagation so scrubber drags don't trigger
           // the outer "click to send live" handler.
           <video
-            src={`/media-asset/${mediaId}`}
+            src={videoSrc}
             controls
             muted
             preload="auto"

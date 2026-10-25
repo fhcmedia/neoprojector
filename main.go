@@ -1,10 +1,13 @@
 package main
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"embed"
+	"encoding/hex"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -72,6 +75,60 @@ func mediaAssetMiddleware(db *sql.DB, next http.Handler) http.Handler {
 	})
 }
 
+// startMediaServer runs media-asset serving on a real loopback TCP
+// socket instead of through the wails webview asset bridge. On
+// Windows, that bridge buffers an entire HTTP response into memory
+// before handing it to WebView2 (see internal/assetserver/webview/
+// responsewriter_windows.go in the wails module — Write() appends to
+// an unbounded bytes.Buffer, Finish() hands the whole thing off in
+// one PutByteContent call), synchronously on the UI thread. A small
+// image is a harmless blip; a several-minute video response is large
+// enough to freeze or crash the app. macOS/Linux back this with real
+// incremental streaming and aren't affected — this is Windows-only,
+// but there's no reason to special-case the platform when a plain
+// http.Server sidesteps the bug everywhere.
+//
+// Reuses mediaAssetMiddleware completely unchanged — same DB lookup,
+// same path-containment check, same http.ServeFile (which already
+// handles Range/seek correctly; the bug was never in that code path).
+//
+// The token gates the socket: unlike the wails custom-scheme handler
+// (only reachable from inside this app's own webview), a loopback
+// TCP port is reachable by any process on the machine, including
+// another browser tab via DNS rebinding. Requiring a per-launch
+// random token keeps media reads scoped to this app instance.
+func startMediaServer(db *sql.DB) (port int, token string, err error) {
+	tokenBytes := make([]byte, 16)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return 0, "", err
+	}
+	token = hex.EncodeToString(tokenBytes)
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, "", err
+	}
+
+	assets := mediaAssetMiddleware(db, http.NotFoundHandler())
+	mux := http.NewServeMux()
+	mux.HandleFunc("/media-asset/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("t") != token {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		assets.ServeHTTP(w, r)
+	})
+
+	server := &http.Server{Handler: mux}
+	go func() {
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+			log.Print("media server stopped: ", err)
+		}
+	}()
+
+	return listener.Addr().(*net.TCPAddr).Port, token, nil
+}
+
 // mediaStorageDir returns the absolute, cleaned path to the app's
 // media storage directory. Used by the asset middleware to enforce
 // containment. Returns "" on lookup failure so callers can treat any
@@ -104,6 +161,11 @@ func main() {
 		log.Fatal("open db: ", err)
 	}
 
+	mediaServerPort, mediaServerToken, err := startMediaServer(db)
+	if err != nil {
+		log.Fatal("start media server: ", err)
+	}
+
 	wailsLog := slog.New(newCharmSlogHandler(charmlog.Default().WithPrefix("wails")))
 
 	app := application.New(application.Options{
@@ -112,7 +174,7 @@ func main() {
 		Logger:      wailsLog,
 		LogLevel:    slog.LevelDebug,
 		Services: []application.Service{
-			application.NewService(NewApp(db)),
+			application.NewService(NewApp(db, mediaServerPort, mediaServerToken)),
 			application.NewService(songs.New(db)),
 			application.NewService(bible.New(db)),
 			application.NewService(media.New(db)),

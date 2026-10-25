@@ -1,16 +1,17 @@
+import { useCallback, useEffect, useMemo } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import { MusicIcon, RadioIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useDebounce } from "@/hooks/use-debounce"
 import { useSessionState } from "@/hooks/use-session-state"
-import { songSectionType } from "@/features/songs/section-types"
 import {
   pickerContainerVariants,
   pickerRowVariants,
 } from "@/features/schedule/picker-anim"
 import { useLibrarySongs, useLibrarySong } from "@/features/library/api"
 import { useLive } from "@/features/live/live-context"
-import type { SongFull } from "@/bindings/neoprojector/services/songs"
+import { buildSongSlides } from "@/features/live/slides"
+import { SongShowView } from "@/features/show/show-content-views"
 
 export function SongsTab({ search }: { search: string }) {
   const { data: songs, isLoading } = useLibrarySongs()
@@ -87,7 +88,49 @@ export function SongsTab({ search }: { search: string }) {
 
 function SongPreview({ songId }: { songId: number | null }) {
   const { data, isLoading } = useLibrarySong(songId)
-  const { setLive, live, clearLive } = useLive()
+  const { setLive, live, clearLive, isLive, registerNavigators } = useLive()
+
+  // Same chunking useSongSlides uses for schedule items (blank lines
+  // inside a section split it into separate same-numbered slides) —
+  // sharing this keeps "slide N" meaning the same thing, and the
+  // rendered text identical, whether a song is sent live from here
+  // or from a schedule item in Show pane.
+  const slides = useMemo(() => (data ? buildSongSlides(data) : []), [data])
+  const isSongLive = live?.kind === "song" && live?.sourceItemId === null
+
+  const sendIndex = useCallback(
+    (idx: number) => {
+      const slide = slides[idx]
+      if (!slide) return
+      setLive({
+        channel: "slide",
+        kind: "song",
+        sourceItemId: null,
+        slideIndex: idx,
+        fill: slide.fill,
+      })
+    },
+    [slides, setLive]
+  )
+
+  // Claims the shared arrow-key navigator slot only while THIS song
+  // is the one actually live. Show pane's own navigator effect yields
+  // under the mirror-image condition (live.sourceItemId === null &&
+  // live.kind === "song"), so exactly one of the two ever registers
+  // for a given live state — no race on which effect runs last.
+  // Clamps at both ends (no wrap), matching how Show pane navigates
+  // song slides from a schedule item.
+  useEffect(() => {
+    if (!isSongLive || !live) return
+    registerNavigators({
+      next: () => {
+        if (live.slideIndex + 1 < slides.length) sendIndex(live.slideIndex + 1)
+      },
+      prev: () => {
+        if (live.slideIndex > 0) sendIndex(live.slideIndex - 1)
+      },
+    })
+  }, [isSongLive, live, slides, registerNavigators, sendIndex])
 
   if (!songId) {
     return (
@@ -102,22 +145,6 @@ function SongPreview({ songId }: { songId: number | null }) {
         Loading…
       </div>
     )
-  }
-
-  const isSongLive = live?.kind === "song" && live?.sourceItemId === null
-
-  function sendSection(sec: SongFull["sections"][number], idx: number) {
-    const lines = sec.lines
-      .filter((l) => l.text !== "")
-      .map((l) => l.text)
-      .join("\n")
-    setLive({
-      channel: "slide",
-      kind: "song",
-      sourceItemId: null,
-      slideIndex: idx,
-      fill: { primary: lines, caption: data!.song.title },
-    })
   }
 
   return (
@@ -137,57 +164,17 @@ function SongPreview({ songId }: { songId: number | null }) {
           </button>
         </div>
       )}
-      <div className="flex-1 overflow-y-auto">
-        <motion.div
-          key={songId}
-          className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))]"
-          variants={sectionsGridVariants}
-          initial="hidden"
-          animate="visible"
-        >
-          {data.sections.map((sec, idx) => {
-            const t = songSectionType(sec.section.type)
-            const liveHere =
-              isSongLive && live?.slideIndex === idx
-            return (
-              <motion.div
-                key={sec.section.id}
-                variants={sectionTileVariants}
-                role="button"
-                tabIndex={0}
-                onClick={() => sendSection(sec, idx)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault()
-                    sendSection(sec, idx)
-                  }
-                }}
-                className={cn(
-                  "group relative flex cursor-pointer flex-col border-b border-l-2 border-r border-b-border/40 border-r-border/40 transition-colors",
-                  t.border,
-                  liveHere ? "bg-chart-2/5" : "hover:bg-muted/40"
-                )}
-              >
-                <div className="pl-2.5 pr-1.5 py-1">
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-                    {t.label}
-                  </span>
-                </div>
-                <div className="flex-1 px-3 pb-2">
-                  {sec.lines.map((line) => (
-                    <div
-                      key={line.id}
-                      className="text-xs leading-relaxed text-foreground/90"
-                    >
-                      {line.text}
-                    </div>
-                  ))}
-                </div>
-              </motion.div>
-            )
-          })}
-        </motion.div>
-      </div>
+      <SongShowView
+        slides={slides}
+        isLiveAt={(idx) => isLive("song", null, idx)}
+        onSelect={(idx) => {
+          if (isLive("song", null, idx)) {
+            clearLive()
+            return
+          }
+          sendIndex(idx)
+        }}
+      />
     </div>
   )
 }
@@ -204,22 +191,6 @@ const songItemVariants = {
     opacity: 1,
     y: 0,
     transition: { type: "spring" as const, stiffness: 500, damping: 32 },
-  },
-  hidden: { opacity: 0, y: -6 },
-}
-
-const sectionsGridVariants = {
-  visible: {
-    transition: { staggerChildren: 0.04, delayChildren: 0.05 },
-  },
-  hidden: {},
-}
-
-const sectionTileVariants = {
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { type: "spring" as const, stiffness: 500, damping: 30 },
   },
   hidden: { opacity: 0, y: -6 },
 }

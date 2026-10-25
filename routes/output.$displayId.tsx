@@ -32,6 +32,7 @@ import {
   staggerContainerVariants,
 } from "@/features/overlays/stagger"
 import { BackgroundView } from "@/features/backgrounds/background-view"
+import { useVideoAssetUrl } from "@/lib/media-url"
 
 // /output/$displayId is rendered inside each fullscreen secondary
 // window opened by Displays.StartLive. It listens to the broadcast
@@ -425,6 +426,9 @@ function MediaLayer({
   }, [live, item])
 
   const src = mediaId > 0 ? `/media-asset/${mediaId}` : undefined
+  const videoSrc = useVideoAssetUrl(
+    item?.type === "video" && mediaId > 0 ? mediaId : undefined
+  )
   const objectFit =
     live?.mode === "contain" ? "contain" : "cover"
 
@@ -457,7 +461,7 @@ function MediaLayer({
       {item?.type === "video" ? (
         <video
           ref={videoRef}
-          src={src}
+          src={videoSrc}
           playsInline
           muted={!live || !!live.muted}
           preload="auto"
@@ -516,6 +520,7 @@ function MediaLayer({
 // change, but the HTTP cache + warmed codec path makes the cold start
 // much shorter than from-scratch.
 function NextMediaWarmer({ mediaId }: { mediaId: number }) {
+  const videoSrc = useVideoAssetUrl(mediaId > 0 ? mediaId : undefined)
   if (mediaId <= 0) return null
   return (
     <div
@@ -532,7 +537,7 @@ function NextMediaWarmer({ mediaId }: { mediaId: number }) {
     >
       <img src={`/media-asset/${mediaId}`} alt="" decoding="async" />
       <video
-        src={`/media-asset/${mediaId}`}
+        src={videoSrc}
         preload="auto"
         muted
         autoPlay

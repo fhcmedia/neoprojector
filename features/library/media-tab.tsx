@@ -16,6 +16,7 @@ import { Service as Media } from "@/bindings/neoprojector/services/media"
 import type { Medium } from "@/bindings/neoprojector/database"
 import { cn } from "@/lib/utils"
 import { useDebounce } from "@/hooks/use-debounce"
+import { useVideoAssetUrl } from "@/lib/media-url"
 
 export type MediaKind = "all" | "image" | "video" | "audio" | "pdf"
 
@@ -140,6 +141,9 @@ function MediaTile({
   onDelete: () => void
 }) {
   const Icon = iconFor(medium.type)
+  const videoSrc = useVideoAssetUrl(
+    medium.type === "video" ? medium.id : undefined
+  )
   const [pendingDelete, setPendingDelete] = useState(false)
   const tileRef = useRef<HTMLDivElement | null>(null)
 
@@ -185,7 +189,7 @@ function MediaTile({
             />
           ) : medium.type === "video" ? (
             <video
-              src={`/media-asset/${medium.id}`}
+              src={videoSrc}
               className="absolute inset-0 h-full w-full object-cover"
               preload="auto"
               muted

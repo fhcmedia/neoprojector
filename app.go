@@ -16,10 +16,37 @@ import (
 
 type App struct {
 	db *sql.DB
+	// mediaServerPort/mediaServerToken address the plain net/http
+	// media server (see startMediaServer in main.go). The frontend
+	// fetches these once at startup and points <video> media-asset
+	// URLs at that loopback origin instead of the wails custom-scheme
+	// path — see MediaServer's doc comment for why.
+	mediaServerPort  int
+	mediaServerToken string
 }
 
-func NewApp(db *sql.DB) *App {
-	return &App{db: db}
+func NewApp(db *sql.DB, mediaServerPort int, mediaServerToken string) *App {
+	return &App{db: db, mediaServerPort: mediaServerPort, mediaServerToken: mediaServerToken}
+}
+
+// MediaServerInfo is how a caller reaches the loopback media server:
+// the port it's listening on and the token it requires (see
+// startMediaServer in main.go).
+type MediaServerInfo struct {
+	Port  int    `json:"port"`
+	Token string `json:"token"`
+}
+
+// MediaServer returns how to reach the loopback media server, which
+// serves the same content as the wails-bridged /media-asset/{id}
+// path but over a plain OS socket, bypassing Wails' Windows WebView2
+// asset bridge. That bridge (as of wails v3 alpha.89) buffers an
+// entire HTTP response into memory before handing it to WebView2,
+// synchronously on the UI thread — fine for small assets, but a
+// several-minute video response is large enough to freeze or crash
+// the app on Windows. A real network request streams normally.
+func (a *App) MediaServer(_ context.Context) MediaServerInfo {
+	return MediaServerInfo{Port: a.mediaServerPort, Token: a.mediaServerToken}
 }
 
 func (a *App) Initialize() {

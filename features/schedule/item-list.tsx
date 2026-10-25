@@ -27,6 +27,7 @@ import {
   sectionBorderClass,
   type SectionColor,
 } from "@/features/schedule/section-palette"
+import { useMediaServerConn, videoAssetUrl } from "@/lib/media-url"
 
 type Props = {
   sectionId: number
@@ -47,6 +48,7 @@ export function ItemList({
 }: Props) {
   const { data: items, isLoading } = useItems(sectionId)
   const deleteMut = useDeleteItem(sectionId)
+  const mediaServerConn = useMediaServerConn()
 
   if (isLoading) {
     return (
@@ -106,7 +108,11 @@ export function ItemList({
           {mediaIdsToWarm.map((id) => (
             <span key={id}>
               <img src={`/media-asset/${id}`} alt="" />
-              <video src={`/media-asset/${id}`} preload="auto" muted />
+              <video
+                src={videoAssetUrl(mediaServerConn, id)}
+                preload="auto"
+                muted
+              />
             </span>
           ))}
         </div>
