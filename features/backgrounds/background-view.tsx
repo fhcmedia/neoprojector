@@ -1,4 +1,4 @@
-import { useMemo } from "react"
+import { useEffect, useMemo } from "react"
 import { GradflowGL } from "@/features/backgrounds/engines/gradflow-gl"
 import type { BackgroundSnapshot } from "@/bindings/neoprojector/services/displays"
 
@@ -14,9 +14,13 @@ import type { BackgroundSnapshot } from "@/bindings/neoprojector/services/displa
 export function BackgroundView({
   background,
   className,
+  onReady,
 }: {
   background: BackgroundSnapshot
   className?: string
+  // Fired once the background is actually painted (first engine frame,
+  // or immediately for the black fallback).
+  onReady?: () => void
 }) {
   const config = useMemo(() => {
     if (background.engine !== "gradflow") return null
@@ -27,6 +31,11 @@ export function BackgroundView({
       return null
     }
   }, [background.engine, background.config_json])
+
+  useEffect(() => {
+    if (!config) onReady?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config])
 
   if (!config) {
     return (
@@ -39,7 +48,7 @@ export function BackgroundView({
 
   return (
     <div className={className} style={{ position: "absolute", inset: 0 }}>
-      <GradflowGL config={config} />
+      <GradflowGL config={config} onReady={onReady} />
     </div>
   )
 }

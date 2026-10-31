@@ -31,7 +31,7 @@ import {
   OverlayParts,
   staggerContainerVariants,
 } from "@/features/overlays/stagger"
-import { BackgroundView } from "@/features/backgrounds/background-view"
+import { BackgroundCrossfade } from "@/features/backgrounds/background-crossfade"
 import { useVideoAssetUrl } from "@/lib/media-url"
 import { clockFrom, useSyncedPlayback } from "@/lib/media-sync"
 
@@ -235,9 +235,14 @@ function OutputWindow() {
           nextMediaId={0}
           transition={undefined}
         />
-      ) : backgroundVisible && background ? (
-        <BackgroundView background={background} />
-      ) : null}
+      ) : (
+        // Dissolves between backgrounds (and to/from black) instead of
+        // cutting; layers unmount once hidden, so nothing burns GPU
+        // while covered. See BackgroundCrossfade.
+        <BackgroundCrossfade
+          background={backgroundVisible ? background ?? null : null}
+        />
+      )}
       {/* z1 — overlays render above the resting layer, below text. */}
       <OverlayLayer displayId={id} overlays={routed.under} />
       {/* z2 — templated slide text (song/bible). Mounted whenever a

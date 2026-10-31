@@ -313,7 +313,13 @@ export type GradflowHandle = { destroy: () => void }
 export function mountGradflow(
   canvas: HTMLCanvasElement,
   getConfig: () => GradflowConfig,
-  opts: { preserveDrawingBuffer?: boolean } = {},
+  opts: {
+    preserveDrawingBuffer?: boolean
+    // Called once, right after the first frame is drawn at a real size —
+    // until then the canvas is blank, so crossfades wait for this before
+    // revealing the new background.
+    onFirstFrame?: () => void
+  } = {},
 ): GradflowHandle {
   const renderer = new Renderer({
     canvas,
@@ -370,6 +376,7 @@ export function mountGradflow(
   }
 
   let raf = 0
+  let firstFrameSent = false
   const frame = () => {
     const c = getConfig()
     program.uniforms.u_time.value = sharedTime()
@@ -381,6 +388,10 @@ export function mountGradflow(
     program.uniforms.u_type.value = TYPE_NUMBER[c.type] ?? 2
     program.uniforms.u_noise.value = c.noise
     renderer.render({ scene })
+    if (!firstFrameSent && canvas.width > 1 && canvas.height > 1) {
+      firstFrameSent = true
+      opts.onFirstFrame?.()
+    }
     raf = requestAnimationFrame(frame)
   }
   raf = requestAnimationFrame(frame)
@@ -404,23 +415,32 @@ export function mountGradflow(
 export function GradflowGL({
   config,
   className,
+  onReady,
 }: {
   config: GradflowConfig
   className?: string
+  // Fired once the first frame is on the canvas (see onFirstFrame).
+  onReady?: () => void
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const cfgRef = useRef(config)
   cfgRef.current = config
+  const onReadyRef = useRef(onReady)
+  onReadyRef.current = onReady
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     // A failed background must never take its window down — degrade to
     // the black fallback instead.
     try {
-      const handle = mountGradflow(canvas, () => cfgRef.current)
+      const handle = mountGradflow(canvas, () => cfgRef.current, {
+        onFirstFrame: () => onReadyRef.current?.(),
+      })
       return () => handle.destroy()
     } catch (err) {
       console.error("GradflowGL: renderer mount failed", err)
+      // Nothing will ever draw — let a crossfade move on to black.
+      onReadyRef.current?.()
     }
   }, [])
   return (
