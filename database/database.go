@@ -28,8 +28,22 @@ func Open(dbPath string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
+	// Bound the pool. Each modernc.org/sqlite connection costs ~4 MB of
+	// private memory, so the default unlimited pool let a burst of
+	// concurrent UI queries open dozens of connections, and with only 2
+	// kept idle every burst tore most of them down and rebuilt them
+	// (re-applying pragmas, re-reading the schema). Measured on the real
+	// DB, 60 bursts x 16 queries: unlimited/2-idle created 842
+	// connections, p50 19.9ms, +37.5 MB; 4/4 created 4, p50 6.5ms,
+	// +20.3 MB, total time halved. WAL lets the 4 readers run
+	// concurrently; writes serialize in SQLite regardless.
+	db.SetMaxOpenConns(maxConns)
+	db.SetMaxIdleConns(maxConns)
 	return db, nil
 }
+
+// maxConns is the size of the sqlite connection pool (see Open).
+const maxConns = 4
 
 func Migrate(db *sql.DB) error {
 	if err := goose.SetDialect("sqlite3"); err != nil {
