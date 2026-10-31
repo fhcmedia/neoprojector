@@ -21,3 +21,14 @@ RETURNING *;
 
 -- name: DeleteSong :exec
 DELETE FROM song WHERE id = ?;
+
+-- name: CountSongServiceItems :one
+-- How many schedule items (across all services) use this song.
+SELECT COUNT(*) FROM service_item_song WHERE song_id = ?;
+
+-- name: DeleteServiceItemsForSong :exec
+-- Removes every schedule item that uses the song (service_item_song
+-- cascades from service_item). service_item_song.song_id has no ON
+-- DELETE, so these must go before the song itself can be deleted.
+DELETE FROM service_item
+WHERE id IN (SELECT item_id FROM service_item_song WHERE song_id = ?);

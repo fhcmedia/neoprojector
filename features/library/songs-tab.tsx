@@ -1,14 +1,30 @@
-import { useCallback, useEffect, useMemo } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { MusicIcon, RadioIcon } from "lucide-react"
+import { MusicIcon, RadioIcon, Trash2Icon } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/button"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/alert-dialog"
 import { useDebounce } from "@/hooks/use-debounce"
 import { useSessionState } from "@/hooks/use-session-state"
 import {
   pickerContainerVariants,
   pickerRowVariants,
 } from "@/features/schedule/picker-anim"
-import { useLibrarySongs, useLibrarySong } from "@/features/library/api"
+import {
+  useDeleteSong,
+  useLibrarySongs,
+  useLibrarySong,
+  useSongUsage,
+} from "@/features/library/api"
 import { useLive } from "@/features/live/live-context"
 import { buildSongSlides } from "@/features/live/slides"
 import { SongShowView } from "@/features/show/show-content-views"
@@ -21,6 +37,10 @@ export function SongsTab({ search }: { search: string }) {
   )
 
   const debounced = useDebounce(search, 200)
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: number
+    title: string
+  } | null>(null)
 
   const list = songs ?? []
   const needle = debounced.trim().toLowerCase()
@@ -55,22 +75,41 @@ export function SongsTab({ search }: { search: string }) {
                 {filtered.map((song) => {
                   const isActive = song.id === selectedId
                   return (
-                    <motion.button
+                    <motion.div
                       key={song.id}
-                      type="button"
                       layout
                       variants={songItemVariants}
-                      onClick={() => setSelectedId(song.id)}
                       className={cn(
-                        "flex w-full items-center gap-2 border-b border-border/40 px-3 py-1.5 text-left text-xs transition-colors",
+                        "group flex w-full items-center border-b border-border/40 text-xs transition-colors",
                         isActive
                           ? "bg-muted text-foreground"
                           : "text-muted-foreground hover:bg-muted/50 hover:text-foreground"
                       )}
                     >
-                      <MusicIcon className="size-3.5 shrink-0 opacity-70" />
-                      <span className="truncate">{song.title}</span>
-                    </motion.button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedId(song.id)}
+                        className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left"
+                      >
+                        <MusicIcon className="size-3.5 shrink-0 opacity-70" />
+                        <span className="truncate">{song.title}</span>
+                      </button>
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={`Delete ${song.title}`}
+                        title="Delete song"
+                        onClick={() =>
+                          setPendingDelete({ id: song.id, title: song.title })
+                        }
+                        className={cn(
+                          "mr-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/15 hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100",
+                          isActive && "opacity-100"
+                        )}
+                      >
+                        <Trash2Icon />
+                      </Button>
+                    </motion.div>
                   )
                 })}
               </AnimatePresence>
@@ -82,7 +121,79 @@ export function SongsTab({ search }: { search: string }) {
       <motion.div variants={pickerRowVariants} className="flex h-full flex-1">
         <SongPreview songId={selectedId} />
       </motion.div>
+
+      <DeleteSongDialog
+        song={pendingDelete}
+        onClose={() => setPendingDelete(null)}
+        onDeleted={(id) => {
+          if (selectedId === id) setSelectedId(null)
+        }}
+      />
     </motion.div>
+  )
+}
+
+// DeleteSongDialog confirms deleting a song. Deleting also removes it
+// from every service schedule that uses it, so the dialog says how many.
+function DeleteSongDialog({
+  song,
+  onClose,
+  onDeleted,
+}: {
+  song: { id: number; title: string } | null
+  onClose: () => void
+  onDeleted: (id: number) => void
+}) {
+  const { data: usage } = useSongUsage(song?.id ?? null)
+  const deleteMut = useDeleteSong()
+  const [error, setError] = useState<string | null>(null)
+
+  return (
+    <AlertDialog
+      open={!!song}
+      onOpenChange={(open) => {
+        if (!open) {
+          setError(null)
+          onClose()
+        }
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete “{song?.title}”?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {usage
+              ? `It's used in ${usage} service schedule ${usage === 1 ? "item" : "items"} — ${usage === 1 ? "it" : "they"} will be removed too. `
+              : ""}
+            This can't be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {error && <p className="text-xs text-destructive">{error}</p>}
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            disabled={deleteMut.isPending}
+            onClick={(e) => {
+              // Keep the dialog open until the delete actually succeeds.
+              e.preventDefault()
+              if (!song) return
+              deleteMut.mutate(song.id, {
+                onSuccess: () => {
+                  onDeleted(song.id)
+                  setError(null)
+                  onClose()
+                },
+                onError: (err) =>
+                  setError(err instanceof Error ? err.message : String(err)),
+              })
+            }}
+          >
+            {deleteMut.isPending ? "Deleting…" : "Delete song"}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 
@@ -155,13 +266,14 @@ function SongPreview({ songId }: { songId: number | null }) {
           <span className="flex-1 truncate text-[11px] text-chart-2 dark:text-chart-2">
             Live — {data.song.title}
           </span>
-          <button
-            type="button"
+          <Button
+            variant="link"
+            size="xs"
             onClick={clearLive}
-            className="text-[11px] text-muted-foreground underline hover:text-foreground"
+            className="h-auto px-0 text-[11px] text-muted-foreground hover:text-foreground"
           >
             Clear
-          </button>
+          </Button>
         </div>
       )}
       <SongShowView

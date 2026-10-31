@@ -73,8 +73,23 @@ func (s *Service) UpdateSongTitle(ctx context.Context, id int64, title string) (
 	return s.q.UpdateSongTitle(ctx, database.UpdateSongTitleParams{ID: id, Title: title})
 }
 
+// DeleteSong deletes a song and removes it from every service schedule
+// that uses it, in one transaction. The schedule items have to go first:
+// service_item_song.song_id references song(id) with no ON DELETE, so a
+// song that was ever added to a service could not be deleted at all.
 func (s *Service) DeleteSong(ctx context.Context, id int64) error {
-	return s.q.DeleteSong(ctx, id)
+	return s.inTx(ctx, func(q *database.Queries) error {
+		if err := q.DeleteServiceItemsForSong(ctx, id); err != nil {
+			return err
+		}
+		return q.DeleteSong(ctx, id)
+	})
+}
+
+// SongUsage reports how many schedule items (across all services) use
+// the song, so the UI can warn before deleting it.
+func (s *Service) SongUsage(ctx context.Context, id int64) (int64, error) {
+	return s.q.CountSongServiceItems(ctx, id)
 }
 
 // --- section CRUD ---

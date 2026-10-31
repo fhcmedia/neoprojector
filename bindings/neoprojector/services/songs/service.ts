@@ -34,6 +34,12 @@ export function CreateSongSection(songID: number, sectionType: string): $Cancell
     });
 }
 
+/**
+ * DeleteSong deletes a song and removes it from every service schedule
+ * that uses it, in one transaction. The schedule items have to go first:
+ * service_item_song.song_id references song(id) with no ON DELETE, so a
+ * song that was ever added to a service could not be deleted at all.
+ */
 export function DeleteSong(id: number): $CancellablePromise<void> {
     return $Call.ByID(2064504940, id);
 }
@@ -74,6 +80,14 @@ export function SongByID(id: number): $CancellablePromise<database$0.Song> {
     return $Call.ByID(3423836475, id).then(($result: any) => {
         return $$createType0($result);
     });
+}
+
+/**
+ * SongUsage reports how many schedule items (across all services) use
+ * the song, so the UI can warn before deleting it.
+ */
+export function SongUsage(id: number): $CancellablePromise<number> {
+    return $Call.ByID(1251298218, id);
 }
 
 /**

@@ -27,9 +27,23 @@ export function useDeleteSong() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => Songs.DeleteSong(id),
-    onSuccess: () => {
+    onSuccess: (_, id) => {
       qc.invalidateQueries({ queryKey: libraryKeys.songs })
+      qc.removeQueries({ queryKey: libraryKeys.song(id) })
+      // Deleting a song also removes it from every service schedule.
+      qc.invalidateQueries({ queryKey: ["schedule", "items"] })
     },
+  })
+}
+
+// useSongUsage: how many schedule items use the song — shown in the
+// delete confirmation, since deleting removes it from those services.
+export function useSongUsage(id: number | null) {
+  return useQuery({
+    queryKey: ["songs", "usage", id],
+    queryFn: () => Songs.SongUsage(id!) as unknown as Promise<number>,
+    enabled: id !== null,
+    staleTime: 0,
   })
 }
 

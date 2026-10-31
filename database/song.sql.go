@@ -10,6 +10,18 @@ import (
 	"database/sql"
 )
 
+const countSongServiceItems = `-- name: CountSongServiceItems :one
+SELECT COUNT(*) FROM service_item_song WHERE song_id = ?
+`
+
+// How many schedule items (across all services) use this song.
+func (q *Queries) CountSongServiceItems(ctx context.Context, songID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSongServiceItems, songID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createSong = `-- name: CreateSong :one
 INSERT INTO song (title) VALUES (?)
 RETURNING id, title, created_at, updated_at
@@ -25,6 +37,19 @@ func (q *Queries) CreateSong(ctx context.Context, title string) (Song, error) {
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const deleteServiceItemsForSong = `-- name: DeleteServiceItemsForSong :exec
+DELETE FROM service_item
+WHERE id IN (SELECT item_id FROM service_item_song WHERE song_id = ?)
+`
+
+// Removes every schedule item that uses the song (service_item_song
+// cascades from service_item). service_item_song.song_id has no ON
+// DELETE, so these must go before the song itself can be deleted.
+func (q *Queries) DeleteServiceItemsForSong(ctx context.Context, songID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteServiceItemsForSong, songID)
+	return err
 }
 
 const deleteSong = `-- name: DeleteSong :exec
