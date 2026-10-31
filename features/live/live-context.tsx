@@ -397,6 +397,13 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   // plain strings (the live preview pipeline only emits strings so
   // far, but be defensive in case a template ships a rich default).
   useEffect(() => {
+    // Only the operator window owns live state. LiveProvider wraps the
+    // whole app, so every output window (and the splash) mounts one too
+    // — with an empty state. Pushing from there broadcast "nothing is
+    // live" the moment an output window opened, racing the operator's
+    // republish: the projector could end up black while the operator's
+    // preview still showed the slide.
+    if (!IS_OPERATOR_WINDOW) return
     const payload = buildPayload()
     lastPayloadRef.current = payload
     Displays.PushLive(payload).catch(() => {
@@ -418,7 +425,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   // (e.g. an empty payload) instead of what's actually on the air.
   const republish = useCallback(() => {
     const payload = lastPayloadRef.current
-    if (!payload) return
+    if (!payload || !IS_OPERATOR_WINDOW) return
     Displays.PushLive(payload).catch(() => {})
   }, [])
 
@@ -489,3 +496,14 @@ function stampMediaClock(s: LiveSlide | null): LiveSlide | null {
     fill: { ...s.fill, media: { ...media, anchorMs: Date.now(), anchorPos: 0 } },
   }
 }
+
+// IS_OPERATOR_WINDOW: this webview is the operator's main window, the
+// only one allowed to publish live state. Output windows (/output/:id)
+// and the splash only consume it. Each window is its own webview and
+// never navigates between these routes, so the load-time path decides.
+const IS_OPERATOR_WINDOW =
+  typeof window === "undefined" ||
+  !(
+    window.location.pathname.startsWith("/output/") ||
+    window.location.pathname.startsWith("/splash")
+  )
