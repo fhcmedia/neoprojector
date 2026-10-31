@@ -61,7 +61,27 @@ func parseHint(s sql.NullString) *screenFP {
 	return &fp
 }
 
-// staleBinding is a display whose stored screen id no longer exists.
+// sameMonitor reports whether a connected screen is plausibly the
+// monitor a hint describes. Windows REUSES HMONITOR handles, so a stored
+// id that still exists may now belong to a different monitor (seen: the
+// projector's old id handed to the primary while it was replugged). A
+// match needs the same primary/secondary role plus the same device name
+// or the same place and size; a nil hint (legacy row) accepts anything.
+func sameMonitor(hint *screenFP, f screenFP) bool {
+	if hint == nil {
+		return true
+	}
+	if hint.Primary != f.Primary {
+		return false
+	}
+	if hint.Name != "" && hint.Name == f.Name {
+		return true
+	}
+	return hint.W > 0 && hint.X == f.X && hint.Y == f.Y && hint.W == f.W && hint.H == f.H
+}
+
+// staleBinding is a display whose stored screen id no longer exists, or
+// now belongs to a different monitor (see sameMonitor).
 type staleBinding struct {
 	displayID int64
 	hint      *screenFP
@@ -95,11 +115,15 @@ func matchStale(stale []staleBinding, free []screenFP) map[int64]string {
 			}
 		}
 	}
+	// Hinted matches never cross the primary/secondary line: a display
+	// that lived on a secondary monitor must not land on the operator's
+	// control screen just because Windows renamed or reshuffled them.
 	assign(func(b staleBinding, f screenFP) bool {
-		return b.hint != nil && b.hint.Name != "" && b.hint.Name == f.Name
+		return b.hint != nil && b.hint.Primary == f.Primary &&
+			b.hint.Name != "" && b.hint.Name == f.Name
 	})
 	assign(func(b staleBinding, f screenFP) bool {
-		return b.hint != nil && b.hint.W > 0 &&
+		return b.hint != nil && b.hint.Primary == f.Primary && b.hint.W > 0 &&
 			b.hint.X == f.X && b.hint.Y == f.Y && b.hint.W == f.W && b.hint.H == f.H
 	})
 
@@ -140,17 +164,21 @@ func (s *Service) healScreenBindings(ctx context.Context, screens []*application
 		if !d.ScreenID.Valid || d.ScreenID.String == "" {
 			continue
 		}
-		if sc, ok := byID[d.ScreenID.String]; ok {
+		hint := parseHint(d.ScreenHint)
+		if sc, ok := byID[d.ScreenID.String]; ok && sameMonitor(hint, fingerprint(sc)) {
 			claimed[sc.ID] = true
-			if hint := fingerprint(sc).json(); !d.ScreenHint.Valid || d.ScreenHint.String != hint {
+			// Same monitor: keep the fingerprint current (e.g. the user
+			// rearranged screens). Never refreshed from a mismatched
+			// screen, so a reused id can't overwrite the real hint.
+			if fp := fingerprint(sc).json(); !d.ScreenHint.Valid || d.ScreenHint.String != fp {
 				_ = s.q.SetDisplayScreenHint(ctx, database.SetDisplayScreenHintParams{
 					ID:         d.ID,
-					ScreenHint: sql.NullString{String: hint, Valid: true},
+					ScreenHint: sql.NullString{String: fp, Valid: true},
 				})
 			}
 			continue
 		}
-		stale = append(stale, staleBinding{displayID: d.ID, hint: parseHint(d.ScreenHint)})
+		stale = append(stale, staleBinding{displayID: d.ID, hint: hint})
 	}
 	if len(stale) == 0 {
 		return displays, nil
