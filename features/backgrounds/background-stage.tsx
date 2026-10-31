@@ -194,6 +194,9 @@ export function BackgroundMirror({ className }: { className?: string }) {
 
   return (
     <canvas
+      // Without this ref the draw loop above found no canvas and bailed,
+      // so preview tiles never showed the live background at all.
+      ref={canvasRef}
       className={className}
       style={{
         position: "absolute",

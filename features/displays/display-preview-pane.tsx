@@ -121,18 +121,24 @@ export function DisplayPreviewPane() {
               collisionDetection={closestCenter}
               onDragEnd={handleDragEnd}
             >
-              <VerticalSortable ids={displays.map((d) => `display-${d.id}`)}>
-                {displays.map((d) => (
-                  <PreviewTile
-                    key={d.id}
-                    display={d}
-                    templateById={templateById}
-                    live={live}
-                    activeOverlays={activeOverlays}
-                    serviceBackground={serviceBackground}
-                  />
-                ))}
-              </VerticalSortable>
+              {/* my-auto centers the tiles vertically when they're
+                  shorter than the pane, and (unlike justify-center on
+                  a scroll container) never clips the top when there
+                  are more displays than fit — it just scrolls. */}
+              <div className="my-auto">
+                <VerticalSortable ids={displays.map((d) => `display-${d.id}`)}>
+                  {displays.map((d) => (
+                    <PreviewTile
+                      key={d.id}
+                      display={d}
+                      templateById={templateById}
+                      live={live}
+                      activeOverlays={activeOverlays}
+                      serviceBackground={serviceBackground}
+                    />
+                  ))}
+                </VerticalSortable>
+              </div>
             </DndContext>
           </div>
         )}
