@@ -46,7 +46,7 @@ export function EditItemDialog({ itemId, onClose }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="flex h-[90vh] max-h-[56rem] w-[95vw] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
+      <DialogContent className="flex h-[calc(90vh/var(--ui-zoom,1))] max-h-[56rem] w-[calc(95vw/var(--ui-zoom,1))] max-w-4xl flex-col gap-0 overflow-hidden p-0 sm:max-w-4xl">
         <DialogHeader className="sr-only">
           <DialogTitle>{meta?.label ?? "Edit item"}</DialogTitle>
         </DialogHeader>

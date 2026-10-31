@@ -26,7 +26,7 @@ export function AddItemDialog({ sectionId }: { sectionId: number }) {
           Add
         </button>
       </DialogTrigger>
-      <DialogContent className="w-[95vw] max-w-none gap-0 p-0 sm:max-w-none">
+      <DialogContent className="w-[calc(95vw/var(--ui-zoom,1))] max-w-none gap-0 p-0 sm:max-w-none">
         <DialogHeader className="sr-only">
           <DialogTitle>Add item</DialogTitle>
         </DialogHeader>

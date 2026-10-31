@@ -84,7 +84,7 @@ export function ScreenPicker({
         </span>
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="w-[min(960px,95vw)] max-w-none gap-4 sm:max-w-none">
+        <DialogContent className="w-[min(960px,calc(95vw/var(--ui-zoom,1)))] max-w-none gap-4 sm:max-w-none">
           <DialogHeader>
             <DialogTitle>Show this overlay on…</DialogTitle>
             <DialogDescription>
@@ -253,7 +253,7 @@ function Arrangement({
     <div
       className="relative w-full"
       // Cap the height so a tall stacked layout doesn't overflow.
-      style={{ aspectRatio: `${w} / ${h}`, maxHeight: "52vh", margin: "0 auto" }}
+      style={{ aspectRatio: `${w} / ${h}`, maxHeight: "calc(52vh / var(--ui-zoom, 1))", margin: "0 auto" }}
     >
       {screens.map((sc, i) => (
         <div

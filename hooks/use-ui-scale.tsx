@@ -84,9 +84,18 @@ export function UiScaleProvider({ children }: { children: ReactNode }) {
   // Apply + persist.
   useEffect(() => {
     if (typeof document !== "undefined") {
-      // zoom takes a unitless factor; reflows like page-zoom on the
-      // engines we ship on, so the h-screen shell still fits.
-      document.documentElement.style.zoom = String(scale)
+      const root = document.documentElement
+      root.style.zoom = String(scale)
+      // Current Chromium/WebView2 implements standardized CSS zoom:
+      // vh/vw are NOT divided by the zoom factor, so a 100vh shell
+      // rendered at 90% left an empty strip under the app, and at >100%
+      // overflowed the window and made the whole UI scroll. Anything
+      // sized in viewport units divides by --ui-zoom instead
+      // (e.g. calc(100vh / var(--ui-zoom, 1))).
+      root.style.setProperty("--ui-zoom", String(scale))
+      // The operator UI is a fixed desktop layout: the page itself must
+      // never scroll — panels own their scrolling.
+      root.style.overflow = "hidden"
     }
     if (typeof window !== "undefined") {
       window.localStorage.setItem(STORAGE_KEY, String(scale))

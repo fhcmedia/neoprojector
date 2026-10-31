@@ -91,7 +91,7 @@ function AppShell() {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.8, ease: "easeOut" }}
-      className="flex h-screen flex-col bg-background text-foreground"
+      className="flex h-[calc(100vh/var(--ui-zoom,1))] flex-col bg-background text-foreground"
     >
       <header className="flex h-12 shrink-0 items-stretch justify-between border-b border-border/50">
         <Link
