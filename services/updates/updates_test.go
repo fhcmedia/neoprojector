@@ -105,3 +105,36 @@ func TestEvaluate(t *testing.T) {
 		})
 	}
 }
+
+func TestNewestRelease(t *testing.T) {
+	rels := []ghRelease{
+		{TagName: "v0.1.0-beta.13", Prerelease: true},
+		{TagName: "v0.1.0-beta.19", Prerelease: true},
+		{TagName: "v0.1.0-beta.9", Prerelease: true}, // numeric, not lexical: 9 < 13
+		{TagName: "v0.2.0-beta.1", Draft: true},      // drafts are never offered
+		{TagName: "not-a-version"},
+	}
+	if got := newestRelease(rels); got == nil || got.TagName != "v0.1.0-beta.19" {
+		t.Fatalf("got %v, want v0.1.0-beta.19", got)
+	}
+
+	// Once a stable release is cut it outranks every beta of that version.
+	rels = append(rels, ghRelease{TagName: "v0.1.0"})
+	if got := newestRelease(rels); got == nil || got.TagName != "v0.1.0" {
+		t.Fatalf("got %v, want v0.1.0", got)
+	}
+
+	if newestRelease(nil) != nil {
+		t.Fatal("no releases must yield nil")
+	}
+}
+
+func TestBetaTrackOffersNewerBeta(t *testing.T) {
+	// The exact situation on 2026-10-30: install on beta.13, newest
+	// release beta.19 (prerelease). It must be offered.
+	r := rel("v0.1.0-beta.19", asset("neoprojector-0.1.0-beta.19-windows.zip", "sha256:abc"))
+	info, err := evaluate(r, "v0.1.0-beta.13", "-windows.zip")
+	if err != nil || info == nil || info.Version != "0.1.0-beta.19" {
+		t.Fatalf("got %+v, %v; want update to 0.1.0-beta.19", info, err)
+	}
+}

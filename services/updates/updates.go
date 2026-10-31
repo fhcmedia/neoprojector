@@ -1,9 +1,17 @@
 // Package updates implements the splash-screen auto-updater.
 //
-// GitHub Releases is the update channel: the latest-release API is the
-// manifest (it excludes prereleases, so per-commit beta builds are
-// never offered to installs), per-asset digests provide integrity, and
-// asset URLs are permanent. No credentials are involved anywhere.
+// GitHub Releases is the update channel, with two tracks chosen by the
+// running version:
+//
+//   - stable installs (e.g. 0.1.0) follow the latest-release API, which
+//     excludes prereleases, so they only ever move to tagged releases;
+//   - beta installs (e.g. 0.1.0-beta.13 — what every push to main
+//     publishes) follow the newest release of any kind, so each push
+//     reaches them. Before this they followed the stable API too, which
+//     404s while only prereleases exist, so betas never updated.
+//
+// Per-asset digests provide integrity and asset URLs are permanent. No
+// credentials are involved anywhere.
 //
 // This package is used internally by App.Initialize — it is not a
 // bound Wails service and generates no frontend bindings.
@@ -24,7 +32,10 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-const releaseAPI = "https://api.github.com/repos/fhcmedia/neoprojector/releases/latest"
+const (
+	releaseAPI  = "https://api.github.com/repos/fhcmedia/neoprojector/releases/latest"
+	releasesAPI = "https://api.github.com/repos/fhcmedia/neoprojector/releases?per_page=30"
+)
 
 // Info describes an applicable update.
 type Info struct {
@@ -36,8 +47,10 @@ type Info struct {
 }
 
 type ghRelease struct {
-	TagName string    `json:"tag_name"`
-	Assets  []ghAsset `json:"assets"`
+	TagName    string    `json:"tag_name"`
+	Draft      bool      `json:"draft"`
+	Prerelease bool      `json:"prerelease"`
+	Assets     []ghAsset `json:"assets"`
 }
 
 type ghAsset struct {
@@ -47,8 +60,9 @@ type ghAsset struct {
 	URL    string `json:"browser_download_url"`
 }
 
-// Check returns the newest stable release if it is newer than current,
-// nil when already up to date (or when no stable release exists yet).
+// Check returns the newest release on current's track (stable, or beta
+// for prerelease versions — see the package doc) if it is newer than
+// current, nil when already up to date (or when the track is empty).
 // The caller owns the timeout via ctx — the splash passes a short one
 // so an offline machine never hangs at boot.
 func Check(ctx context.Context, current string) (*Info, error) {
@@ -57,7 +71,13 @@ func Check(ctx context.Context, current string) (*Info, error) {
 		return nil, fmt.Errorf("current version %q is not semver", current)
 	}
 
-	rel, err := fetchLatest(ctx)
+	var rel *ghRelease
+	var err error
+	if semver.Prerelease(cur) != "" {
+		rel, err = fetchNewest(ctx)
+	} else {
+		rel, err = fetchLatest(ctx)
+	}
 	if err != nil || rel == nil {
 		return nil, err
 	}
@@ -118,6 +138,47 @@ func fetchLatest(ctx context.Context) (*ghRelease, error) {
 		return nil, err
 	}
 	return &rel, nil
+}
+
+// fetchNewest returns the highest-versioned published release,
+// prereleases included (the beta track).
+func fetchNewest(ctx context.Context) (*ghRelease, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releasesAPI, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("release API: %s", resp.Status)
+	}
+	var rels []ghRelease
+	if err := json.NewDecoder(resp.Body).Decode(&rels); err != nil {
+		return nil, err
+	}
+	return newestRelease(rels), nil
+}
+
+// newestRelease picks the highest semver tag among published (non-
+// draft) releases. Semver orders 0.1.0-beta.19 above 0.1.0-beta.13 and
+// a stable 0.1.0 above every 0.1.0-beta.N, so a beta install also moves
+// onto the stable release once one is cut. nil when there is none.
+func newestRelease(rels []ghRelease) *ghRelease {
+	var best *ghRelease
+	for i := range rels {
+		r := &rels[i]
+		if r.Draft || !semver.IsValid(r.TagName) {
+			continue
+		}
+		if best == nil || semver.Compare(r.TagName, best.TagName) > 0 {
+			best = r
+		}
+	}
+	return best
 }
 
 // assetSuffix must match the artifact names release.yml produces.
