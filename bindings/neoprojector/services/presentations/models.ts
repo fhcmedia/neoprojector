@@ -10,6 +10,42 @@ import { Create as $Create } from "@wailsio/runtime";
 import * as database$0 from "../../database/models.js";
 
 /**
+ * DeckFile is a deck ready for page rendering.
+ */
+export class DeckFile {
+    /**
+     * PDFMediaID is the hidden media row holding the PDF to render.
+     */
+    "pdf_media_id": number;
+
+    /**
+     * Name is the file's name without extension — the slides' source
+     * label and a default presentation name.
+     */
+    "name": string;
+
+    /** Creates a new DeckFile instance. */
+    constructor($$source: Partial<DeckFile> = {}) {
+        if (!("pdf_media_id" in $$source)) {
+            this["pdf_media_id"] = 0;
+        }
+        if (!("name" in $$source)) {
+            this["name"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new DeckFile instance from a string or object.
+     */
+    static createFrom($$source: any = {}): DeckFile {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new DeckFile($$parsedSource as Partial<DeckFile>);
+    }
+}
+
+/**
  * PlaybackSettings carries the four per-presentation runtime options
  * the operator can configure in the editor: auto-advance on/off, the
  * dwell time between auto-advances, and the slide-to-slide

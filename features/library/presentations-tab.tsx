@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
-import { useQuery } from "@tanstack/react-query"
-import { FilmIcon, ImageIcon, Trash2Icon, XIcon } from "lucide-react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { FilePlus2Icon, FilmIcon, ImageIcon, Trash2Icon, XIcon } from "lucide-react"
+import { Button } from "@/components/button"
+import {
+  createPresentationFromDeck,
+  pickDeckFiles,
+} from "@/features/presentations/import-flow"
 import { useDebounce } from "@/hooks/use-debounce"
 import { cn } from "@/lib/utils"
 import {
@@ -19,13 +24,19 @@ type Props = {
 
 // PresentationsTab — tile grid mirroring the Templates / Overlays
 // tabs. Each tile previews the first slide (or shows a placeholder
-// when empty), the presentation name, and a slide count. Read-only
-// until the Show-surface presentation editor lands: existing rows
-// can be scheduled and played, but there's no editor to create or
-// modify them with, so the add tile is gone.
+// when empty), the presentation name, and a slide count. "Import
+// PowerPoint / PDF" makes a presentation per file; slides are edited
+// (added, skipped, timed, reordered) in the Show pane once the
+// presentation is in a service.
 export function PresentationsTab({ search }: Props) {
   const { data: presentations, isLoading } = usePresentations()
   const deleteMut = useDeletePresentation()
+  const qc = useQueryClient()
+  async function importDecks() {
+    for (const path of await pickDeckFiles()) {
+      await createPresentationFromDeck(qc, path)
+    }
+  }
   const debounced = useDebounce(search, 200)
 
   const filtered = useMemo(() => {
@@ -39,6 +50,12 @@ export function PresentationsTab({ search }: Props) {
 
   return (
     <div className="h-full w-full overflow-y-auto p-3">
+      <div className="mb-2 flex justify-end">
+        <Button size="sm" variant="outline" onClick={() => void importDecks()}>
+          <FilePlus2Icon className="size-3.5" />
+          Import PowerPoint / PDF…
+        </Button>
+      </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2">
         <AnimatePresence initial={false}>
           {filtered.map((p) => (
@@ -53,7 +70,7 @@ export function PresentationsTab({ search }: Props) {
       {filtered.length === 0 && (
         <Empty>
           {presentations && presentations.length === 0
-            ? "No presentations yet."
+            ? "No presentations yet — import a PowerPoint or PDF."
             : "No matches."}
         </Empty>
       )}

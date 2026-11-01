@@ -81,6 +81,8 @@ export function MediaTab({
     const list = media ?? []
     const needle = debounced.trim().toLowerCase()
     return list.filter((m) => {
+      // Deck page images belong to their presentation, not the library.
+      if (m.hidden) return false
       if (kind !== "all" && m.type !== kind) return false
       if (!needle) return true
       return (

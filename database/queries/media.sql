@@ -3,6 +3,12 @@ INSERT INTO media (type, title, path, original_filename)
 VALUES (?, ?, ?, ?)
 RETURNING *;
 
+-- name: CreateHiddenMedia :one
+-- A deck page image: real media, hidden from the library (see 0022).
+INSERT INTO media (type, title, path, original_filename, hidden)
+VALUES (?, ?, ?, ?, 1)
+RETURNING *;
+
 -- name: MediaByID :one
 SELECT * FROM media WHERE id = ?;
 
@@ -28,3 +34,6 @@ WHERE id = ? AND path = ?;
 
 -- name: DeleteMedia :exec
 DELETE FROM media WHERE id = ?;
+
+-- name: DeleteHiddenMedia :exec
+DELETE FROM media WHERE id = ? AND hidden = 1;

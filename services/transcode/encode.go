@@ -103,7 +103,7 @@ func Duration(ctx context.Context, t Tools, path string) (float64, error) {
 	cmd := exec.CommandContext(ctx, t.FFprobe,
 		"-v", "error", "-show_entries", "format=duration",
 		"-of", "default=noprint_wrappers=1:nokey=1", path)
-	quiet(cmd)
+	HideWindow(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		return 0, fmt.Errorf("ffprobe: %w", err)
@@ -119,7 +119,7 @@ func Duration(ctx context.Context, t Tools, path string) (float64, error) {
 // Cancelling ctx kills ffmpeg (the caller removes the partial output).
 func Encode(ctx context.Context, t Tools, in, out string, durationSec float64, q Quality, progress func(pct int)) error {
 	cmd := exec.CommandContext(ctx, t.FFmpeg, PlaybackArgs(in, out, Threads(), q)...)
-	quiet(cmd)
+	HideWindow(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		return err

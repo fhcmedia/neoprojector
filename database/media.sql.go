@@ -9,10 +9,45 @@ import (
 	"context"
 )
 
+const createHiddenMedia = `-- name: CreateHiddenMedia :one
+INSERT INTO media (type, title, path, original_filename, hidden)
+VALUES (?, ?, ?, ?, 1)
+RETURNING id, type, title, path, original_filename, created_at, updated_at, hidden
+`
+
+type CreateHiddenMediaParams struct {
+	Type             string `json:"type"`
+	Title            string `json:"title"`
+	Path             string `json:"path"`
+	OriginalFilename string `json:"original_filename"`
+}
+
+// A deck page image: real media, hidden from the library (see 0022).
+func (q *Queries) CreateHiddenMedia(ctx context.Context, arg CreateHiddenMediaParams) (Medium, error) {
+	row := q.db.QueryRowContext(ctx, createHiddenMedia,
+		arg.Type,
+		arg.Title,
+		arg.Path,
+		arg.OriginalFilename,
+	)
+	var i Medium
+	err := row.Scan(
+		&i.ID,
+		&i.Type,
+		&i.Title,
+		&i.Path,
+		&i.OriginalFilename,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Hidden,
+	)
+	return i, err
+}
+
 const createMedia = `-- name: CreateMedia :one
 INSERT INTO media (type, title, path, original_filename)
 VALUES (?, ?, ?, ?)
-RETURNING id, type, title, path, original_filename, created_at, updated_at
+RETURNING id, type, title, path, original_filename, created_at, updated_at, hidden
 `
 
 type CreateMediaParams struct {
@@ -38,8 +73,18 @@ func (q *Queries) CreateMedia(ctx context.Context, arg CreateMediaParams) (Mediu
 		&i.OriginalFilename,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Hidden,
 	)
 	return i, err
+}
+
+const deleteHiddenMedia = `-- name: DeleteHiddenMedia :exec
+DELETE FROM media WHERE id = ? AND hidden = 1
+`
+
+func (q *Queries) DeleteHiddenMedia(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteHiddenMedia, id)
+	return err
 }
 
 const deleteMedia = `-- name: DeleteMedia :exec
@@ -52,7 +97,7 @@ func (q *Queries) DeleteMedia(ctx context.Context, id int64) error {
 }
 
 const listMedia = `-- name: ListMedia :many
-SELECT id, type, title, path, original_filename, created_at, updated_at FROM media ORDER BY created_at DESC
+SELECT id, type, title, path, original_filename, created_at, updated_at, hidden FROM media ORDER BY created_at DESC
 `
 
 func (q *Queries) ListMedia(ctx context.Context) ([]Medium, error) {
@@ -72,6 +117,7 @@ func (q *Queries) ListMedia(ctx context.Context) ([]Medium, error) {
 			&i.OriginalFilename,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Hidden,
 		); err != nil {
 			return nil, err
 		}
@@ -87,7 +133,7 @@ func (q *Queries) ListMedia(ctx context.Context) ([]Medium, error) {
 }
 
 const listMediaByType = `-- name: ListMediaByType :many
-SELECT id, type, title, path, original_filename, created_at, updated_at FROM media WHERE type = ? ORDER BY created_at DESC
+SELECT id, type, title, path, original_filename, created_at, updated_at, hidden FROM media WHERE type = ? ORDER BY created_at DESC
 `
 
 func (q *Queries) ListMediaByType(ctx context.Context, type_ string) ([]Medium, error) {
@@ -107,6 +153,7 @@ func (q *Queries) ListMediaByType(ctx context.Context, type_ string) ([]Medium, 
 			&i.OriginalFilename,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Hidden,
 		); err != nil {
 			return nil, err
 		}
@@ -122,7 +169,7 @@ func (q *Queries) ListMediaByType(ctx context.Context, type_ string) ([]Medium, 
 }
 
 const mediaByID = `-- name: MediaByID :one
-SELECT id, type, title, path, original_filename, created_at, updated_at FROM media WHERE id = ?
+SELECT id, type, title, path, original_filename, created_at, updated_at, hidden FROM media WHERE id = ?
 `
 
 func (q *Queries) MediaByID(ctx context.Context, id int64) (Medium, error) {
@@ -136,6 +183,7 @@ func (q *Queries) MediaByID(ctx context.Context, id int64) (Medium, error) {
 		&i.OriginalFilename,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Hidden,
 	)
 	return i, err
 }
@@ -167,7 +215,7 @@ const updateMedia = `-- name: UpdateMedia :one
 UPDATE media
 SET title = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, type, title, path, original_filename, created_at, updated_at
+RETURNING id, type, title, path, original_filename, created_at, updated_at, hidden
 `
 
 type UpdateMediaParams struct {
@@ -186,6 +234,7 @@ func (q *Queries) UpdateMedia(ctx context.Context, arg UpdateMediaParams) (Mediu
 		&i.OriginalFilename,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Hidden,
 	)
 	return i, err
 }

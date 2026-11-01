@@ -4,5 +4,5 @@ package transcode
 
 import "os/exec"
 
-// quiet is a no-op off Windows (no console windows to hide).
-func quiet(cmd *exec.Cmd) {}
+// HideWindow is a no-op off Windows (no console windows to hide).
+func HideWindow(cmd *exec.Cmd) {}

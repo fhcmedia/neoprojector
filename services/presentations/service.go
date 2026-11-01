@@ -10,6 +10,7 @@ package presentations
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -73,7 +74,16 @@ func (s *Service) RenamePresentation(ctx context.Context, id int64, name string)
 }
 
 func (s *Service) DeletePresentation(ctx context.Context, id int64) error {
-	return s.q.DeletePresentation(ctx, id)
+	// Deck page images belong to the presentation: collect them first,
+	// then drop the ones no other slide still uses.
+	pages, _ := s.q.ListHiddenSlideMedia(ctx, id)
+	if err := s.q.DeletePresentation(ctx, id); err != nil {
+		return err
+	}
+	for _, p := range pages {
+		s.removeHiddenMediaIfUnused(ctx, p.ID, p.Path)
+	}
+	return nil
 }
 
 // PlaybackSettings carries the four per-presentation runtime options
@@ -165,7 +175,20 @@ func (s *Service) AddSlide(ctx context.Context, presentationID, mediaID int64) (
 }
 
 func (s *Service) DeleteSlide(ctx context.Context, slideID int64) error {
-	return s.q.DeletePresentationSlide(ctx, slideID)
+	slide, err := s.q.PresentationSlideByID(ctx, slideID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if err := s.q.DeletePresentationSlide(ctx, slideID); err != nil {
+		return err
+	}
+	if m, err := s.q.MediaByID(ctx, slide.MediaID); err == nil && m.Hidden == 1 {
+		s.removeHiddenMediaIfUnused(ctx, m.ID, m.Path)
+	}
+	return nil
 }
 
 // ReorderSlides writes positions to match the given id order in one

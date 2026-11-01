@@ -1,6 +1,14 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { FilmIcon, SearchIcon } from "lucide-react"
+import { FilePlus2Icon, FilmIcon, PlusIcon, SearchIcon } from "lucide-react"
+import { Service as Presentations } from "@/bindings/neoprojector/services/presentations"
+import type { Presentation } from "@/bindings/neoprojector/database"
+import { Button } from "@/components/button"
+import { presentationKeys } from "@/features/presentations/api"
+import {
+  createPresentationFromDeck,
+  pickDeckFiles,
+} from "@/features/presentations/import-flow"
 import { Service as Schedule } from "@/bindings/neoprojector/services/schedule"
 import type { ServiceItem } from "@/bindings/neoprojector/database"
 import { motion } from "motion/react"
@@ -13,9 +21,9 @@ import {
 } from "@/features/schedule/picker-anim"
 
 // PresentationPicker — pick an existing presentation and link it to
-// the section as a "presentation" schedule item. The presentation
-// itself is authored in the Library → Presentations editor; this
-// picker is just the binding step.
+// the section as a "presentation" schedule item, or make one on the
+// spot: import a PowerPoint/PDF (one slide per page) or start empty
+// (add images/videos/decks from the Show pane).
 export function PresentationPicker({
   sectionId,
   onAdded,
@@ -46,8 +54,46 @@ export function PresentationPicker({
     },
   })
 
+  const [busy, setBusy] = useState(false)
+  async function importDecks() {
+    const paths = await pickDeckFiles()
+    if (paths.length === 0) return
+    setBusy(true)
+    try {
+      for (const path of paths) {
+        const p = await createPresentationFromDeck(qc, path)
+        await addMut.mutateAsync(p.id)
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+  async function createEmpty() {
+    setBusy(true)
+    try {
+      const n = (presentations?.length ?? 0) + 1
+      const p = (await Presentations.CreatePresentation(
+        `Presentation ${n}`
+      )) as unknown as Presentation
+      qc.invalidateQueries({ queryKey: presentationKeys.list })
+      await addMut.mutateAsync(p.id)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="flex h-full flex-col gap-2 overflow-hidden">
+      <div className="flex gap-1.5">
+        <Button size="sm" variant="outline" className="flex-1" disabled={busy} onClick={() => void importDecks()}>
+          <FilePlus2Icon className="size-3.5" />
+          Import PowerPoint / PDF…
+        </Button>
+        <Button size="sm" variant="ghost" disabled={busy} onClick={() => void createEmpty()}>
+          <PlusIcon className="size-3.5" />
+          New empty
+        </Button>
+      </div>
       <div className="relative">
         <SearchIcon className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
         <Input
@@ -65,7 +111,7 @@ export function PresentationPicker({
         ) : filtered.length === 0 ? (
           <div className="grid h-full place-items-center px-4 text-center text-xs text-muted-foreground/40">
             {presentations && presentations.length === 0
-              ? "No presentations. Create one in the Library → Presentations tab."
+              ? "No presentations yet — import a PowerPoint or PDF above."
               : "No matches."}
           </div>
         ) : (

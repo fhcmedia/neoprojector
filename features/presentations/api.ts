@@ -135,3 +135,32 @@ export function useReorderSlides(presentationId: number) {
     },
   })
 }
+
+// Per-slide options (include/exclude, duration). Each refreshes the
+// slide list so the Show pane and auto-advance pick the change up.
+export function useSlideOptions(presentationId: number) {
+  const qc = useQueryClient()
+  const refresh = () =>
+    qc.invalidateQueries({ queryKey: presentationKeys.slides(presentationId) })
+  const setEnabled = useMutation({
+    mutationFn: ({ slideId, enabled }: { slideId: number; enabled: boolean }) =>
+      Presentations.SetSlideEnabled(slideId, enabled) as unknown as Promise<void>,
+    onSuccess: refresh,
+  })
+  const setAllEnabled = useMutation({
+    mutationFn: (enabled: boolean) =>
+      Presentations.SetAllSlidesEnabled(presentationId, enabled) as unknown as Promise<void>,
+    onSuccess: refresh,
+  })
+  const setSourceEnabled = useMutation({
+    mutationFn: ({ source, enabled }: { source: string; enabled: boolean }) =>
+      Presentations.SetSourceEnabled(presentationId, source, enabled) as unknown as Promise<void>,
+    onSuccess: refresh,
+  })
+  const setDuration = useMutation({
+    mutationFn: ({ slideId, durationMs }: { slideId: number; durationMs: number }) =>
+      Presentations.SetSlideDuration(slideId, durationMs) as unknown as Promise<void>,
+    onSuccess: refresh,
+  })
+  return { setEnabled, setAllEnabled, setSourceEnabled, setDuration, refresh }
+}

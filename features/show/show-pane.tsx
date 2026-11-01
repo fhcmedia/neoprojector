@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from "react"
+import { openFilesSafe } from "@/lib/open-files"
 import { AnimatePresence, motion } from "motion/react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Events } from "@wailsio/runtime"
+import { toast } from "sonner"
 import type {
   ListServiceItemsWithContentRow,
   Medium,
@@ -43,6 +45,12 @@ import {
   useVideoPlayback,
   videoProblem,
 } from "@/lib/video-support"
+import {
+  dwellMs,
+  includedCount,
+  nextIndex,
+  prevIndex,
+} from "@/features/live/presentation-nav"
 import { Button } from "@/components/button"
 import { Progress } from "@/components/progress"
 import {
@@ -53,6 +61,16 @@ import {
 import { QualityPicker } from "@/features/library/quality-picker"
 import { Slider } from "@/components/slider"
 import {
+  importDeck,
+  isDeckPath,
+  DECK_FILE_PATTERN,
+} from "@/features/presentations/deck-import"
+import {
+  PresentationToolbar,
+  SlideControls,
+} from "@/features/presentations/presentation-controls"
+import {
+  presentationKeys,
   useAddSlide,
   useReorderSlides,
   useUpdatePlayback,
@@ -273,6 +291,73 @@ export function ShowPane({
   // new slide on the active presentation. Sequential await keeps
   // ordering deterministic — drops added in the order the user
   // dropped them.
+  // addFiles appends files to the presentation in the given order:
+  // PDFs and PowerPoint files become one slide per page (deck-import),
+  // images and videos one slide each (imported into the library first).
+  const [importing, setImporting] = useState<string | null>(null)
+  const addFilesRef = useRef<(paths: string[]) => Promise<void>>(async () => {})
+  addFilesRef.current = async (paths: string[]) => {
+    if (!presentationId || paths.length === 0 || importing) return
+    const pid = presentationId
+    const refresh = () =>
+      qc.invalidateQueries({ queryKey: presentationKeys.slides(pid) })
+    try {
+      for (const path of paths) {
+        const name = path.split(/[\/]/).pop() ?? path
+        if (isDeckPath(path)) {
+          try {
+            const n = await importDeck(pid, path, (p) => {
+              setImporting(
+                p.stage === "converting"
+                  ? `Converting ${name}…`
+                  : `Page ${p.page}/${p.pages}…`
+              )
+              if (p.stage === "rendering" && p.page > 1) void refresh()
+            })
+            toast.success(`Added ${n} slide${n === 1 ? "" : "s"} from ${name}`)
+          } catch (err) {
+            toast.error(`Couldn't import ${name}`, {
+              description: err instanceof Error ? err.message : String(err),
+              duration: 15000,
+            })
+          }
+        } else {
+          setImporting(`Adding ${name}…`)
+          const imported = (await Media.ImportFiles([path])) as unknown as Medium[]
+          for (const m of imported) await addSlide.mutateAsync(m.id)
+          if (imported.length === 0) toast.error(`${name} isn't an image or video`)
+        }
+        await refresh()
+      }
+    } finally {
+      setImporting(null)
+      void qc.invalidateQueries({ queryKey: ["media", "list"] })
+    }
+  }
+
+  async function openAddSlidesDialog() {
+    const picked = await openFilesSafe({
+      Title: "Add slides",
+      AllowsMultipleSelection: true,
+      CanChooseFiles: true,
+      CanChooseDirectories: false,
+      Filters: [
+        {
+          DisplayName: "Slides (images, videos, PowerPoint, PDF)",
+          Pattern: `*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.mp4;*.webm;*.mov;*.m4v;${DECK_FILE_PATTERN}`,
+        },
+        { DisplayName: "PowerPoint / PDF", Pattern: DECK_FILE_PATTERN },
+        { DisplayName: "All files", Pattern: "*.*" },
+      ],
+    })
+    const paths = Array.isArray(picked)
+      ? picked
+      : typeof picked === "string" && picked
+        ? [picked]
+        : []
+    await addFilesRef.current(paths)
+  }
+
   useEffect(() => {
     if (!isPresentation) return
     const off = Events.On(
@@ -282,16 +367,12 @@ export function ShowPane({
         if (data.target_id !== SHOW_PANE_DROP_TARGET) return
         const paths = data.paths ?? []
         if (paths.length === 0) return
-        const imported = (await Media.ImportFiles(paths)) as unknown as Medium[]
-        for (const m of imported) {
-          await addSlide.mutateAsync(m.id)
-        }
+        await addFilesRef.current(paths)
       }
     )
     return () => {
       off?.()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPresentation, presentationId])
 
   // Drop one tile onto another: the dragged tile takes the target
@@ -416,11 +497,7 @@ export function ShowPane({
     // current item is a presentation with a determinate next slide.
     function nextMediaIdAfter(idx: number): number | undefined {
       if (!playback) return undefined
-      const nextIdx = playback.loop
-        ? (idx + 1) % slides.length
-        : idx + 1 < slides.length
-          ? idx + 1
-          : -1
+      const nextIdx = nextIndex(slides, idx, playback.loop)
       if (nextIdx < 0) return undefined
       return slides[nextIdx]?.fill.media?.mediaId
     }
@@ -455,19 +532,21 @@ export function ShowPane({
     registerNavigators({
       next: () => {
         const cur = liveIndex()
+        // Presentations step over excluded slides (and wrap when
+        // looping) — arrow keys and a presentation clicker alike.
+        if (playback) {
+          const n = nextIndex(slides, cur, playback.loop)
+          if (n >= 0) setIndex(n)
+          return
+        }
         if (cur < 0) {
           if (slides.length > 0) setIndex(0)
           return
         }
-        // Presentations wrap on next so the loop runs forever; other
-        // kinds stop at the end. Bible items auto-grow into the next
-        // verse so the operator can keep reading without re-typing.
+        // Other kinds stop at the end. Bible items auto-grow into the
+        // next verse so the operator can keep reading without re-typing.
         if (cur + 1 < slides.length) {
           setIndex(cur + 1)
-          return
-        }
-        if (playback?.loop) {
-          setIndex(0)
           return
         }
         // Advance into the next verse — grow the passage AND go live in
@@ -480,6 +559,11 @@ export function ShowPane({
         // Heading up — reveal the up-preview (kept hidden until now).
         setUpPeekArmed(true)
         const cur = liveIndex()
+        if (playback) {
+          const p = prevIndex(slides, cur, playback.loop)
+          if (p >= 0) setIndex(p)
+          return
+        }
         if (cur > 0) {
           setIndex(cur - 1)
           return
@@ -516,19 +600,20 @@ export function ShowPane({
   useEffect(() => {
     if (!playback || !playback.loop) return
     if (autoPaused) return
-    if (slides.length <= 1) return
+    if (includedCount(slides) <= 1) return
     if (!live || live.sourceItemId !== sourceItemId) return
-    const id = window.setInterval(() => {
-      const cur = slides.findIndex((s, i) =>
-        isLive(s.kind, sourceItemId, i)
-      )
-      const next = cur < 0 ? 0 : (cur + 1) % slides.length
+    // One timeout per slide, re-armed whenever the live slide changes
+    // (live is a dep): each slide stays up for ITS duration, and a
+    // manual next/previous restarts the dwell from that moment.
+    const cur = slides.findIndex((s, i) => isLive(s.kind, sourceItemId, i))
+    const id = window.setTimeout(() => {
+      const next = nextIndex(slides, cur, true)
       const s = slides[next]
       if (!s) return
       // The one AFTER `next` is what outputs need warm so the
       // FOLLOWING crossfade isn't blocked on decode. Always wraps
       // because auto-advance runs in loop mode by definition here.
-      const after = (next + 1) % slides.length
+      const after = Math.max(0, nextIndex(slides, next, true))
       setLive({
         channel: "presentation",
         kind: s.kind,
@@ -541,8 +626,8 @@ export function ShowPane({
         nextMediaId: slides[after]?.fill.media?.mediaId,
         background: itemBackground ?? undefined,
       })
-    }, Math.max(250, playback.intervalMs))
-    return () => window.clearInterval(id)
+    }, dwellMs(slides[cur], playback.intervalMs))
+    return () => window.clearTimeout(id)
   }, [
     playback,
     autoPaused,
@@ -866,32 +951,13 @@ export function ShowPane({
               className="flex flex-1 flex-col overflow-hidden"
             >
               {isPresentation && (
-                <div className="flex items-center gap-2 border-b border-border/40 px-2 py-1.5">
-                  <ControlButton
-                    label={
-                      playback?.loop
-                        ? "Auto-advance on — click to turn off"
-                        : "Auto-advance off — click to turn on"
-                    }
-                    active={playback?.loop === true}
-                    onClick={() =>
-                      updatePlayback.mutate({
-                        loop: !(playback?.loop ?? false),
-                        interval_ms: playback?.intervalMs ?? 5000,
-                        transition_kind: playback?.transitionKind ?? "fade",
-                        transition_duration_ms:
-                          playback?.transitionDurationMs ?? 500,
-                      })
-                    }
-                  >
-                    <RepeatIcon className="size-3.5" />
-                  </ControlButton>
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
-                    {playback?.loop
-                      ? `Auto-advance every ${((playback?.intervalMs ?? 5000) / 1000).toFixed(1)}s`
-                      : "Auto-advance"}
-                  </span>
-                </div>
+                <PresentationToolbar
+                  presentationId={presentationId}
+                  playback={playback}
+                  slides={slides}
+                  importing={importing}
+                  onAddFiles={() => void openAddSlidesDialog()}
+                />
               )}
               <div
                 // Drop-target marker is only meaningful for presentations.
@@ -959,6 +1025,7 @@ export function ShowPane({
                         }
                       : {})}
                   >
+                    <div className={cn(slide.excluded && !active && "opacity-40 grayscale")}>
                     <SlideTile
                       slide={slide}
                       template={tmpl}
@@ -986,8 +1053,8 @@ export function ShowPane({
                         // subsequent crossfade has its bytes warm in
                         // every output window. Loop-mode wraps;
                         // manual-mode just looks one ahead.
-                        const nextIdx = playback?.loop
-                          ? (idx + 1) % slides.length
+                        const nextIdx = playback
+                          ? nextIndex(slides, idx, playback.loop)
                           : idx + 1 < slides.length
                             ? idx + 1
                             : -1
@@ -1013,6 +1080,14 @@ export function ShowPane({
                         })
                       }}
                     />
+                    </div>
+                    {isPresentation && (
+                      <SlideControls
+                        slide={slide}
+                        presentationId={presentationId}
+                        intervalMs={playback?.intervalMs ?? 5000}
+                      />
+                    )}
                   </motion.div>
                 )
               })}

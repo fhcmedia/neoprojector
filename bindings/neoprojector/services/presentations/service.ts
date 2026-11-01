@@ -14,6 +14,16 @@ import * as database$0 from "../../database/models.js";
 import * as $models from "./models.js";
 
 /**
+ * AddDeckPage stores one rendered page (PNG, JPEG or WebP bytes) as a
+ * hidden image and appends it to the presentation as a slide.
+ */
+export function AddDeckPage(presentationID: number, source: string, page: number, image: string): $CancellablePromise<database$0.PresentationSlide> {
+    return $Call.ByID(1668524088, presentationID, source, page, image).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+/**
  * AddSlide appends a media reference at the end of the presentation.
  * Same media id can be appended multiple times — the operator can
  * repeat slides intentionally (e.g. a brand image as both intro and
@@ -44,6 +54,14 @@ export function DeleteSlide(slideID: number): $CancellablePromise<void> {
     return $Call.ByID(1120660673, slideID);
 }
 
+/**
+ * FinishDeck deletes the temporary PDF registered by PrepareDeck (also
+ * call it when rendering fails or is cancelled).
+ */
+export function FinishDeck(pdfMediaID: number): $CancellablePromise<void> {
+    return $Call.ByID(1821645697, pdfMediaID);
+}
+
 export function ListPresentations(): $CancellablePromise<database$0.Presentation[]> {
     return $Call.ByID(151582756).then(($result: any) => {
         return $$createType2($result);
@@ -53,6 +71,18 @@ export function ListPresentations(): $CancellablePromise<database$0.Presentation
 export function ListSlides(presentationID: number): $CancellablePromise<$models.SlideRow[]> {
     return $Call.ByID(794335169, presentationID).then(($result: any) => {
         return $$createType4($result);
+    });
+}
+
+/**
+ * PrepareDeck makes a PDF of path (converting PowerPoint files) and
+ * registers it for rendering. May take a while the first time a
+ * PowerPoint file is imported on a PC without PowerPoint (LibreOffice
+ * is fetched once); progress arrives as "deck:progress" events.
+ */
+export function PrepareDeck(path: string): $CancellablePromise<$models.DeckFile> {
+    return $Call.ByID(2349766595, path).then(($result: any) => {
+        return $$createType5($result);
     });
 }
 
@@ -79,6 +109,39 @@ export function ReorderSlides(ids: number[]): $CancellablePromise<void> {
     return $Call.ByID(26335312, ids);
 }
 
+/**
+ * SetAllSlidesEnabled includes or excludes every slide of a presentation.
+ */
+export function SetAllSlidesEnabled(presentationID: number, enabled: boolean): $CancellablePromise<void> {
+    return $Call.ByID(2567659195, presentationID, enabled);
+}
+
+/**
+ * SetSlideDuration sets how long a slide stays up while auto-advancing.
+ * 0 means "use the presentation's interval"; anything else is clamped
+ * to the same bounds as the interval.
+ */
+export function SetSlideDuration(slideID: number, durationMs: number): $CancellablePromise<void> {
+    return $Call.ByID(2133333946, slideID, durationMs);
+}
+
+/**
+ * SetSlideEnabled includes (true) or excludes (false) a slide. Excluded
+ * slides stay in the list but next/previous, a clicker and auto-advance
+ * skip them.
+ */
+export function SetSlideEnabled(slideID: number, enabled: boolean): $CancellablePromise<void> {
+    return $Call.ByID(3330055779, slideID, enabled);
+}
+
+/**
+ * SetSourceEnabled includes or excludes every slide imported from one
+ * deck file (the slide's source) at once.
+ */
+export function SetSourceEnabled(presentationID: number, source: string, enabled: boolean): $CancellablePromise<void> {
+    return $Call.ByID(3792479065, presentationID, source, enabled);
+}
+
 export function UpdatePlayback(id: number, settings: $models.PlaybackSettings): $CancellablePromise<database$0.Presentation> {
     return $Call.ByID(9405611, id, settings).then(($result: any) => {
         return $$createType1($result);
@@ -91,3 +154,4 @@ const $$createType1 = database$0.Presentation.createFrom;
 const $$createType2 = $Create.Array($$createType1);
 const $$createType3 = database$0.ListPresentationSlidesRow.createFrom;
 const $$createType4 = $Create.Array($$createType3);
+const $$createType5 = $models.DeckFile.createFrom;

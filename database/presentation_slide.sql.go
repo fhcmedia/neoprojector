@@ -23,6 +23,17 @@ func (q *Queries) CountPresentationSlides(ctx context.Context, presentationID in
 	return count, err
 }
 
+const countSlidesUsingMedia = `-- name: CountSlidesUsingMedia :one
+SELECT COUNT(*) FROM presentation_slide WHERE media_id = ?
+`
+
+func (q *Queries) CountSlidesUsingMedia(ctx context.Context, mediaID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countSlidesUsingMedia, mediaID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createPresentationSlideAppend = `-- name: CreatePresentationSlideAppend :one
 INSERT INTO presentation_slide (presentation_id, media_id, position)
 VALUES (
@@ -30,7 +41,7 @@ VALUES (
   ?2,
   COALESCE((SELECT MAX(position) + 1 FROM presentation_slide WHERE presentation_id = ?1), 0)
 )
-RETURNING id, presentation_id, position, media_id, created_at, updated_at
+RETURNING id, presentation_id, position, media_id, created_at, updated_at, enabled, duration_ms, source
 `
 
 type CreatePresentationSlideAppendParams struct {
@@ -48,6 +59,43 @@ func (q *Queries) CreatePresentationSlideAppend(ctx context.Context, arg CreateP
 		&i.MediaID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Enabled,
+		&i.DurationMs,
+		&i.Source,
+	)
+	return i, err
+}
+
+const createPresentationSlideFromSource = `-- name: CreatePresentationSlideFromSource :one
+INSERT INTO presentation_slide (presentation_id, media_id, source, position)
+VALUES (
+  ?1,
+  ?2,
+  ?3,
+  COALESCE((SELECT MAX(position) + 1 FROM presentation_slide WHERE presentation_id = ?1), 0)
+)
+RETURNING id, presentation_id, position, media_id, created_at, updated_at, enabled, duration_ms, source
+`
+
+type CreatePresentationSlideFromSourceParams struct {
+	PresentationID int64  `json:"presentation_id"`
+	MediaID        int64  `json:"media_id"`
+	Source         string `json:"source"`
+}
+
+func (q *Queries) CreatePresentationSlideFromSource(ctx context.Context, arg CreatePresentationSlideFromSourceParams) (PresentationSlide, error) {
+	row := q.db.QueryRowContext(ctx, createPresentationSlideFromSource, arg.PresentationID, arg.MediaID, arg.Source)
+	var i PresentationSlide
+	err := row.Scan(
+		&i.ID,
+		&i.PresentationID,
+		&i.Position,
+		&i.MediaID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Enabled,
+		&i.DurationMs,
+		&i.Source,
 	)
 	return i, err
 }
@@ -61,8 +109,44 @@ func (q *Queries) DeletePresentationSlide(ctx context.Context, id int64) error {
 	return err
 }
 
+const listHiddenSlideMedia = `-- name: ListHiddenSlideMedia :many
+SELECT DISTINCT m.id, m.path
+FROM presentation_slide ps
+JOIN media m ON m.id = ps.media_id
+WHERE ps.presentation_id = ? AND m.hidden = 1
+`
+
+type ListHiddenSlideMediaRow struct {
+	ID   int64  `json:"id"`
+	Path string `json:"path"`
+}
+
+// Deck page images used by a presentation (deleted with it when unused).
+func (q *Queries) ListHiddenSlideMedia(ctx context.Context, presentationID int64) ([]ListHiddenSlideMediaRow, error) {
+	rows, err := q.db.QueryContext(ctx, listHiddenSlideMedia, presentationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListHiddenSlideMediaRow{}
+	for rows.Next() {
+		var i ListHiddenSlideMediaRow
+		if err := rows.Scan(&i.ID, &i.Path); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPresentationSlides = `-- name: ListPresentationSlides :many
-SELECT ps.id, ps.presentation_id, ps.position, ps.media_id, ps.created_at, ps.updated_at, m.title AS media_title, m.type AS media_type
+SELECT ps.id, ps.presentation_id, ps.position, ps.media_id, ps.created_at, ps.updated_at, ps.enabled, ps.duration_ms, ps.source, m.title AS media_title, m.type AS media_type
 FROM presentation_slide ps
 LEFT JOIN media m ON m.id = ps.media_id
 WHERE ps.presentation_id = ?
@@ -76,6 +160,9 @@ type ListPresentationSlidesRow struct {
 	MediaID        int64          `json:"media_id"`
 	CreatedAt      string         `json:"created_at"`
 	UpdatedAt      string         `json:"updated_at"`
+	Enabled        int64          `json:"enabled"`
+	DurationMs     int64          `json:"duration_ms"`
+	Source         string         `json:"source"`
 	MediaTitle     sql.NullString `json:"media_title"`
 	MediaType      sql.NullString `json:"media_type"`
 }
@@ -96,6 +183,9 @@ func (q *Queries) ListPresentationSlides(ctx context.Context, presentationID int
 			&i.MediaID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Enabled,
+			&i.DurationMs,
+			&i.Source,
 			&i.MediaTitle,
 			&i.MediaType,
 		); err != nil {
@@ -112,6 +202,75 @@ func (q *Queries) ListPresentationSlides(ctx context.Context, presentationID int
 	return items, nil
 }
 
+const presentationSlideByID = `-- name: PresentationSlideByID :one
+SELECT id, presentation_id, position, media_id, created_at, updated_at, enabled, duration_ms, source FROM presentation_slide WHERE id = ?
+`
+
+func (q *Queries) PresentationSlideByID(ctx context.Context, id int64) (PresentationSlide, error) {
+	row := q.db.QueryRowContext(ctx, presentationSlideByID, id)
+	var i PresentationSlide
+	err := row.Scan(
+		&i.ID,
+		&i.PresentationID,
+		&i.Position,
+		&i.MediaID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Enabled,
+		&i.DurationMs,
+		&i.Source,
+	)
+	return i, err
+}
+
+const setAllPresentationSlidesEnabled = `-- name: SetAllPresentationSlidesEnabled :exec
+UPDATE presentation_slide
+SET enabled = ?, updated_at = CURRENT_TIMESTAMP
+WHERE presentation_id = ?
+`
+
+type SetAllPresentationSlidesEnabledParams struct {
+	Enabled        int64 `json:"enabled"`
+	PresentationID int64 `json:"presentation_id"`
+}
+
+func (q *Queries) SetAllPresentationSlidesEnabled(ctx context.Context, arg SetAllPresentationSlidesEnabledParams) error {
+	_, err := q.db.ExecContext(ctx, setAllPresentationSlidesEnabled, arg.Enabled, arg.PresentationID)
+	return err
+}
+
+const setPresentationSlideDuration = `-- name: SetPresentationSlideDuration :exec
+UPDATE presentation_slide
+SET duration_ms = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`
+
+type SetPresentationSlideDurationParams struct {
+	DurationMs int64 `json:"duration_ms"`
+	ID         int64 `json:"id"`
+}
+
+func (q *Queries) SetPresentationSlideDuration(ctx context.Context, arg SetPresentationSlideDurationParams) error {
+	_, err := q.db.ExecContext(ctx, setPresentationSlideDuration, arg.DurationMs, arg.ID)
+	return err
+}
+
+const setPresentationSlideEnabled = `-- name: SetPresentationSlideEnabled :exec
+UPDATE presentation_slide
+SET enabled = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`
+
+type SetPresentationSlideEnabledParams struct {
+	Enabled int64 `json:"enabled"`
+	ID      int64 `json:"id"`
+}
+
+func (q *Queries) SetPresentationSlideEnabled(ctx context.Context, arg SetPresentationSlideEnabledParams) error {
+	_, err := q.db.ExecContext(ctx, setPresentationSlideEnabled, arg.Enabled, arg.ID)
+	return err
+}
+
 const setPresentationSlidePosition = `-- name: SetPresentationSlidePosition :exec
 UPDATE presentation_slide
 SET position = ?, updated_at = CURRENT_TIMESTAMP
@@ -125,5 +284,22 @@ type SetPresentationSlidePositionParams struct {
 
 func (q *Queries) SetPresentationSlidePosition(ctx context.Context, arg SetPresentationSlidePositionParams) error {
 	_, err := q.db.ExecContext(ctx, setPresentationSlidePosition, arg.Position, arg.ID)
+	return err
+}
+
+const setPresentationSlidesEnabledBySource = `-- name: SetPresentationSlidesEnabledBySource :exec
+UPDATE presentation_slide
+SET enabled = ?, updated_at = CURRENT_TIMESTAMP
+WHERE presentation_id = ? AND source = ?
+`
+
+type SetPresentationSlidesEnabledBySourceParams struct {
+	Enabled        int64  `json:"enabled"`
+	PresentationID int64  `json:"presentation_id"`
+	Source         string `json:"source"`
+}
+
+func (q *Queries) SetPresentationSlidesEnabledBySource(ctx context.Context, arg SetPresentationSlidesEnabledBySourceParams) error {
+	_, err := q.db.ExecContext(ctx, setPresentationSlidesEnabledBySource, arg.Enabled, arg.PresentationID, arg.Source)
 	return err
 }

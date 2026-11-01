@@ -74,6 +74,7 @@ type Medium struct {
 	OriginalFilename string `json:"original_filename"`
 	CreatedAt        string `json:"created_at"`
 	UpdatedAt        string `json:"updated_at"`
+	Hidden           int64  `json:"hidden"`
 }
 
 type Overlay struct {
@@ -106,6 +107,9 @@ type PresentationSlide struct {
 	MediaID        int64  `json:"media_id"`
 	CreatedAt      string `json:"created_at"`
 	UpdatedAt      string `json:"updated_at"`
+	Enabled        int64  `json:"enabled"`
+	DurationMs     int64  `json:"duration_ms"`
+	Source         string `json:"source"`
 }
 
 type Service struct {

@@ -48,9 +48,11 @@ export function MediaPicker({
 
   const filtered = useMemo(() => {
     if (!media) return []
-    if (!query.trim()) return media
+    // Deck page images belong to their presentation, not the library.
+    const visible = media.filter((m) => !m.hidden)
+    if (!query.trim()) return visible
     const q = query.toLowerCase()
-    return media.filter(
+    return visible.filter(
       (m) =>
         m.title.toLowerCase().includes(q) ||
         m.original_filename.toLowerCase().includes(q)

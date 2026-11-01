@@ -212,6 +212,9 @@ export class ListPresentationSlidesRow {
     "media_id": number;
     "created_at": string;
     "updated_at": string;
+    "enabled": number;
+    "duration_ms": number;
+    "source": string;
     "media_title": sql$0.NullString;
     "media_type": sql$0.NullString;
 
@@ -235,6 +238,15 @@ export class ListPresentationSlidesRow {
         if (!("updated_at" in $$source)) {
             this["updated_at"] = "";
         }
+        if (!("enabled" in $$source)) {
+            this["enabled"] = 0;
+        }
+        if (!("duration_ms" in $$source)) {
+            this["duration_ms"] = 0;
+        }
+        if (!("source" in $$source)) {
+            this["source"] = "";
+        }
         if (!("media_title" in $$source)) {
             this["media_title"] = (new sql$0.NullString());
         }
@@ -249,14 +261,14 @@ export class ListPresentationSlidesRow {
      * Creates a new ListPresentationSlidesRow instance from a string or object.
      */
     static createFrom($$source: any = {}): ListPresentationSlidesRow {
-        const $$createField6_0 = $$createType1;
-        const $$createField7_0 = $$createType1;
+        const $$createField9_0 = $$createType1;
+        const $$createField10_0 = $$createType1;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("media_title" in $$parsedSource) {
-            $$parsedSource["media_title"] = $$createField6_0($$parsedSource["media_title"]);
+            $$parsedSource["media_title"] = $$createField9_0($$parsedSource["media_title"]);
         }
         if ("media_type" in $$parsedSource) {
-            $$parsedSource["media_type"] = $$createField7_0($$parsedSource["media_type"]);
+            $$parsedSource["media_type"] = $$createField10_0($$parsedSource["media_type"]);
         }
         return new ListPresentationSlidesRow($$parsedSource as Partial<ListPresentationSlidesRow>);
     }
@@ -363,6 +375,7 @@ export class Medium {
     "original_filename": string;
     "created_at": string;
     "updated_at": string;
+    "hidden": number;
 
     /** Creates a new Medium instance. */
     constructor($$source: Partial<Medium> = {}) {
@@ -386,6 +399,9 @@ export class Medium {
         }
         if (!("updated_at" in $$source)) {
             this["updated_at"] = "";
+        }
+        if (!("hidden" in $$source)) {
+            this["hidden"] = 0;
         }
 
         Object.assign(this, $$source);
@@ -509,6 +525,9 @@ export class PresentationSlide {
     "media_id": number;
     "created_at": string;
     "updated_at": string;
+    "enabled": number;
+    "duration_ms": number;
+    "source": string;
 
     /** Creates a new PresentationSlide instance. */
     constructor($$source: Partial<PresentationSlide> = {}) {
@@ -529,6 +548,15 @@ export class PresentationSlide {
         }
         if (!("updated_at" in $$source)) {
             this["updated_at"] = "";
+        }
+        if (!("enabled" in $$source)) {
+            this["enabled"] = 0;
+        }
+        if (!("duration_ms" in $$source)) {
+            this["duration_ms"] = 0;
+        }
+        if (!("source" in $$source)) {
+            this["source"] = "";
         }
 
         Object.assign(this, $$source);

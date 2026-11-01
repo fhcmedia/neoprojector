@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react"
+import { openFilesSafe } from "@/lib/open-files"
 import { AnimatePresence, motion } from "motion/react"
 import { useNavigate } from "@tanstack/react-router"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
@@ -12,7 +13,7 @@ import {
 } from "lucide-react"
 import { useSessionState } from "@/hooks/use-session-state"
 import { useDebounce } from "@/hooks/use-debounce"
-import { Dialogs, Events } from "@wailsio/runtime"
+import { Events } from "@wailsio/runtime"
 import { Service as Media } from "@/bindings/neoprojector/services/media"
 import { Service as Bible } from "@/bindings/neoprojector/services/bible"
 import type { BibleBook } from "@/bindings/neoprojector/database"
@@ -190,7 +191,7 @@ export function LibraryView({
   }
 
   async function openMediaFileDialog() {
-    const picked = await Dialogs.OpenFile({
+    const picked = await openFilesSafe({
       Title: "Add media",
       AllowsMultipleSelection: true,
       CanChooseFiles: true,

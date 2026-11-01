@@ -37,6 +37,14 @@ export type Slide = {
   // and per-slide delete actions. Undefined for bible/song/single-
   // media slides.
   presentationSlideId?: number
+  // Presentation-slide options (migration 0022). excluded slides stay
+  // listed but next/previous, a clicker and auto-advance skip them;
+  // durationMs (0 = presentation interval) is this slide's auto-advance
+  // dwell; source is the deck file it was imported from ("" if added
+  // on its own).
+  excluded?: boolean
+  durationMs?: number
+  source?: string
 }
 
 // PresentationPlayback carries the per-presentation runtime settings
@@ -124,9 +132,15 @@ export function usePresentationSlides(
         caption: title,
         body: title,
         presentationSlideId: s.id,
+        excluded: s.enabled === 0,
+        durationMs: s.duration_ms,
+        source: s.source,
         fill: {
           media: {
             mediaId: s.media_id,
+            // Deck pages are whole slides: letterbox, never crop (a 4:3
+            // deck on a 16:9 screen keeps its edges).
+            ...(s.source ? { mode: "contain" as const } : {}),
             // Background-style playback: video slides loop muted by
             // default so the operator doesn't have to babysit a per-
             // slide control surface. Tweak in the schedule editor if

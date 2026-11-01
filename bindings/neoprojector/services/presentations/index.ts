@@ -7,6 +7,7 @@ export {
 };
 
 export {
+    DeckFile,
     PlaybackSettings,
     SlideRow
 } from "./models.js";

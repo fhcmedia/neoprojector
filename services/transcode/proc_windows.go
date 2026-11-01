@@ -12,10 +12,11 @@ const (
 	belowNormalPriorityClass = 0x00004000
 )
 
-// quiet runs ffmpeg/ffprobe without flashing a console window over the
-// operator UI, at below-normal priority so a conversion can never starve
-// the app (or a live service) of CPU.
-func quiet(cmd *exec.Cmd) {
+// HideWindow runs a helper process (ffmpeg, LibreOffice, PowerShell)
+// without flashing a console window over the operator UI, at below-
+// normal priority so a conversion can never starve the app (or a live
+// service) of CPU.
+func HideWindow(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		HideWindow:    true,
 		CreationFlags: createNoWindow | belowNormalPriorityClass,

@@ -27,6 +27,7 @@ import type { Medium } from "@/bindings/neoprojector/database"
 import { useVideoAssetUrl } from "@/lib/media-url"
 import { clockFrom, useSyncedPlayback, type PlayClock } from "@/lib/media-sync"
 import { IS_OPERATOR_WINDOW } from "@/features/live/live-context"
+import { useMediaItem } from "@/lib/media-item"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -608,12 +609,7 @@ function BackgroundLayer({
 // /audio element so the audience output stays in sync with whatever
 // the operator clicked, with no autonomous playhead drift.
 function MediaSurface({ media }: { media: MediaRef }) {
-  const { data: list } = useQuery({
-    queryKey: ["media", "list"],
-    queryFn: () => Media.ListMedia() as unknown as Promise<Medium[]>,
-    staleTime: 60_000,
-  })
-  const item = list?.find((m) => m.id === media.mediaId)
+  const { item } = useMediaItem(media.mediaId)
   const src = `/media-asset/${media.mediaId}`
   const videoSrc = useVideoAssetUrl(media.mediaId)
   // `mode` is overloaded: legacy values "cover"/"contain" map directly

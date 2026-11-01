@@ -74,7 +74,7 @@ func Ensure(ctx context.Context, dataDir string, progress func(pct int)) (Tools,
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return Tools{}, err
 	}
-	zipPath, err := download(ctx, ffmpegURL, ffmpegSHA256, dir, progress)
+	zipPath, err := DownloadVerified(ctx, ffmpegURL, ffmpegSHA256, dir, progress)
 	if zipPath != "" {
 		defer os.Remove(zipPath)
 	}
@@ -90,8 +90,10 @@ func Ensure(ctx context.Context, dataDir string, progress func(pct int)) (Tools,
 	return t, nil
 }
 
-// download fetches url into dir, verifying the sha256 as it streams.
-func download(ctx context.Context, url, wantSHA, dir string, progress func(int)) (string, error) {
+// DownloadVerified fetches url into a temp file in dir, verifying its
+// sha256 as it streams; the returned path (also on error, when a file
+// was created) is the caller's to remove. progress gets 0–100.
+func DownloadVerified(ctx context.Context, url, wantSHA, dir string, progress func(int)) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
@@ -104,7 +106,7 @@ func download(ctx context.Context, url, wantSHA, dir string, progress func(int))
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("%s", resp.Status)
 	}
-	f, err := os.CreateTemp(dir, "ffmpeg-*.zip.part")
+	f, err := os.CreateTemp(dir, "download-*.part")
 	if err != nil {
 		return "", err
 	}

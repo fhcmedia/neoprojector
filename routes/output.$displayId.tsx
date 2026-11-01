@@ -33,6 +33,8 @@ import {
 } from "@/features/overlays/stagger"
 import { BackgroundCrossfade } from "@/features/backgrounds/background-crossfade"
 import { useVideoAssetUrl } from "@/lib/media-url"
+import { FORWARDED_KEYS, OUTPUT_KEY_EVENT } from "@/hooks/use-keybinds"
+import { useMediaItem } from "@/lib/media-item"
 import { clockFrom, useSyncedPlayback } from "@/lib/media-sync"
 
 // /output/$displayId is rendered inside each fullscreen secondary
@@ -61,6 +63,21 @@ function OutputWindow() {
   // the blank native window WebView2 sits in before its first paint.
   useEffect(() => {
     Events.Emit("output:ready")
+  }, [])
+
+  // A presentation clicker types into whichever window has focus. If a
+  // projector window has it, hand navigation keys to the operator
+  // window (hooks/use-keybinds.ts), which drives the slides — and
+  // never let F5 reload this window.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!FORWARDED_KEYS.has(e.key)) return
+      e.preventDefault()
+      if (e.metaKey || e.ctrlKey || e.altKey) return
+      void Events.Emit(OUTPUT_KEY_EVENT, e.key)
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
   }, [])
 
   // Cross-window invalidation: each output window is a separate
@@ -409,12 +426,7 @@ function MediaLayer({
   live: MediaRef | undefined
   durationMs: number
 }) {
-  const { data: list } = useQuery({
-    queryKey: ["media", "list"],
-    queryFn: () => Media.ListMedia() as unknown as Promise<Medium[]>,
-    staleTime: 60_000,
-  })
-  const item = list?.find((m) => m.id === mediaId)
+  const { item } = useMediaItem(mediaId)
   const isVisible = !!live
   const lastRestart = useRef(live?.restartToken ?? 0)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -552,12 +564,7 @@ function MediaLayer({
 // change, but the HTTP cache + warmed codec path makes the cold start
 // much shorter than from-scratch.
 function NextMediaWarmer({ mediaId }: { mediaId: number }) {
-  const { data: list } = useQuery({
-    queryKey: ["media", "list"],
-    queryFn: () => Media.ListMedia() as unknown as Promise<Medium[]>,
-    staleTime: 60_000,
-  })
-  const type = list?.find((m) => m.id === mediaId)?.type
+  const type = useMediaItem(mediaId > 0 ? mediaId : null).item?.type
   const isVideo = type === "video"
   const videoSrc = useVideoAssetUrl(isVideo ? mediaId : undefined)
   // Warm by real type only — an <img> on a video file goes through the

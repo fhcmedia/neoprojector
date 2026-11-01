@@ -12,6 +12,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 type Service struct {
@@ -598,6 +599,13 @@ func (s *Service) StartLive(ctx context.Context) error {
 		log.Info("StartLive: window placed",
 			"display", d.Name,
 		)
+		// A projector window closed by hand (Alt+F4, the taskbar) must
+		// leave the live set, or Present can't reopen it and audio can
+		// stay assigned to a window that no longer exists.
+		displayID := d.ID
+		win.OnWindowEvent(events.Common.WindowClosing, func(*application.WindowEvent) {
+			s.outputClosed(ctx, displayID, win)
+		})
 		opened[d.ID] = win
 	}
 	if len(opened) == 0 && !bypass {
@@ -678,6 +686,26 @@ func (s *Service) StopLive(_ context.Context) {
 	for _, w := range live {
 		w.Close()
 	}
+}
+
+// outputClosed drops an output window that closed while live. When it
+// was the last one, the service is no longer live (Present reopens
+// everything). StopLive's own closes find s.live already nil: no-op.
+func (s *Service) outputClosed(ctx context.Context, displayID int64, win *application.WebviewWindow) {
+	s.mu.Lock()
+	if s.live == nil || s.live[displayID] != win {
+		s.mu.Unlock()
+		return
+	}
+	delete(s.live, displayID)
+	delete(s.pending, win.Name())
+	if len(s.live) == 0 {
+		s.live = nil
+	}
+	s.mu.Unlock()
+	log.Info("output window closed while live", "display", displayID)
+	s.refreshAudio(context.WithoutCancel(ctx))
+	emitChanged()
 }
 
 // PushLive caches the snapshot from the main window and rebroadcasts
