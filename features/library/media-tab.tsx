@@ -8,6 +8,7 @@ import {
   FileTextIcon,
   FileIcon,
   Trash2Icon,
+  TriangleAlertIcon,
   UploadIcon,
   XIcon,
 } from "lucide-react"
@@ -17,6 +18,11 @@ import type { Medium } from "@/bindings/neoprojector/database"
 import { cn } from "@/lib/utils"
 import { useDebounce } from "@/hooks/use-debounce"
 import { useVideoAssetUrl } from "@/lib/media-url"
+import {
+  useVideoInfo,
+  useVideoPlayback,
+  videoProblem,
+} from "@/lib/video-support"
 
 export type MediaKind = "all" | "image" | "video" | "audio" | "pdf"
 
@@ -146,6 +152,14 @@ function MediaTile({
   )
   const [pendingDelete, setPendingDelete] = useState(false)
   const tileRef = useRef<HTMLDivElement | null>(null)
+  // Explain a black tile: codec from the file + what this PC can draw.
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const playback = useVideoPlayback(videoRef, videoSrc)
+  const { data: videoInfo } = useVideoInfo(
+    medium.type === "video" ? medium.id : null
+  )
+  const problem =
+    medium.type === "video" ? videoProblem(videoInfo, playback) : null
 
   // Click anywhere outside the tile cancels a pending delete — same
   // affordance as the templates / overlays tabs. Without this, the
@@ -189,6 +203,7 @@ function MediaTile({
             />
           ) : medium.type === "video" ? (
             <video
+              ref={videoRef}
               src={videoSrc}
               className="absolute inset-0 h-full w-full object-cover"
               preload="auto"
@@ -207,6 +222,15 @@ function MediaTile({
           ) : (
             <div className="grid h-full place-items-center text-muted-foreground/60">
               <Icon className="size-6 opacity-70" />
+            </div>
+          )}
+          {problem && (
+            <div
+              title={problem.detail}
+              className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-black/80 px-2 py-1 text-[10px] font-medium text-amber-400"
+            >
+              <TriangleAlertIcon className="size-3 shrink-0" />
+              <span className="truncate">{problem.short}</span>
             </div>
           )}
         </div>

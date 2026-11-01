@@ -6,6 +6,40 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
+ * AppInfo is what the operator sees under Settings → About: the build's
+ * version and whether it auto-updates (dev builds never do; beta builds
+ * follow every push to main; stable builds follow tagged releases).
+ */
+export class AppInfo {
+    "version": string;
+
+    /**
+     * "dev" | "beta" | "stable"
+     */
+    "channel": string;
+
+    /** Creates a new AppInfo instance. */
+    constructor($$source: Partial<AppInfo> = {}) {
+        if (!("version" in $$source)) {
+            this["version"] = "";
+        }
+        if (!("channel" in $$source)) {
+            this["channel"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new AppInfo instance from a string or object.
+     */
+    static createFrom($$source: any = {}): AppInfo {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new AppInfo($$parsedSource as Partial<AppInfo>);
+    }
+}
+
+/**
  * MediaServerInfo is how a caller reaches the loopback media server:
  * the port it's listening on and the token it requires (see
  * startMediaServer in main.go).

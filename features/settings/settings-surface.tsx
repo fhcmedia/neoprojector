@@ -1,4 +1,6 @@
 import { useMemo } from "react"
+import * as AppService from "@/bindings/neoprojector/app"
+import type { AppInfo } from "@/bindings/neoprojector/models"
 import { MinusIcon, PlusIcon } from "lucide-react"
 import { Switch } from "@/components/switch"
 import { Input } from "@/components/input"
@@ -251,6 +253,12 @@ function GeneralPanel() {
           <ServiceNameFormatField />
         </div>
       </div>
+      <Row
+        label="Version"
+        description="This build, and how it gets updates. Beta builds update on every push to GitHub; stable builds only on tagged releases; dev builds never."
+      >
+        <VersionInfo />
+      </Row>
     </div>
   )
 }
@@ -403,6 +411,29 @@ function TranslationRow({
           ))}
         </DropdownMenuContent>
       </DropdownMenu>
+    </div>
+  )
+}
+
+// VersionInfo shows the running build and its update channel — the quick
+// way to tell what a given church PC is actually running.
+function VersionInfo() {
+  const { data } = useQuery({
+    queryKey: ["app", "info"],
+    queryFn: () => AppService.Info() as unknown as Promise<AppInfo>,
+    staleTime: Infinity,
+  })
+  if (!data) return null
+  const channel =
+    data.channel === "dev"
+      ? "dev build · no auto-update"
+      : data.channel === "beta"
+        ? "beta · auto-updates on every push"
+        : "stable · auto-updates on releases"
+  return (
+    <div className="flex flex-col items-end gap-0.5 text-right">
+      <span className="font-mono text-xs text-foreground">{data.version}</span>
+      <span className="text-[10px] text-muted-foreground">{channel}</span>
     </div>
   )
 }

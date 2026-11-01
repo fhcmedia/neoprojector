@@ -7,5 +7,6 @@ export {
 };
 
 export {
+    AppInfo,
     MediaServerInfo
 } from "./models.js";

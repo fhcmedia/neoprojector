@@ -9,6 +9,12 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
+export function Info(): $CancellablePromise<$models.AppInfo> {
+    return $Call.ByID(2444629213).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
 export function Initialize(): $CancellablePromise<void> {
     return $Call.ByID(2338951747);
 }
@@ -25,9 +31,10 @@ export function Initialize(): $CancellablePromise<void> {
  */
 export function MediaServer(): $CancellablePromise<$models.MediaServerInfo> {
     return $Call.ByID(2634985592).then(($result: any) => {
-        return $$createType0($result);
+        return $$createType1($result);
     });
 }
 
 // Private type creation functions
-const $$createType0 = $models.MediaServerInfo.createFrom;
+const $$createType0 = $models.AppInfo.createFrom;
+const $$createType1 = $models.MediaServerInfo.createFrom;

@@ -5,3 +5,7 @@ import * as Service from "./service.js";
 export {
     Service
 };
+
+export {
+    VideoInfo
+} from "./models.js";

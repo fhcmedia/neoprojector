@@ -28,6 +28,7 @@ import {
   Volume2Icon,
   VolumeXIcon,
   RotateCcwIcon,
+  TriangleAlertIcon,
 } from "lucide-react"
 import { useShowTemplate } from "@/features/show/use-show-template"
 import { ScaledTemplate } from "@/features/templates/renderer"
@@ -36,6 +37,11 @@ import { songSectionType } from "@/features/songs/section-types"
 import { cn } from "@/lib/utils"
 import { useVideoAssetUrl } from "@/lib/media-url"
 import { clockFrom, useSyncedPlayback } from "@/lib/media-sync"
+import {
+  useVideoInfo,
+  useVideoPlayback,
+  videoProblem,
+} from "@/lib/video-support"
 import { Button } from "@/components/button"
 import { Slider } from "@/components/slider"
 import {
@@ -1318,6 +1324,13 @@ function MediaPreview({
     if (!isLive) previewRef.current?.pause()
   }, [isLive])
 
+  // A black preview needs a reason: the file's codec + what this PC's
+  // player managed. HEVC on a machine without the HEVC extension (or
+  // ProRes anywhere) imports fine and then never shows a picture.
+  const playback = useVideoPlayback(previewRef, isVideo ? videoSrc : undefined)
+  const { data: videoInfo } = useVideoInfo(isVideo ? mediaId : null)
+  const problem = isVideo ? videoProblem(videoInfo, playback) : null
+
   const mediaEvents = {
     onLoadedMetadata: (e: React.SyntheticEvent<HTMLMediaElement>) => {
       const el = e.currentTarget
@@ -1399,6 +1412,16 @@ function MediaPreview({
           </div>
         )}
       </div>
+
+      {problem && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
+          <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-amber-400" />
+          <div className="flex flex-col gap-0.5">
+            <span className="font-medium text-amber-300">{problem.short}</span>
+            <span className="text-muted-foreground">{problem.detail}</span>
+          </div>
+        </div>
+      )}
 
       {/* Transport — drives the live playhead on every screen. */}
       {(isVideo || isAudio) && isLive ? (

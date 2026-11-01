@@ -72,6 +72,21 @@ func (s *Service) DeleteMedia(ctx context.Context, id int64) error {
 // storage directory under a uuid-prefixed filename, then inserts a media row
 // for it. Files of unknown type are skipped. Returns the created rows in
 // input order; missing entries indicate skipped files.
+// VideoInfo reports a video's codec and whether the app can be expected
+// to play it (see ProbeVideo), so the UI can explain a black tile —
+// typically HEVC on a PC without Microsoft's HEVC extension, or ProRes.
+// Non-video media report Support "unknown".
+func (s *Service) VideoInfo(ctx context.Context, id int64) (VideoInfo, error) {
+	row, err := s.q.MediaByID(ctx, id)
+	if err != nil {
+		return VideoInfo{}, err
+	}
+	if row.Type != "video" {
+		return VideoInfo{Support: "unknown"}, nil
+	}
+	return ProbeVideo(row.Path), nil
+}
+
 func (s *Service) ImportFiles(ctx context.Context, paths []string) ([]database.Medium, error) {
 	mediaDir, err := xdg.DataFile("neoprojector/media/.touch")
 	if err != nil {

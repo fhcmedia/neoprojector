@@ -9,6 +9,10 @@ import { Call as $Call, CancellablePromise as $CancellablePromise, Create as $Cr
 // @ts-ignore: Unused imports
 import * as database$0 from "../../database/models.js";
 
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore: Unused imports
+import * as $models from "./models.js";
+
 /**
  * DeleteMedia removes the DB row and the on-disk file together. A
  * failure to remove the file is logged but does not roll the DB row
@@ -19,12 +23,6 @@ export function DeleteMedia(id: number): $CancellablePromise<void> {
     return $Call.ByID(3130460193, id);
 }
 
-/**
- * ImportFiles copies each given absolute file path into the app's media
- * storage directory under a uuid-prefixed filename, then inserts a media row
- * for it. Files of unknown type are skipped. Returns the created rows in
- * input order; missing entries indicate skipped files.
- */
 export function ImportFiles(paths: string[]): $CancellablePromise<database$0.Medium[]> {
     return $Call.ByID(4277240612, paths).then(($result: any) => {
         return $$createType1($result);
@@ -44,6 +42,23 @@ export function ListMedia(): $CancellablePromise<database$0.Medium[]> {
     });
 }
 
+/**
+ * ImportFiles copies each given absolute file path into the app's media
+ * storage directory under a uuid-prefixed filename, then inserts a media row
+ * for it. Files of unknown type are skipped. Returns the created rows in
+ * input order; missing entries indicate skipped files.
+ * VideoInfo reports a video's codec and whether the app can be expected
+ * to play it (see ProbeVideo), so the UI can explain a black tile —
+ * typically HEVC on a PC without Microsoft's HEVC extension, or ProRes.
+ * Non-video media report Support "unknown".
+ */
+export function VideoInfo(id: number): $CancellablePromise<$models.VideoInfo> {
+    return $Call.ByID(4144637947, id).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
 // Private type creation functions
 const $$createType0 = database$0.Medium.createFrom;
 const $$createType1 = $Create.Array($$createType0);
+const $$createType2 = $models.VideoInfo.createFrom;

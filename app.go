@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"neoprojector/database"
@@ -47,6 +48,25 @@ type MediaServerInfo struct {
 // the app on Windows. A real network request streams normally.
 func (a *App) MediaServer(_ context.Context) MediaServerInfo {
 	return MediaServerInfo{Port: a.mediaServerPort, Token: a.mediaServerToken}
+}
+
+// AppInfo is what the operator sees under Settings → About: the build's
+// version and whether it auto-updates (dev builds never do; beta builds
+// follow every push to main; stable builds follow tagged releases).
+type AppInfo struct {
+	Version string `json:"version"`
+	Channel string `json:"channel"` // "dev" | "beta" | "stable"
+}
+
+func (a *App) Info(_ context.Context) AppInfo {
+	ch := "stable"
+	switch {
+	case version == "0.0.0-dev":
+		ch = "dev"
+	case strings.Contains(version, "-"):
+		ch = "beta"
+	}
+	return AppInfo{Version: version, Channel: ch}
 }
 
 func (a *App) Initialize() {
