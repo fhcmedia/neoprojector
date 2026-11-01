@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { Service as Media } from "@/bindings/neoprojector/services/media"
 import type { VideoInfo } from "@/bindings/neoprojector/services/media"
 import type { PlaybackState } from "./video-problem"
+import { mediaVersion, useMediaRevision } from "./media-optimize"
 
 export { videoProblem, type PlaybackState } from "./video-problem"
 
@@ -17,10 +18,13 @@ export { videoProblem, type PlaybackState } from "./video-problem"
 //   - what this machine's player actually managed (useVideoPlayback).
 
 // useVideoInfo: the file's codec + expected support. Codecs never change
-// for a stored file, so cache forever.
+// for a stored file, so cache forever…
 export function useVideoInfo(mediaId: number | null | undefined) {
+  // …except when the file is replaced by its playback copy.
+  useMediaRevision()
+  const v = mediaId ? mediaVersion(mediaId) : 0
   return useQuery({
-    queryKey: ["media", "video-info", mediaId],
+    queryKey: ["media", "video-info", mediaId, v],
     queryFn: () => Media.VideoInfo(mediaId!) as unknown as Promise<VideoInfo>,
     enabled: !!mediaId,
     staleTime: Infinity,

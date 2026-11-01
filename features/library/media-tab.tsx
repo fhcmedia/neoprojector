@@ -7,17 +7,24 @@ import {
   FileAudioIcon,
   FileTextIcon,
   FileIcon,
+  Loader2Icon,
   Trash2Icon,
   TriangleAlertIcon,
   UploadIcon,
   XIcon,
 } from "lucide-react"
 import { AddTile } from "@/features/library/add-tile"
+import { Progress } from "@/components/progress"
 import { Service as Media } from "@/bindings/neoprojector/services/media"
 import type { Medium } from "@/bindings/neoprojector/database"
 import { cn } from "@/lib/utils"
 import { useDebounce } from "@/hooks/use-debounce"
 import { useVideoAssetUrl } from "@/lib/media-url"
+import {
+  isOptimizing,
+  optimizeLabel,
+  useOptimizeStatus,
+} from "@/lib/media-optimize"
 import {
   useVideoInfo,
   useVideoPlayback,
@@ -160,6 +167,12 @@ function MediaTile({
   )
   const problem =
     medium.type === "video" ? videoProblem(videoInfo, playback) : null
+  // Heavy videos get a smooth playback copy in the background; while
+  // that's underway, show its progress instead of the problem.
+  const optimize = useOptimizeStatus(
+    medium.type === "video" ? medium.id : null
+  )
+  const optimizing = isOptimizing(optimize)
 
   // Click anywhere outside the tile cancels a pending delete — same
   // affordance as the templates / overlays tabs. Without this, the
@@ -206,13 +219,14 @@ function MediaTile({
               ref={videoRef}
               src={videoSrc}
               className="absolute inset-0 h-full w-full object-cover"
-              preload="auto"
+              // metadata, not auto: a thumbnail needs one frame, and a
+              // library of 1 GB videos must not buffer them all.
+              preload="metadata"
               muted
               playsInline
               // Seek to ~0.5s once metadata is ready so the tile shows
               // a frame mid-action instead of the often-black first
-              // frame. preload="auto" makes sure enough bytes are
-              // buffered to satisfy the seek.
+              // frame (the seek fetches just the bytes it needs).
               onLoadedMetadata={(e) => {
                 const el = e.currentTarget
                 const t = Math.min(0.5, Math.max(0, (el.duration || 0) - 0.1))
@@ -224,7 +238,29 @@ function MediaTile({
               <Icon className="size-6 opacity-70" />
             </div>
           )}
-          {problem && (
+          {optimize && optimizing ? (
+            <div
+              title={`Making a smooth playback copy (${optimize.reason}). The original stays usable until it's ready.`}
+              className="absolute inset-x-0 bottom-0 bg-black/80 text-[10px] font-medium text-sky-300"
+            >
+              <div className="flex items-center gap-1.5 px-2 py-1">
+                <Loader2Icon className="size-3 shrink-0 animate-spin" />
+                <span className="truncate">{optimizeLabel(optimize)}</span>
+              </div>
+              <Progress
+                value={optimize.state === "converting" || optimize.state === "downloading" ? optimize.pct : 0}
+                className="h-0.5 rounded-none bg-white/10 [&>[data-slot=progress-indicator]]:bg-sky-400"
+              />
+            </div>
+          ) : optimize?.state === "failed" ? (
+            <div
+              title={optimize.error}
+              className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-black/80 px-2 py-1 text-[10px] font-medium text-amber-400"
+            >
+              <TriangleAlertIcon className="size-3 shrink-0" />
+              <span className="truncate">{optimizeLabel(optimize)}</span>
+            </div>
+          ) : problem && (
             <div
               title={problem.detail}
               className="absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-black/80 px-2 py-1 text-[10px] font-medium text-amber-400"

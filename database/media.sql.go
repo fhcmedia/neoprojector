@@ -140,6 +140,29 @@ func (q *Queries) MediaByID(ctx context.Context, id int64) (Medium, error) {
 	return i, err
 }
 
+const swapMediaPath = `-- name: SwapMediaPath :execrows
+UPDATE media
+SET path = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND path = ?
+`
+
+type SwapMediaPathParams struct {
+	Path   string `json:"path"`
+	ID     int64  `json:"id"`
+	Path_2 string `json:"path_2"`
+}
+
+// Points a media row at a new file (a playback copy), but only if it
+// still points at the file the copy was made from; a concurrent delete
+// or re-swap makes this a no-op (0 rows) instead of clobbering it.
+func (q *Queries) SwapMediaPath(ctx context.Context, arg SwapMediaPathParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, swapMediaPath, arg.Path, arg.ID, arg.Path_2)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const updateMedia = `-- name: UpdateMedia :one
 UPDATE media
 SET title = ?, updated_at = CURRENT_TIMESTAMP

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"embed"
@@ -116,6 +117,9 @@ func startMediaServer(db *sql.DB) (port int, token string, err error) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
+		// A video's file can be replaced by its playback copy under the
+		// same id; never let a cached response mix bytes of the two.
+		w.Header().Set("Cache-Control", "no-store")
 		assets.ServeHTTP(w, r)
 	})
 
@@ -168,6 +172,10 @@ func main() {
 
 	wailsLog := slog.New(newCharmSlogHandler(charmlog.Default().WithPrefix("wails")))
 
+	displaysSvc := displays.New(db)
+	// Video conversions pause while a service is live (see media/optimize.go).
+	mediaSvc := media.New(db, func() bool { return displaysSvc.IsLive(context.Background()) })
+
 	app := application.New(application.Options{
 		Name:        "neoprojector",
 		Description: "Church presentation software",
@@ -177,10 +185,10 @@ func main() {
 			application.NewService(NewApp(db, mediaServerPort, mediaServerToken)),
 			application.NewService(songs.New(db)),
 			application.NewService(bible.New(db)),
-			application.NewService(media.New(db)),
+			application.NewService(mediaSvc),
 			application.NewService(schedule.New(db)),
 			application.NewService(templates.New(db)),
-			application.NewService(displays.New(db)),
+			application.NewService(displaysSvc),
 			application.NewService(overlays.New(db)),
 			application.NewService(presentations.New(db)),
 			application.NewService(backgrounds.New(db)),
@@ -213,7 +221,7 @@ func openSplashWindow() *application.WebviewWindow {
 		DisableResize:   true,
 		DevToolsEnabled: false,
 		InitialPosition: application.WindowCentered,
-		URL: "/splash",
+		URL:             "/splash",
 	})
 }
 

@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 import { MediaServer } from "@/bindings/neoprojector/app"
+import { mediaVersion, useMediaRevision } from "./media-optimize"
 
 export type MediaServerConn = { port: number; token: string }
 
@@ -18,6 +19,9 @@ export type MediaServerConn = { port: number; token: string }
 // hooks. Those callers call this once and build URLs with
 // videoAssetUrl() in a plain loop instead.
 export function useMediaServerConn(): MediaServerConn | undefined {
+  // Re-render when a video is replaced by its playback copy, so URLs
+  // built with videoAssetUrl() pick up the new version.
+  useMediaRevision()
   const { data } = useQuery({
     queryKey: ["mediaServer"],
     queryFn: () => MediaServer(),
@@ -34,7 +38,10 @@ export function videoAssetUrl(
   mediaId: number | null | undefined
 ): string | undefined {
   if (mediaId === null || mediaId === undefined || !conn) return undefined
-  return `http://127.0.0.1:${conn.port}/media-asset/${mediaId}?t=${conn.token}`
+  // v changes when the file behind this id is replaced (playback copy),
+  // so players reload instead of reading the new file mid-stream.
+  const v = mediaVersion(mediaId)
+  return `http://127.0.0.1:${conn.port}/media-asset/${mediaId}?t=${conn.token}${v ? `&v=${v}` : ""}`
 }
 
 // Builds the loopback URL for a single video's bytes. Returns

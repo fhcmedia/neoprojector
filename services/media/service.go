@@ -18,11 +18,16 @@ import (
 )
 
 type Service struct {
-	q *database.Queries
+	q   *database.Queries
+	opt *optimizer
 }
 
-func New(db *sql.DB) *Service {
-	return &Service{q: database.New(db)}
+// New creates the media service. isLive reports whether a service is
+// live; background video conversions pause while it returns true.
+func New(db *sql.DB, isLive func() bool) *Service {
+	s := &Service{q: database.New(db)}
+	s.opt = newOptimizer(s, isLive)
+	return s
 }
 
 func (*Service) ServiceName() string { return "media" }
@@ -98,6 +103,7 @@ func (s *Service) ImportFiles(ctx context.Context, paths []string) ([]database.M
 	}
 
 	out := make([]database.Medium, 0, len(paths))
+	defer s.opt.poke()
 	for _, src := range paths {
 		row, err := s.importOne(ctx, mediaDir, src)
 		if err != nil {

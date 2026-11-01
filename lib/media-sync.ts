@@ -73,6 +73,56 @@ export function correction(
   return { seek: null, rate: 1 }
 }
 
+// Seek pacing. A big video on a modest PC can take longer to seek than
+// one sync tick; seeking again before it lands restarts the seek, and the
+// element freezes in a seek loop. So: never correct while a seek or a
+// buffer stall is in progress, measure how long seeks take here, wait at
+// least twice that before the next seek, and aim the seek that much
+// ahead so it lands on time instead of already behind.
+export const MIN_SEEK_COOLDOWN_MS = 750
+export const MAX_SEEK_COOLDOWN_MS = 4000
+// Never lead a seek by more than this (a pathological measurement).
+export const MAX_SEEK_LEAD = 1.5
+
+export type SeekPacer = {
+  // EMA of measured seek durations, ms (0 = nothing measured yet).
+  latencyMs: number
+  // When the last seek was issued (0 = never) and when it completed.
+  issuedAt: number
+  pending: boolean
+}
+
+export function newSeekPacer(): SeekPacer {
+  return { latencyMs: 0, issuedAt: 0, pending: false }
+}
+
+// seekCooldownMs: how long after a seek before another may be issued.
+export function seekCooldownMs(p: SeekPacer): number {
+  return Math.min(
+    MAX_SEEK_COOLDOWN_MS,
+    Math.max(MIN_SEEK_COOLDOWN_MS, p.latencyMs * 2)
+  )
+}
+
+// canSeek: no seek in flight, and the cooldown since the last one is over.
+export function canSeek(p: SeekPacer, nowMs: number): boolean {
+  if (p.pending) return false
+  return p.issuedAt === 0 || nowMs - p.issuedAt >= seekCooldownMs(p)
+}
+
+// seekLead: seconds to aim ahead when seeking a playing element.
+export function seekLead(p: SeekPacer): number {
+  return Math.min(MAX_SEEK_LEAD, p.latencyMs / 1000)
+}
+
+// seekLanded records a finished seek's duration into the EMA.
+export function seekLanded(p: SeekPacer, nowMs: number) {
+  if (!p.pending) return
+  p.pending = false
+  const took = Math.max(0, nowMs - p.issuedAt)
+  p.latencyMs = p.latencyMs === 0 ? took : p.latencyMs * 0.6 + took * 0.4
+}
+
 // useSyncedPlayback keeps a media element on the clock. `clock` null
 // disables it (legacy fill without anchors, or the surface is hidden).
 // Muting is left to the caller.
@@ -90,6 +140,7 @@ export function useSyncedPlayback(
     // loading); the interval reads ref.current each tick, so it picks
     // the element up whenever it arrives.
     const el = ref.current
+    const pacer = newSeekPacer()
     const step = () => {
       const c = clockRef.current
       const media = ref.current
@@ -97,12 +148,41 @@ export function useSyncedPlayback(
       const now = Date.now()
       const ended = hasEnded(c, now, media.duration)
       const wantPlaying = c.playing && !ended
-      const target = targetPosition(c, now, media.duration)
-      const fix = correction(media.currentTime, target, wantPlaying)
-      if (fix.seek !== null) media.currentTime = fix.seek
-      if (media.playbackRate !== fix.rate) media.playbackRate = fix.rate
       if (wantPlaying && media.paused) void media.play().catch(() => {})
       if (!wantPlaying && !media.paused) media.pause()
+      // A seek still landing, or a playing element stalled for data:
+      // correcting now would only restart the wait. Let it finish.
+      if (media.seeking || (wantPlaying && media.readyState < 3)) return
+      // seeked is only listened for on the element present at arm time;
+      // one that mounted later still lands its seeks here.
+      if (pacer.pending) seekLanded(pacer, now)
+      const target = targetPosition(c, now, media.duration)
+      const fix = correction(media.currentTime, target, wantPlaying)
+      if (fix.seek !== null && canSeek(pacer, now)) {
+        const lead = wantPlaying ? seekLead(pacer) : 0
+        const d = media.duration
+        let to = fix.seek + lead
+        if (Number.isFinite(d) && d > 0) {
+          to = c.loop ? to % d : Math.min(to, Math.max(0, d - 0.05))
+        }
+        pacer.issuedAt = now
+        pacer.pending = true
+        media.currentTime = to
+        if (media.playbackRate !== 1) media.playbackRate = 1
+        return
+      }
+      // Between seeks, close what drift we can with the rate nudge.
+      const rate =
+        fix.seek !== null
+          ? media.currentTime < target
+            ? 1 + NUDGE
+            : 1 - NUDGE
+          : fix.rate
+      if (media.playbackRate !== rate) media.playbackRate = rate
+    }
+    const onSeeked = () => {
+      seekLanded(pacer, Date.now())
+      step()
     }
     step()
     const timer = window.setInterval(step, 250)
@@ -110,10 +190,12 @@ export function useSyncedPlayback(
     // buffers) instead of waiting for the next tick.
     el?.addEventListener("loadedmetadata", step)
     el?.addEventListener("canplay", step)
+    el?.addEventListener("seeked", onSeeked)
     return () => {
       window.clearInterval(timer)
       el?.removeEventListener("loadedmetadata", step)
       el?.removeEventListener("canplay", step)
+      el?.removeEventListener("seeked", onSeeked)
     }
     // Re-arm when the clock appears/disappears or the element changes;
     // value changes flow through clockRef and the next step().

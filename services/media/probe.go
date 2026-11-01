@@ -81,21 +81,53 @@ func ProbeVideo(path string) VideoInfo {
 	return VideoInfo{Codec: fourcc, Name: strings.ToUpper(fourcc), Support: "unknown"}
 }
 
+// mp4Info is what probeMP4 reads from an MP4/MOV file's boxes.
+type mp4Info struct {
+	Fourcc      string  // video sample-entry format ("avc1", "hvc1", …)
+	Width       int     // coded width of the video track
+	Height      int     // coded height
+	DurationSec float64 // movie duration (mvhd)
+	H264Profile int     // avcC AVCProfileIndication (0 when not H.264)
+	SizeBytes   int64   // file size, for an average-bitrate estimate
+}
+
+// BitRate is the file's average bitrate in bits/s (all tracks), or 0
+// when the duration is unknown.
+func (m mp4Info) BitRate() float64 {
+	if m.DurationSec <= 0 {
+		return 0
+	}
+	return float64(m.SizeBytes) * 8 / m.DurationSec
+}
+
 // probeVideoCodec returns the sample-entry fourcc of the first video
 // track ('vide' handler) in an MP4/MOV file.
 func probeVideoCodec(path string) (string, error) {
+	m, err := probeMP4(path)
+	return m.Fourcc, err
+}
+
+// probeMP4 reads the first video track's sample description (format,
+// coded size, avcC profile) and the movie duration. It only walks box
+// headers and reads a few hundred bytes, so it is instant on any size.
+func probeMP4(path string) (mp4Info, error) {
+	var out mp4Info
 	f, err := os.Open(path)
 	if err != nil {
-		return "", err
+		return out, err
 	}
 	defer f.Close()
 	st, err := f.Stat()
 	if err != nil {
-		return "", err
+		return out, err
 	}
+	out.SizeBytes = st.Size()
 	moov, ok, err := findBox(f, 0, st.Size(), "moov")
 	if err != nil || !ok {
-		return "", errOrMissing(err, "moov")
+		return out, errOrMissing(err, "moov")
+	}
+	if mvhd, ok, _ := findBox(f, moov.payload, moov.end, "mvhd"); ok {
+		out.DurationSec = mvhdDuration(f, mvhd)
 	}
 	// Each trak: check its handler is video, then read its stsd entry.
 	off := moov.payload
@@ -125,14 +157,53 @@ func probeVideoCodec(path string) (string, error) {
 			continue
 		}
 		// stsd: version/flags(4) + entry_count(4), then the first sample
-		// entry: size(4) + format(4).
-		var buf [16]byte
-		if _, err := f.ReadAt(buf[:], box.payload); err != nil {
-			return "", err
+		// entry. A VisualSampleEntry is: size(4) format(4) reserved(6)
+		// data_reference_index(2) pre_defined(2) reserved(2)
+		// pre_defined(12) width(2) height(2) … 78 bytes of fixed fields
+		// after the 8-byte header, then child boxes (avcC, hvcC, …).
+		entry := box.payload + 8
+		var hdr [36]byte
+		if _, err := f.ReadAt(hdr[:], entry); err != nil {
+			return out, err
 		}
-		return string(buf[12:16]), nil
+		entrySize := int64(binary.BigEndian.Uint32(hdr[0:4]))
+		out.Fourcc = string(hdr[4:8])
+		out.Width = int(binary.BigEndian.Uint16(hdr[32:34]))
+		out.Height = int(binary.BigEndian.Uint16(hdr[34:36]))
+		if out.Fourcc == "avc1" || out.Fourcc == "avc3" {
+			childStart := entry + 8 + 78
+			if avcC, ok, _ := findBox(f, childStart, entry+entrySize, "avcC"); ok {
+				var b [2]byte
+				if _, err := f.ReadAt(b[:], avcC.payload); err == nil {
+					out.H264Profile = int(b[1]) // configurationVersion, AVCProfileIndication
+				}
+			}
+		}
+		return out, nil
 	}
-	return "", errors.New("no video track")
+	return out, errors.New("no video track")
+}
+
+// mvhdDuration reads duration/timescale from an mvhd box (v0 or v1).
+func mvhdDuration(r io.ReaderAt, mvhd boxRef) float64 {
+	var b [32]byte
+	if _, err := r.ReadAt(b[:], mvhd.payload); err != nil {
+		return 0
+	}
+	if b[0] == 1 { // version 1: 64-bit times
+		ts := binary.BigEndian.Uint32(b[20:24])
+		d := binary.BigEndian.Uint64(b[24:32])
+		if ts == 0 {
+			return 0
+		}
+		return float64(d) / float64(ts)
+	}
+	ts := binary.BigEndian.Uint32(b[12:16])
+	d := binary.BigEndian.Uint32(b[16:20])
+	if ts == 0 {
+		return 0
+	}
+	return float64(d) / float64(ts)
 }
 
 type boxRef struct {

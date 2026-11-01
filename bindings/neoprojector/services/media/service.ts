@@ -43,6 +43,23 @@ export function ListMedia(): $CancellablePromise<database$0.Medium[]> {
 }
 
 /**
+ * OptimizeStatus lists every video with a conversion state, for the UI's
+ * initial render; updates then arrive as "media:optimize" events.
+ */
+export function OptimizeStatus(): $CancellablePromise<$models.OptimizeStatus[]> {
+    return $Call.ByID(2919701509).then(($result: any) => {
+        return $$createType3($result);
+    });
+}
+
+/**
+ * RetryOptimize clears a failed conversion so it is attempted again.
+ */
+export function RetryOptimize(id: number): $CancellablePromise<void> {
+    return $Call.ByID(4043618413, id);
+}
+
+/**
  * ImportFiles copies each given absolute file path into the app's media
  * storage directory under a uuid-prefixed filename, then inserts a media row
  * for it. Files of unknown type are skipped. Returns the created rows in
@@ -54,11 +71,13 @@ export function ListMedia(): $CancellablePromise<database$0.Medium[]> {
  */
 export function VideoInfo(id: number): $CancellablePromise<$models.VideoInfo> {
     return $Call.ByID(4144637947, id).then(($result: any) => {
-        return $$createType2($result);
+        return $$createType4($result);
     });
 }
 
 // Private type creation functions
 const $$createType0 = database$0.Medium.createFrom;
 const $$createType1 = $Create.Array($$createType0);
-const $$createType2 = $models.VideoInfo.createFrom;
+const $$createType2 = $models.OptimizeStatus.createFrom;
+const $$createType3 = $Create.Array($$createType2);
+const $$createType4 = $models.VideoInfo.createFrom;

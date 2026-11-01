@@ -6,6 +6,47 @@
 import { Create as $Create } from "@wailsio/runtime";
 
 /**
+ * OptimizeStatus is one video's conversion state, sent to the UI.
+ */
+export class OptimizeStatus {
+    "media_id": number;
+
+    /**
+     * queued | downloading | converting | waiting_live | done | failed
+     */
+    "state": string;
+    "pct": number;
+    "reason": string;
+    "error"?: string;
+
+    /** Creates a new OptimizeStatus instance. */
+    constructor($$source: Partial<OptimizeStatus> = {}) {
+        if (!("media_id" in $$source)) {
+            this["media_id"] = 0;
+        }
+        if (!("state" in $$source)) {
+            this["state"] = "";
+        }
+        if (!("pct" in $$source)) {
+            this["pct"] = 0;
+        }
+        if (!("reason" in $$source)) {
+            this["reason"] = "";
+        }
+
+        Object.assign(this, $$source);
+    }
+
+    /**
+     * Creates a new OptimizeStatus instance from a string or object.
+     */
+    static createFrom($$source: any = {}): OptimizeStatus {
+        let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
+        return new OptimizeStatus($$parsedSource as Partial<OptimizeStatus>);
+    }
+}
+
+/**
  * VideoInfo describes a media file's video codec for the UI.
  */
 export class VideoInfo {

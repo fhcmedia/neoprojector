@@ -7,5 +7,6 @@ export {
 };
 
 export {
+    OptimizeStatus,
     VideoInfo
 } from "./models.js";

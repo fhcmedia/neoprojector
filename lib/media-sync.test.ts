@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest"
 import {
+  canSeek,
   clockFrom,
+  MAX_SEEK_COOLDOWN_MS,
+  MAX_SEEK_LEAD,
+  MIN_SEEK_COOLDOWN_MS,
+  newSeekPacer,
+  seekCooldownMs,
+  seekLanded,
+  seekLead,
   correction,
   hasEnded,
   NUDGE,
@@ -82,5 +90,50 @@ describe("clockFrom", () => {
       anchorMs: T0,
       anchorPos: 0,
     })
+  })
+})
+
+describe("seek pacing", () => {
+  it("allows the first seek, then waits out the cooldown", () => {
+    const p = newSeekPacer()
+    expect(canSeek(p, 1000)).toBe(true)
+    p.issuedAt = 1000
+    p.pending = true
+    expect(canSeek(p, 5000)).toBe(false) // still in flight
+    seekLanded(p, 1200)
+    expect(p.latencyMs).toBe(200)
+    expect(canSeek(p, 1000 + MIN_SEEK_COOLDOWN_MS - 1)).toBe(false)
+    expect(canSeek(p, 1000 + MIN_SEEK_COOLDOWN_MS)).toBe(true)
+  })
+
+  it("slow seeks lengthen the cooldown and lead, both capped", () => {
+    const p = newSeekPacer()
+    p.issuedAt = 0
+    p.pending = true
+    seekLanded(p, 1500) // a 1.5s seek on a slow PC
+    expect(seekCooldownMs(p)).toBe(3000)
+    expect(seekLead(p)).toBeCloseTo(1.5)
+    p.issuedAt = 10_000
+    p.pending = true
+    seekLanded(p, 30_000) // pathological
+    expect(seekCooldownMs(p)).toBe(MAX_SEEK_COOLDOWN_MS)
+    expect(seekLead(p)).toBe(MAX_SEEK_LEAD)
+  })
+
+  it("averages seek latency instead of jumping", () => {
+    const p = newSeekPacer()
+    p.pending = true
+    p.issuedAt = 0
+    seekLanded(p, 100)
+    p.pending = true
+    p.issuedAt = 1000
+    seekLanded(p, 1600) // one 600ms outlier
+    expect(p.latencyMs).toBeCloseTo(300)
+  })
+
+  it("ignores a landing without a pending seek", () => {
+    const p = newSeekPacer()
+    seekLanded(p, 5000)
+    expect(p.latencyMs).toBe(0)
   })
 })

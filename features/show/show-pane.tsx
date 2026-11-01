@@ -28,6 +28,7 @@ import {
   Volume2Icon,
   VolumeXIcon,
   RotateCcwIcon,
+  Loader2Icon,
   TriangleAlertIcon,
 } from "lucide-react"
 import { useShowTemplate } from "@/features/show/use-show-template"
@@ -43,6 +44,13 @@ import {
   videoProblem,
 } from "@/lib/video-support"
 import { Button } from "@/components/button"
+import { Progress } from "@/components/progress"
+import {
+  isOptimizing,
+  optimizeLabel,
+  retryOptimize,
+  useOptimizeStatus,
+} from "@/lib/media-optimize"
 import { Slider } from "@/components/slider"
 import {
   useAddSlide,
@@ -1330,6 +1338,9 @@ function MediaPreview({
   const playback = useVideoPlayback(previewRef, isVideo ? videoSrc : undefined)
   const { data: videoInfo } = useVideoInfo(isVideo ? mediaId : null)
   const problem = isVideo ? videoProblem(videoInfo, playback) : null
+  // A heavy video is being turned into a smooth playback copy.
+  const optimize = useOptimizeStatus(isVideo ? mediaId : null)
+  const optimizing = isOptimizing(optimize)
 
   const mediaEvents = {
     onLoadedMetadata: (e: React.SyntheticEvent<HTMLMediaElement>) => {
@@ -1413,7 +1424,48 @@ function MediaPreview({
         )}
       </div>
 
-      {problem && (
+      {optimize && optimizing ? (
+        <div className="flex flex-col gap-1.5 rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-2 text-xs">
+          <div className="flex items-start gap-2">
+            <Loader2Icon className="mt-0.5 size-3.5 shrink-0 animate-spin text-sky-400" />
+            <div className="flex flex-col gap-0.5">
+              <span className="font-medium text-sky-300">
+                {optimizeLabel(optimize)}
+              </span>
+              <span className="text-muted-foreground">
+                {optimize.state === "waiting_live"
+                  ? "Paused so the service runs smoothly — it continues when you stop presenting."
+                  : `Making a smooth playback copy (${optimize.reason}). It replaces the original automatically when it's done.`}
+              </span>
+            </div>
+          </div>
+          <Progress
+                value={optimize.state === "converting" || optimize.state === "downloading" ? optimize.pct : 0}
+                className="h-1 bg-white/10 [&>[data-slot=progress-indicator]]:bg-sky-400"
+              />
+        </div>
+      ) : optimize?.state === "failed" ? (
+        <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
+          <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-amber-400" />
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="font-medium text-amber-300">
+              Couldn't make a playback copy
+            </span>
+            <span className="break-words text-muted-foreground">
+              {optimize.error}
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="shrink-0"
+            onClick={() => mediaId && retryOptimize(mediaId)}
+          >
+            <RotateCcwIcon className="size-3.5" />
+            Retry
+          </Button>
+        </div>
+      ) : problem && (
         <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
           <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-amber-400" />
           <div className="flex flex-col gap-0.5">
