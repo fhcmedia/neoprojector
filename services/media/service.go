@@ -18,6 +18,7 @@ import (
 )
 
 type Service struct {
+	db  *sql.DB
 	q   *database.Queries
 	opt *optimizer
 }
@@ -25,7 +26,7 @@ type Service struct {
 // New creates the media service. isLive reports whether a service is
 // live; background video conversions pause while it returns true.
 func New(db *sql.DB, isLive func() bool) *Service {
-	s := &Service{q: database.New(db)}
+	s := &Service{db: db, q: database.New(db)}
 	s.opt = newOptimizer(s, isLive)
 	return s
 }
@@ -61,7 +62,21 @@ func (s *Service) DeleteMedia(ctx context.Context, id int64) error {
 		}
 		return err
 	}
-	if err := s.q.DeleteMedia(ctx, id); err != nil {
+	// Schedule items showing this media go with it (in one transaction:
+	// never a half-deleted state); presentation slides cascade by FK.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	qtx := s.q.WithTx(tx)
+	if err := qtx.DeleteServiceItemsUsingMedia(ctx, id); err != nil {
+		return err
+	}
+	if err := qtx.DeleteMedia(ctx, id); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
 		return err
 	}
 	if row.Path == "" {

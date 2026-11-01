@@ -96,7 +96,7 @@ export function MediaTab({
     <div className="flex h-full w-full flex-col">
       <div
         data-file-drop-target={dropTarget}
-        className="relative min-h-0 flex-1 overflow-y-auto p-3"
+        className="relative min-h-0 flex-1 overflow-y-auto p-3 [&.file-drop-target-active]:bg-foreground/5 [&.file-drop-target-active]:outline [&.file-drop-target-active]:outline-1 [&.file-drop-target-active]:-outline-offset-1 [&.file-drop-target-active]:outline-foreground/40"
       >
         {isLoading ? (
           <div className="grid h-full place-items-center text-xs text-muted-foreground/40">

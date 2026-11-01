@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>NeoProjector · Stage</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #000; color: #fff; overflow: hidden;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-user-select: none; user-select: none; }
+  #stage { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; container-type: size; transition: color .3s; }
+  #label { text-transform: uppercase; letter-spacing: .2em; opacity: .7; font-size: min(7cqh, 6cqw); }
+  #time { font-variant-numeric: tabular-nums; font-weight: 600; line-height: 1;
+    font-size: min(42cqh, 24cqw); padding: 0 .1em; border-radius: .08em; }
+  #msg { font-weight: 600; text-transform: uppercase; letter-spacing: .1em; font-size: min(8cqh, 6cqw);
+    margin-top: .3em; min-height: 1em; }
+  #timer, #idle { max-width: 94vw; }
+  #idle { display: none; flex-direction: column; align-items: center; gap: .4em; opacity: .55; }
+  #idle .clock { font-variant-numeric: tabular-nums; font-size: min(22cqh, 16cqw); font-weight: 500; }
+  #idle .hint { font-size: min(4cqh, 4cqw); letter-spacing: .15em; text-transform: uppercase;
+    overflow-wrap: anywhere; }
+  #label, #msg { overflow-wrap: anywhere; }
+  #status { position: fixed; left: 10px; bottom: 8px; font-size: 12px; opacity: .45; }
+  #full { position: fixed; right: 10px; bottom: 8px; font-size: 12px; opacity: .45; background: none;
+    border: 1px solid #555; color: #fff; border-radius: 6px; padding: 4px 8px; }
+  .pulse { animation: pulse 1.2s ease-in-out infinite; }
+  .flash { animation: flash 1s steps(1, end) infinite; }
+  .glow { animation: glow 1.4s ease-in-out infinite; }
+  .shake { animation: shake 2.5s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { transform: scale(1) } 50% { transform: scale(1.08) } }
+  @keyframes flash { 0% { background-color: var(--attn); color: #fff } 50% { background-color: transparent; color: var(--attn) } }
+  @keyframes glow { 0%,100% { text-shadow: 0 0 0 transparent } 50% { text-shadow: 0 0 .15em var(--attn), 0 0 .3em var(--attn) } }
+  @keyframes shake { 0%,30%,100% { transform: translateX(0) } 5%,15% { transform: translateX(-4%) } 10%,20% { transform: translateX(4%) } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="timer">
+    <div id="label"></div>
+    <div id="time"></div>
+    <div id="msg"></div>
+  </div>
+  <div id="idle"><div class="clock" id="clock"></div><div class="hint">Waiting for the sermon timer</div></div>
+</div>
+<div id="status">Connecting…</div>
+<button id="full" type="button">Full screen</button>
+<script>
+// Mirrors the sermon timer widget (features/overlays/widgets.tsx):
+// normal → warning (last warn_seconds) → over (past the limit); "remaining"
+// counts down then shows +overtime, "elapsed" counts up.
+(function () {
+  // fails: consecutive failed polls; after 5 (~5 s) the timer is
+  // hidden rather than left frozen on stale numbers.
+  var state = null, offset = 0, fails = 0
+  var $ = function (id) { return document.getElementById(id) }
+  var pad = function (n) { return n < 10 ? "0" + n : String(n) }
+  function hms(ms) {
+    var t = Math.floor(ms / 1000), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60
+    return h > 0 ? pad(h) + ":" + pad(m) + ":" + pad(s) : pad(m) + ":" + pad(s)
+  }
+  async function poll() {
+    try {
+      var t0 = Date.now()
+      // Absolute: the page URL has no trailing slash, so a relative
+      // "state" would resolve to /s/state.
+      var r = await fetch(location.pathname.replace(/\/+$/, "") + "/state", { cache: "no-store" })
+      if (!r.ok) throw new Error(r.status === 404 ? "This link is no longer valid" : "HTTP " + r.status)
+      var j = await r.json()
+      var t1 = Date.now()
+      // Device clocks drift; anchor on the computer's clock.
+      offset = j.now_ms - (t0 + t1) / 2
+      state = j
+      fails = 0
+      $("status").textContent = ""
+    } catch (e) {
+      fails++
+      $("status").textContent = "Can't reach NeoProjector — " + (e.message || "retrying…")
+    }
+  }
+  function render() {
+    var now = Date.now() + offset
+    var o = state && state.overlays && state.overlays[0]
+    var stale = fails >= 5
+    $("timer").style.display = o && !stale ? "block" : "none"
+    $("idle").style.display = o && !stale ? "none" : "flex"
+    var d = new Date(now)
+    $("clock").textContent = pad(d.getHours() % 12 || 12) + ":" + pad(d.getMinutes())
+    if (!o || stale) return
+    var c = o.config || {}
+    var limit = (c.target_seconds || 0) * 1000
+    var elapsed = Math.max(0, now - o.activated_at_ms)
+    var phase = "normal"
+    if (limit > 0 && elapsed >= limit) phase = "over"
+    else if (limit > 0 && c.warn_seconds > 0 && elapsed >= limit - c.warn_seconds * 1000) phase = "warning"
+    var base = o.color || "#ffffff"
+    var color = phase === "over" ? (c.over_color || "#ef4444") : phase === "warning" ? (c.warn_color || "#f59e0b") : base
+    var effect = phase === "over" ? c.over_effect : phase === "warning" ? c.warn_effect : "none"
+    var text = c.mode === "elapsed" ? hms(elapsed)
+      : elapsed > limit ? "+" + hms(elapsed - limit) : hms(limit - elapsed + 999)
+    $("label").textContent = c.label || ""
+    $("time").textContent = text
+    $("msg").textContent = phase === "over" && c.over_message ? c.over_message : ""
+    var stage = $("stage")
+    stage.style.color = color
+    stage.style.setProperty("--attn", color)
+    var cls = effect && effect !== "none" ? effect : ""
+    if ($("time").className !== cls) $("time").className = cls
+  }
+  $("full").onclick = function () {
+    var el = document.documentElement
+    ;(el.requestFullscreen || el.webkitRequestFullscreen || function () {}).call(el)
+  }
+  document.addEventListener("fullscreenchange", function () {
+    $("full").style.display = document.fullscreenElement ? "none" : ""
+  })
+  poll(); setInterval(poll, 1000)
+  render(); setInterval(render, 200)
+})()
+</script>
+</body>
+</html>

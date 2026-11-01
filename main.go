@@ -23,6 +23,7 @@ import (
 	"neoprojector/services/presentations"
 	"neoprojector/services/schedule"
 	"neoprojector/services/songs"
+	"neoprojector/services/stage"
 	"neoprojector/services/templates"
 
 	"github.com/adrg/xdg"
@@ -189,6 +190,11 @@ func main() {
 			application.NewService(schedule.New(db)),
 			application.NewService(templates.New(db)),
 			application.NewService(displaysSvc),
+			// Stage display: the sermon timer on a phone/tablet/TV over the
+			// network (for HDMI-splitter setups, see services/stage).
+			application.NewService(stage.New(func() []displays.OverlayActivation {
+				return displaysSvc.CurrentLive(context.Background()).ActiveOverlays
+			})),
 			application.NewService(overlays.New(db)),
 			application.NewService(presentations.New(db)),
 			application.NewService(backgrounds.New(db)),
@@ -249,11 +255,22 @@ func openMainWindow() *application.WebviewWindow {
 			"paths": paths,
 		}
 		if target != nil {
-			payload["target_id"] = target.ElementID
+			payload["target_id"] = dropTargetID(target.Attributes, target.ElementID)
 			payload["target_attrs"] = target.Attributes
 		}
 		win.EmitEvent("media:files-dropped", payload)
 	})
 
 	return win
+}
+
+// dropTargetID names the element a file drop landed on: its
+// data-file-drop-target value, falling back to the element id. (Matching
+// on the id alone silently ignored every drop onto the Media library and
+// the presentation editor, whose targets have no id.)
+func dropTargetID(attrs map[string]string, elementID string) string {
+	if v := attrs["data-file-drop-target"]; v != "" {
+		return v
+	}
+	return elementID
 }

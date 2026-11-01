@@ -13,6 +13,7 @@ import { ANIM_KINDS, type AnimKind } from "@/features/animations/variants"
 import type { Display } from "@/bindings/neoprojector/database"
 import { useOverlayEditor } from "./overlay-editor"
 import { ScreenPicker } from "./screen-picker"
+import { StageDisplayCard } from "@/features/stage/stage-display"
 import { BehaviorRules } from "./behavior-rules"
 
 // OverlayEditorOptions renders in the LEFT (schedule) pane while the
@@ -104,6 +105,11 @@ export function OverlayEditorOptions() {
               commitRules(next)
             }}
           />
+          {def?.kind === "sermon_timer" && (
+            <div className="pt-2">
+              <StageDisplayCard compact />
+            </div>
+          )}
         </Section>
         <Section title="Default layout">
           <LayoutEditor

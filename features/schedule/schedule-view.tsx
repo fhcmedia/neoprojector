@@ -55,6 +55,7 @@ import {
   PALETTE_COLORS,
 } from "@/features/schedule/section-palette"
 import { AddArea } from "@/components/add-area"
+import { sectionDropTarget, useScheduleDrop } from "@/features/schedule/schedule-drop"
 
 // Palette swap animations — when the user opens the color picker the
 // per-action icons fade up and the colored dots cascade in from below.
@@ -116,6 +117,8 @@ export function ScheduleView({
   const moveItemMut = useMoveItem()
 
   const qc = useQueryClient()
+  // Files dragged from Explorer onto a section are added to it.
+  useScheduleDrop()
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
   )
@@ -401,7 +404,12 @@ function SectionRow({
   }, [pendingDelete, paletteOpen])
 
   return (
-    <div ref={setNodeRef} style={style} className="border-b border-border/40">
+    <div
+      ref={setNodeRef}
+      style={style}
+      data-file-drop-target={sectionDropTarget(section.id)}
+      className="border-b border-border/40 [&.file-drop-target-active]:bg-foreground/5 [&.file-drop-target-active]:outline [&.file-drop-target-active]:outline-1 [&.file-drop-target-active]:-outline-offset-1 [&.file-drop-target-active]:outline-foreground/40"
+    >
       <div
         ref={headerRef}
         className={cn(

@@ -96,8 +96,21 @@ func (q *Queries) DeleteMedia(ctx context.Context, id int64) error {
 	return err
 }
 
+const deleteServiceItemsUsingMedia = `-- name: DeleteServiceItemsUsingMedia :exec
+DELETE FROM service_item
+WHERE id IN (SELECT item_id FROM service_item_media WHERE media_id = ?)
+`
+
+// service_item_media.media_id has no ON DELETE CASCADE, so deleting a
+// media row used in a service failed with a foreign-key error. Its
+// schedule items go first (their service_item_media rows cascade).
+func (q *Queries) DeleteServiceItemsUsingMedia(ctx context.Context, mediaID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteServiceItemsUsingMedia, mediaID)
+	return err
+}
+
 const listHiddenPDFMedia = `-- name: ListHiddenPDFMedia :many
-SELECT id, path FROM media WHERE hidden = 1 AND type = 'pd
+SELECT id, path FROM media WHERE hidden = 1 AND type = 'pdf'
 `
 
 type ListHiddenPDFMediaRow struct {
@@ -105,7 +118,7 @@ type ListHiddenPDFMediaRow struct {
 	Path string `json:"path"`
 }
 
-// Temporary deck PDFs (PrepareDeck → FinishDeck); any left at startup
+// Temporary deck PDFs (PrepareDeck -> FinishDeck); any left at startup
 // belong to an import the app was closed during.
 func (q *Queries) ListHiddenPDFMedia(ctx context.Context) ([]ListHiddenPDFMediaRow, error) {
 	rows, err := q.db.QueryContext(ctx, listHiddenPDFMedia)

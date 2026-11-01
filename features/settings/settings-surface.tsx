@@ -2,6 +2,7 @@ import { useMemo } from "react"
 import * as AppService from "@/bindings/neoprojector/app"
 import type { AppInfo } from "@/bindings/neoprojector/models"
 import { useStartupNoticeSetting } from "@/features/whats-new/startup-notice"
+import { StageDisplayCard } from "@/features/stage/stage-display"
 import { MinusIcon, PlusIcon } from "lucide-react"
 import { Switch } from "@/components/switch"
 import { Input } from "@/components/input"
@@ -286,6 +287,9 @@ function OutputPanel() {
           aria-label="Bypass display requirement"
         />
       </Row>
+      <div className="py-3">
+        <StageDisplayCard />
+      </div>
     </div>
   )
 }

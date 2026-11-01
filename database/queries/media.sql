@@ -39,6 +39,13 @@ DELETE FROM media WHERE id = ?;
 DELETE FROM media WHERE id = ? AND hidden = 1;
 
 -- name: ListHiddenPDFMedia :many
--- Temporary deck PDFs (PrepareDeck → FinishDeck); any left at startup
+-- Temporary deck PDFs (PrepareDeck -> FinishDeck); any left at startup
 -- belong to an import the app was closed during.
 SELECT id, path FROM media WHERE hidden = 1 AND type = 'pdf';
+
+-- name: DeleteServiceItemsUsingMedia :exec
+-- service_item_media.media_id has no ON DELETE CASCADE, so deleting a
+-- media row used in a service failed with a foreign-key error. Its
+-- schedule items go first (their service_item_media rows cascade).
+DELETE FROM service_item
+WHERE id IN (SELECT item_id FROM service_item_media WHERE media_id = ?);

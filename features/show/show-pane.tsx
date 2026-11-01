@@ -878,7 +878,7 @@ export function ShowPane({
               />
               <div
                 data-file-drop-target={SHOW_PANE_DROP_TARGET}
-                className="m-3 flex flex-1 flex-col items-center justify-center gap-3 rounded-md border border-dashed border-border/60 text-center"
+                className="m-3 flex flex-1 flex-col items-center justify-center gap-3 rounded-md border border-dashed border-border/60 text-center [&.file-drop-target-active]:border-foreground/60 [&.file-drop-target-active]:bg-foreground/5"
               >
                 <div className="text-sm text-muted-foreground">
                   No slides yet
@@ -993,7 +993,7 @@ export function ShowPane({
                 {...(isPresentation
                   ? { "data-file-drop-target": SHOW_PANE_DROP_TARGET }
                   : {})}
-                className="grid flex-1 auto-rows-max grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2 overflow-y-auto p-2 content-start"
+                className="grid flex-1 auto-rows-max grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2 overflow-y-auto p-2 content-start [&.file-drop-target-active]:bg-foreground/5 [&.file-drop-target-active]:outline [&.file-drop-target-active]:outline-1 [&.file-drop-target-active]:-outline-offset-1 [&.file-drop-target-active]:outline-foreground/40"
               >
               {slides.map((slide, idx) => {
                 const active = isLive(slide.kind, sourceItemId, idx)
