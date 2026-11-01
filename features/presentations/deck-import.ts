@@ -1,29 +1,29 @@
+import { Events } from "@wailsio/runtime"
 import { Service as Presentations } from "@/bindings/neoprojector/services/presentations"
 import type { DeckFile } from "@/bindings/neoprojector/services/presentations"
+
+import { convertDetail } from "./deck-import-text"
+
+export {
+  convertDetail,
+  deckName,
+  DECK_EXTENSIONS,
+  DECK_FILE_PATTERN,
+  isDeckPath,
+} from "./deck-import-text"
+
+// "deck:progress" event payload (services/presentations/deck.go).
+type DeckProgress = { path: string; stage: string; pct: number }
 
 // Importing a PDF or PowerPoint file as presentation slides. The Go side
 // (services/presentations/deck.go) converts PowerPoint files to PDF; here
 // pdf.js renders each page into an image, which becomes one slide. See
 // deck.go for the whole flow.
 
-export const DECK_EXTENSIONS = [
-  "pdf", "pptx", "ppt", "pps", "ppsx", "pptm", "potx", "odp", "key",
-] as const
-
-export const DECK_FILE_PATTERN = DECK_EXTENSIONS.map((e) => `*.${e}`).join(";")
-
-export function isDeckPath(path: string): boolean {
-  const ext = path.split(".").pop()?.toLowerCase() ?? ""
-  return (DECK_EXTENSIONS as readonly string[]).includes(ext)
-}
-
-export function deckName(path: string): string {
-  const base = path.split(/[\\/]/).pop() ?? path
-  return base.replace(/\.[^.]+$/, "")
-}
-
 export type DeckImportProgress =
-  | { stage: "converting" }
+  // Before pages exist: what the converter is doing right now (a
+  // readable sentence) and a percentage when it's known.
+  | { stage: "converting"; detail: string; pct?: number }
   | { stage: "rendering"; page: number; pages: number }
 
 // Pages are rendered to fit 1920x1080 (the projector), keeping their
@@ -36,13 +36,40 @@ const QUALITY = 0.92
 // importDeck appends every page of the file at path to the presentation
 // and returns how many slides were added. Throws with a readable message
 // when the file can't be converted or read.
+// signal cancels: the conversion (download/LibreOffice/PowerPoint) is
+// stopped on the Go side, and pages already added stay.
 export async function importDeck(
   presentationId: number,
   path: string,
-  onProgress?: (p: DeckImportProgress) => void
+  onProgress?: (p: DeckImportProgress) => void,
+  signal?: AbortSignal
 ): Promise<number> {
-  onProgress?.({ stage: "converting" })
-  const deck = (await Presentations.PrepareDeck(path)) as unknown as DeckFile
+  onProgress?.({ stage: "converting", detail: "Preparing…" })
+  const off = Events.On("deck:progress", (e: { data?: DeckProgress }) => {
+    const d = e?.data
+    if (!d || d.path !== path) return
+    onProgress?.({
+      stage: "converting",
+      detail: convertDetail(d.stage, d.pct),
+      pct: d.pct >= 0 ? d.pct : undefined,
+    })
+  })
+  let deck: DeckFile
+  try {
+    const call = Presentations.PrepareDeck(path)
+    const abort = () => call.cancel()
+    signal?.addEventListener("abort", abort, { once: true })
+    try {
+      deck = (await call) as unknown as DeckFile
+    } finally {
+      signal?.removeEventListener("abort", abort)
+    }
+  } catch (err) {
+    if (signal?.aborted) throw new DOMException("Import cancelled", "AbortError")
+    throw err
+  } finally {
+    off?.()
+  }
   try {
     // Same-origin asset path (not the loopback media server, which has
     // no CORS headers for fetch). A deck PDF is a few MB, fine to buffer.
@@ -55,6 +82,7 @@ export async function importDeck(
     try {
       let added = 0
       for (let n = 1; n <= doc.numPages; n++) {
+        if (signal?.aborted) break
         onProgress?.({ stage: "rendering", page: n, pages: doc.numPages })
         const page = await doc.getPage(n)
         const base = page.getViewport({ scale: 1 })

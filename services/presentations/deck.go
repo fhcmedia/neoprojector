@@ -203,3 +203,24 @@ func emit(name string, data any) {
 		app.Event.Emit(name, data)
 	}
 }
+
+// ServiceStartup sweeps what an import interrupted by closing the app
+// leaves behind: the temporary PDF media rows/files and conversion work
+// folders. Nothing else uses them, so it's always safe at startup.
+func (s *Service) ServiceStartup(ctx context.Context, _ application.ServiceOptions) error {
+	if rows, err := s.q.ListHiddenPDFMedia(ctx); err == nil {
+		for _, r := range rows {
+			if err := s.q.DeleteHiddenMedia(ctx, r.ID); err == nil {
+				os.Remove(r.Path)
+			}
+		}
+	}
+	if toolsDir, err := dataSubdir("tools"); err == nil {
+		if work, err := filepath.Glob(filepath.Join(toolsDir, "deck-*")); err == nil {
+			for _, w := range work {
+				os.RemoveAll(w)
+			}
+		}
+	}
+	return nil
+}

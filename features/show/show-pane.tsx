@@ -61,10 +61,10 @@ import {
 import { QualityPicker } from "@/features/library/quality-picker"
 import { Slider } from "@/components/slider"
 import {
-  importDeck,
   isDeckPath,
   DECK_FILE_PATTERN,
 } from "@/features/presentations/deck-import"
+import { runDeckImport } from "@/features/presentations/import-flow"
 import {
   PresentationToolbar,
   SlideControls,
@@ -303,24 +303,11 @@ export function ShowPane({
       qc.invalidateQueries({ queryKey: presentationKeys.slides(pid) })
     try {
       for (const path of paths) {
-        const name = path.split(/[\/]/).pop() ?? path
+        const name = path.split(/[\\/]/).pop() ?? path
         if (isDeckPath(path)) {
-          try {
-            const n = await importDeck(pid, path, (p) => {
-              setImporting(
-                p.stage === "converting"
-                  ? `Converting ${name}…`
-                  : `Page ${p.page}/${p.pages}…`
-              )
-              if (p.stage === "rendering" && p.page > 1) void refresh()
-            })
-            toast.success(`Added ${n} slide${n === 1 ? "" : "s"} from ${name}`)
-          } catch (err) {
-            toast.error(`Couldn't import ${name}`, {
-              description: err instanceof Error ? err.message : String(err),
-              duration: 15000,
-            })
-          }
+          // Progress, elapsed time and Cancel live in the import toast.
+          setImporting(`Importing ${name}…`)
+          await runDeckImport(qc, pid, path)
         } else {
           setImporting(`Adding ${name}…`)
           const imported = (await Media.ImportFiles([path])) as unknown as Medium[]
@@ -870,6 +857,45 @@ export function ShowPane({
               className="flex flex-1 items-center justify-center"
             >
               <Empty muted>Loading…</Empty>
+            </motion.div>
+          ) : slides.length === 0 && isPresentation ? (
+            // An empty presentation still needs its toolbar and a drop
+            // target, or "New empty presentation" is a dead end.
+            <motion.div
+              key="empty-presentation"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="flex flex-1 flex-col overflow-hidden"
+            >
+              <PresentationToolbar
+                presentationId={presentationId}
+                playback={playback}
+                slides={slides}
+                importing={importing}
+                onAddFiles={() => void openAddSlidesDialog()}
+              />
+              <div
+                data-file-drop-target={SHOW_PANE_DROP_TARGET}
+                className="m-3 flex flex-1 flex-col items-center justify-center gap-3 rounded-md border border-dashed border-border/60 text-center"
+              >
+                <div className="text-sm text-muted-foreground">
+                  No slides yet
+                </div>
+                <div className="max-w-sm text-xs text-muted-foreground/70">
+                  Add a PowerPoint or PDF (one slide per page), or images
+                  and videos — or drop files here.
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!!importing}
+                  onClick={() => void openAddSlidesDialog()}
+                >
+                  {importing ?? "Add slides"}
+                </Button>
+              </div>
             </motion.div>
           ) : slides.length === 0 ? (
             <motion.div

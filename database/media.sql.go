@@ -96,6 +96,40 @@ func (q *Queries) DeleteMedia(ctx context.Context, id int64) error {
 	return err
 }
 
+const listHiddenPDFMedia = `-- name: ListHiddenPDFMedia :many
+SELECT id, path FROM media WHERE hidden = 1 AND type = 'pd
+`
+
+type ListHiddenPDFMediaRow struct {
+	ID   int64  `json:"id"`
+	Path string `json:"path"`
+}
+
+// Temporary deck PDFs (PrepareDeck → FinishDeck); any left at startup
+// belong to an import the app was closed during.
+func (q *Queries) ListHiddenPDFMedia(ctx context.Context) ([]ListHiddenPDFMediaRow, error) {
+	rows, err := q.db.QueryContext(ctx, listHiddenPDFMedia)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListHiddenPDFMediaRow{}
+	for rows.Next() {
+		var i ListHiddenPDFMediaRow
+		if err := rows.Scan(&i.ID, &i.Path); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMedia = `-- name: ListMedia :many
 SELECT id, type, title, path, original_filename, created_at, updated_at, hidden FROM media ORDER BY created_at DESC
 `

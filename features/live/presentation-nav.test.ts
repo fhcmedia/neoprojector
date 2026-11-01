@@ -34,3 +34,20 @@ describe("presentation navigation", () => {
     expect(dwellMs(undefined, 100)).toBe(250)
   })
 })
+
+describe("deck import helpers", async () => {
+  const { convertDetail, deckName, isDeckPath } = await import("@/features/presentations/deck-import-text")
+  it("names files from Windows and POSIX paths", () => {
+    expect(deckName(String.raw`C:\Users\a\Sermon (1).pptx`)).toBe("Sermon (1)")
+    expect(deckName("/home/a/deck.pdf")).toBe("deck")
+    expect(isDeckPath("x.PPTX")).toBe(true)
+    expect(isDeckPath("x.png")).toBe(false)
+  })
+  it("explains every converter stage, with the one-time setup called out", () => {
+    expect(convertDetail("downloading", 45)).toContain("45%")
+    expect(convertDetail("downloading", 45)).toContain("one time")
+    expect(convertDetail("unpacking", -1)).toContain("one time")
+    expect(convertDetail("waiting", -1)).toContain("other import")
+    expect(convertDetail("bogus", -1)).toBe("Preparing…")
+  })
+})

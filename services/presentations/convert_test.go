@@ -40,8 +40,8 @@ func TestPowerPointMissingFailsFast(t *testing.T) {
 func TestImageExt(t *testing.T) {
 	cases := map[string]string{
 		"RIFF\x00\x00\x00\x00WEBPVP8 ": ".webp",
-		"\x89PNG\r\n\x1a\nxxxx":         ".png",
-		"\xFF\xD8\xFF\xE0":              ".jpg",
+		"\x89PNG\r\n\x1a\nxxxx":        ".png",
+		"\xFF\xD8\xFF\xE0":             ".jpg",
 	}
 	for b, want := range cases {
 		if got, err := imageExt([]byte(b)); err != nil || got != want {

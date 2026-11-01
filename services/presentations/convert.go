@@ -57,14 +57,30 @@ var loURLs = []string{
 // same profile, and PowerPoint automation is single-document anyway.
 var convertMu sync.Mutex
 
-// progressFn reports a stage ("powerpoint", "downloading", "unpacking",
-// "converting") and, where known, a 0–100 percentage (-1 = unknown).
+// progressFn reports a stage ("waiting", "powerpoint", "downloading",
+// "unpacking", "converting") and, where known, a 0–100 percentage
+// (-1 = unknown).
 type progressFn func(stage string, pct int)
 
 // toPDF converts src (a presentation file) into a PDF inside outDir and
 // returns its path.
 func toPDF(ctx context.Context, src, outDir, toolsDir string, progress progressFn) (string, error) {
-	convertMu.Lock()
+	if !convertMu.TryLock() {
+		// Another import is converting: say so instead of an unexplained
+		// spinner, and give up if this one is cancelled while waiting.
+		progress("waiting", -1)
+		locked := make(chan struct{})
+		go func() {
+			convertMu.Lock()
+			close(locked)
+		}()
+		select {
+		case <-locked:
+		case <-ctx.Done():
+			go func() { <-locked; convertMu.Unlock() }()
+			return "", ctx.Err()
+		}
+	}
 	defer convertMu.Unlock()
 
 	var errs []string
@@ -77,6 +93,9 @@ func toPDF(ctx context.Context, src, outDir, toolsDir string, progress progressF
 		}
 		if err != nil {
 			errs = append(errs, "PowerPoint: "+err.Error())
+		}
+		if ctx.Err() != nil {
+			return "", ctx.Err()
 		}
 	}
 	soffice := findLibreOffice(toolsDir)
@@ -203,7 +222,9 @@ func libreOfficeToPDF(ctx context.Context, soffice, src, outDir, toolsDir string
 	if !strings.HasPrefix(profile, "/") {
 		profile = "/" + profile
 	}
-	cctx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+	// The first conversion also builds LibreOffice's profile: ~1.5 min on
+	// a fast PC, several on an old one.
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 	cmd := exec.CommandContext(cctx, soffice,
 		"-env:UserInstallation=file://"+profile,
@@ -213,6 +234,9 @@ func libreOfficeToPDF(ctx context.Context, soffice, src, outDir, toolsDir string
 	out, err := cmd.CombinedOutput()
 	pdf := filepath.Join(outDir, strings.TrimSuffix(filepath.Base(src), filepath.Ext(src))+".pdf")
 	if err != nil {
+		if cctx.Err() == context.DeadlineExceeded {
+			return "", errors.New("LibreOffice took longer than 10 minutes")
+		}
 		return "", fmt.Errorf("%w %s", err, strings.TrimSpace(string(out)))
 	}
 	if !fileOK(pdf) {

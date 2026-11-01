@@ -37,3 +37,8 @@ DELETE FROM media WHERE id = ?;
 
 -- name: DeleteHiddenMedia :exec
 DELETE FROM media WHERE id = ? AND hidden = 1;
+
+-- name: ListHiddenPDFMedia :many
+-- Temporary deck PDFs (PrepareDeck → FinishDeck); any left at startup
+-- belong to an import the app was closed during.
+SELECT id, path FROM media WHERE hidden = 1 AND type = 'pdf';
