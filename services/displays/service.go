@@ -622,6 +622,9 @@ func (s *Service) StartLive(ctx context.Context) error {
 	}
 	s.live = opened
 	s.mu.Unlock()
+	// The windows just opened may have read a payload pushed before
+	// they existed (audio output "none"); point audio at one of them.
+	s.refreshAudio(ctx)
 	return nil
 }
 
@@ -698,8 +701,19 @@ func (s *Service) PushLive(ctx context.Context, payload LivePayload) {
 	// pick so audio never regresses to "off". When every live display
 	// suppresses media, audioID stays 0 — correct, since media is
 	// hidden everywhere and there is genuinely nothing to play.
+	payload.AudioDisplayID = pickAudioDisplay(s.live, mediaCapable, mediaErr)
+	s.lastSlot = payload
+	s.mu.Unlock()
+	if app := application.Get(); app != nil {
+		app.Event.Emit("live:slot", payload)
+	}
+}
+
+// pickAudioDisplay is the single-audio-output rule (see PushLive): the
+// smallest live display id that renders media, or 0 when none can.
+func pickAudioDisplay[W any](live map[int64]W, mediaCapable map[int64]bool, mediaErr error) int64 {
 	var audioID int64
-	for id := range s.live {
+	for id := range live {
 		if mediaErr == nil && !mediaCapable[id] {
 			continue
 		}
@@ -707,9 +721,26 @@ func (s *Service) PushLive(ctx context.Context, payload LivePayload) {
 			audioID = id
 		}
 	}
-	payload.AudioDisplayID = audioID
-	s.lastSlot = payload
+	return audioID
+}
+
+// refreshAudio re-picks the audio output for the current payload and
+// re-broadcasts it if that changed. The pick happens at PushLive, so a
+// video sent before Present carries "no audio output" (no windows were
+// open yet); without this, the windows Present opens would all stay
+// muted. Only the audio field is touched, so a push racing this one
+// is never overwritten with older content.
+func (s *Service) refreshAudio(ctx context.Context) {
+	mediaCapable, mediaErr := s.mediaCapableDisplays(ctx)
+	s.mu.Lock()
+	id := pickAudioDisplay(s.live, mediaCapable, mediaErr)
+	changed := s.lastSlot.AudioDisplayID != id
+	s.lastSlot.AudioDisplayID = id
+	payload := s.lastSlot
 	s.mu.Unlock()
+	if !changed {
+		return
+	}
 	if app := application.Get(); app != nil {
 		app.Event.Emit("live:slot", payload)
 	}
@@ -736,10 +767,14 @@ func (s *Service) mediaCapableDisplays(ctx context.Context) (map[int64]bool, err
 // CurrentLive returns the last pushed payload so an output window can
 // render the right slide on first mount (e.g. after Go Live re-opens
 // windows mid-service).
-func (s *Service) CurrentLive(_ context.Context) LivePayload {
+func (s *Service) CurrentLive(ctx context.Context) LivePayload {
+	mediaCapable, mediaErr := s.mediaCapableDisplays(ctx)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// Zero value is the valid "nothing live" payload — all channels
-	// nil, outputs render black.
-	return s.lastSlot
+	// nil, outputs render black. The audio output is re-picked for the
+	// windows open right now (the stored pick may predate them).
+	out := s.lastSlot
+	out.AudioDisplayID = pickAudioDisplay(s.live, mediaCapable, mediaErr)
+	return out
 }

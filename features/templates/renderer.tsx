@@ -26,6 +26,7 @@ import { Service as Media } from "@/bindings/neoprojector/services/media"
 import type { Medium } from "@/bindings/neoprojector/database"
 import { useVideoAssetUrl } from "@/lib/media-url"
 import { clockFrom, useSyncedPlayback, type PlayClock } from "@/lib/media-sync"
+import { IS_OPERATOR_WINDOW } from "@/features/live/live-context"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -624,7 +625,11 @@ function MediaSurface({ media }: { media: MediaRef }) {
     media.mode === "contain" ? "contain" : "cover"
   const wantLoop = !!media.loop || media.mode === "loop"
   const wantPlaying = media.playing !== false
-  const wantMuted = !!media.muted
+  // Sound only ever comes from output windows (one of them — see
+  // toMediaRef in routes/output.$displayId.tsx). Every mirror in the
+  // operator window — the Audience preview tile, template previews — is
+  // silent, or the room hears the video twice, slightly out of step.
+  const wantMuted = !!media.muted || IS_OPERATOR_WINDOW
 
   // Type is unknown until the list resolves. Show a black surface in
   // that brief window rather than a debug stub — looks the same as a

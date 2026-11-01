@@ -503,7 +503,12 @@ export function DisplaySurface({
       {mediaVisible && mediaLive ? (
         <LiveTemplateView
           template={null}
-          fill={mediaLive.fill}
+          // A preview never plays sound: the output window does.
+          fill={
+            mediaLive.fill.media
+              ? { ...mediaLive.fill, media: { ...mediaLive.fill.media, muted: true } }
+              : mediaLive.fill
+          }
           slideKey={mediaKey}
           liveTransparency
           className="absolute inset-0 h-full w-full"

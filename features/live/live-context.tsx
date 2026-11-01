@@ -501,7 +501,7 @@ function stampMediaClock(s: LiveSlide | null): LiveSlide | null {
 // only one allowed to publish live state. Output windows (/output/:id)
 // and the splash only consume it. Each window is its own webview and
 // never navigates between these routes, so the load-time path decides.
-const IS_OPERATOR_WINDOW =
+export const IS_OPERATOR_WINDOW =
   typeof window === "undefined" ||
   !(
     window.location.pathname.startsWith("/output/") ||
