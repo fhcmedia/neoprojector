@@ -99,7 +99,9 @@ export function optimizeLabel(st: OptimizeStatus): string {
     case "downloading":
       return `Getting converter ${st.pct}%`
     case "converting":
-      return `Optimizing ${st.pct}%`
+      return st.quality && st.quality !== "1080p"
+        ? `Making ${st.quality} copy ${st.pct}%`
+        : `Optimizing ${st.pct}%`
     case "waiting_live":
       return "Optimizing after the service"
     case "failed":

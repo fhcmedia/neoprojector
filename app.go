@@ -69,6 +69,23 @@ func (a *App) Info(_ context.Context) AppInfo {
 	return AppInfo{Version: version, Channel: ch}
 }
 
+// ReleaseNotes returns the "What's new" list of this build's GitHub
+// release, for the startup notification. Dev builds and offline
+// machines get an empty list (the notification then shows just the
+// version).
+func (a *App) ReleaseNotes(ctx context.Context) []string {
+	if version == "0.0.0-dev" {
+		return []string{}
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	notes, err := updates.Notes(ctx, version)
+	if err != nil || notes == nil {
+		return []string{}
+	}
+	return notes
+}
+
 func (a *App) Initialize() {
 	app := application.Get()
 	splash, ok := app.Window.GetByName("splash")

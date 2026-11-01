@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import * as AppService from "@/bindings/neoprojector/app"
 import type { AppInfo } from "@/bindings/neoprojector/models"
+import { useStartupNoticeSetting } from "@/features/whats-new/startup-notice"
 import { MinusIcon, PlusIcon } from "lucide-react"
 import { Switch } from "@/components/switch"
 import { Input } from "@/components/input"
@@ -254,8 +255,14 @@ function GeneralPanel() {
         </div>
       </div>
       <Row
+        label="Startup notification"
+        description="Each time the app opens, show which version is running — and, after an update, what changed."
+      >
+        <StartupNoticeToggle />
+      </Row>
+      <Row
         label="Version"
-        description="This build, and how it gets updates. Beta builds update on every push to GitHub; stable builds only on tagged releases; dev builds never."
+        description="This build. Updates install automatically when the app opens, whenever a new version has been pushed to GitHub (dev builds never update)."
       >
         <VersionInfo />
       </Row>
@@ -417,6 +424,17 @@ function TranslationRow({
 
 // VersionInfo shows the running build and its update channel — the quick
 // way to tell what a given church PC is actually running.
+function StartupNoticeToggle() {
+  const { enabled, setEnabled } = useStartupNoticeSetting()
+  return (
+    <Switch
+      checked={enabled}
+      onCheckedChange={setEnabled}
+      aria-label="Toggle startup notification"
+    />
+  )
+}
+
 function VersionInfo() {
   const { data } = useQuery({
     queryKey: ["app", "info"],
@@ -428,8 +446,8 @@ function VersionInfo() {
     data.channel === "dev"
       ? "dev build · no auto-update"
       : data.channel === "beta"
-        ? "beta · auto-updates on every push"
-        : "stable · auto-updates on releases"
+        ? "beta · moves to stable at next update"
+        : "stable · auto-updates when the app opens"
   return (
     <div className="flex flex-col items-end gap-0.5 text-right">
       <span className="font-mono text-xs text-foreground">{data.version}</span>

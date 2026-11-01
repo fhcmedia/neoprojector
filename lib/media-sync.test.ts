@@ -6,6 +6,8 @@ import {
   MAX_SEEK_LEAD,
   MIN_SEEK_COOLDOWN_MS,
   newSeekPacer,
+  rearm,
+  seekIssued,
   seekCooldownMs,
   seekLanded,
   seekLead,
@@ -97,8 +99,7 @@ describe("seek pacing", () => {
   it("allows the first seek, then waits out the cooldown", () => {
     const p = newSeekPacer()
     expect(canSeek(p, 1000)).toBe(true)
-    p.issuedAt = 1000
-    p.pending = true
+    seekIssued(p, 1000, true)
     expect(canSeek(p, 5000)).toBe(false) // still in flight
     seekLanded(p, 1200)
     expect(p.latencyMs).toBe(200)
@@ -106,34 +107,53 @@ describe("seek pacing", () => {
     expect(canSeek(p, 1000 + MIN_SEEK_COOLDOWN_MS)).toBe(true)
   })
 
-  it("slow seeks lengthen the cooldown and lead, both capped", () => {
+  it("learns the lead from where seeks land", () => {
     const p = newSeekPacer()
-    p.issuedAt = 0
-    p.pending = true
-    seekLanded(p, 1500) // a 1.5s seek on a slow PC
-    expect(seekCooldownMs(p)).toBe(3000)
-    expect(seekLead(p)).toBeCloseTo(1.5)
-    p.issuedAt = 10_000
-    p.pending = true
-    seekLanded(p, 30_000) // pathological
-    expect(seekCooldownMs(p)).toBe(MAX_SEEK_COOLDOWN_MS)
+    seekIssued(p, 0, true)
+    seekLanded(p, 1100, 1.1) // first seek landed 1.1s behind
+    expect(seekLead(p)).toBeCloseTo(1.1)
+    seekIssued(p, 5000, true)
+    seekLanded(p, 5200, -0.9) // a fast cached seek then landed ahead
+    expect(seekLead(p)).toBeCloseTo(0.2)
+  })
+
+  it("caps the lead and ignores wraps and paused seeks", () => {
+    const p = newSeekPacer()
+    seekIssued(p, 0, true)
+    seekLanded(p, 100, 2.5)
+    expect(seekLead(p)).toBe(MAX_SEEK_LEAD)
+    seekIssued(p, 1000, true)
+    seekLanded(p, 1100, -197) // loop wrap: not seek latency
+    expect(seekLead(p)).toBe(MAX_SEEK_LEAD)
+    seekIssued(p, 2000, false)
+    seekLanded(p, 2100, -1) // paused seeks don't move the lead
     expect(seekLead(p)).toBe(MAX_SEEK_LEAD)
   })
 
-  it("averages seek latency instead of jumping", () => {
+  it("slow seeks lengthen the cooldown, capped", () => {
     const p = newSeekPacer()
-    p.pending = true
-    p.issuedAt = 0
-    seekLanded(p, 100)
-    p.pending = true
-    p.issuedAt = 1000
-    seekLanded(p, 1600) // one 600ms outlier
-    expect(p.latencyMs).toBeCloseTo(300)
+    seekIssued(p, 0, true)
+    seekLanded(p, 1500)
+    expect(seekCooldownMs(p)).toBe(3000)
+    seekIssued(p, 10_000, true)
+    seekLanded(p, 30_000)
+    expect(seekCooldownMs(p)).toBe(MAX_SEEK_COOLDOWN_MS)
+  })
+
+  it("rearm allows an immediate seek but keeps what was learned", () => {
+    const p = newSeekPacer()
+    seekIssued(p, 0, true)
+    seekLanded(p, 400, 0.4)
+    seekIssued(p, 1000, true)
+    rearm(p)
+    expect(canSeek(p, 1001)).toBe(true)
+    expect(seekLead(p)).toBeCloseTo(0.4)
   })
 
   it("ignores a landing without a pending seek", () => {
     const p = newSeekPacer()
-    seekLanded(p, 5000)
+    seekLanded(p, 5000, 1)
     expect(p.latencyMs).toBe(0)
+    expect(seekLead(p)).toBe(0)
   })
 })

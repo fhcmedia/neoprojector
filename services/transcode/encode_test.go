@@ -6,11 +6,12 @@ import (
 )
 
 func TestPlaybackArgs(t *testing.T) {
-	a := strings.Join(PlaybackArgs("in.mov", "out.mp4", 4), " ")
+	a := strings.Join(PlaybackArgs("in.mov", "out.mp4", 4, Q1080), " ")
 	for _, want := range []string{
 		"-c:v libx264", "-pix_fmt yuv420p", "-fpsmax 60", "-threads 4",
 		"-movflags +faststart", "-map 0:a:0?", "-progress pipe:1",
 		"min(1920,iw)", "min(1080,ih)", "force_original_aspect_ratio=decrease",
+		"+discardcorrupt", "-force_key_frames expr:gte(t,n_forced*2)",
 	} {
 		if !strings.Contains(a, want) {
 			t.Errorf("args missing %q:\n%s", want, a)
@@ -45,5 +46,17 @@ func TestParseProgressUnknownDuration(t *testing.T) {
 	parseProgress(strings.NewReader("out_time_us=1000000\n"), 0, func(int) { called = true })
 	if called {
 		t.Fatal("no progress without a duration")
+	}
+}
+
+func TestQualityPresets(t *testing.T) {
+	a := strings.Join(PlaybackArgs("in", "out.mp4", 2, Q480), " ")
+	for _, want := range []string{"min(854,iw)", "min(480,ih)", "-fpsmax 30", "-maxrate 3M"} {
+		if !strings.Contains(a, want) {
+			t.Errorf("480p args missing %q:\n%s", want, a)
+		}
+	}
+	if ParseQuality("720p") != Q720 || ParseQuality("bogus") != Q1080 || ParseQuality("") != Q1080 {
+		t.Fatal("ParseQuality")
 	}
 }

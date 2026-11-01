@@ -53,6 +53,17 @@ export function OptimizeStatus(): $CancellablePromise<$models.OptimizeStatus[]> 
 }
 
 /**
+ * Reoptimize (re)makes a video's playback copy at quality ("1080p",
+ * "720p" or "480p"): after a failed conversion, or to get a lighter
+ * copy for a PC that stutters. Never upscales — asking for more than
+ * the file has keeps its size. Runs when nothing is live, like every
+ * conversion.
+ */
+export function Reoptimize(id: number, quality: string): $CancellablePromise<void> {
+    return $Call.ByID(2279898494, id, quality);
+}
+
+/**
  * RetryOptimize clears a failed conversion so it is attempted again.
  */
 export function RetryOptimize(id: number): $CancellablePromise<void> {

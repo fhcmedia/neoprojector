@@ -1,14 +1,14 @@
 // Package updates implements the splash-screen auto-updater.
 //
-// GitHub Releases is the update channel, with two tracks chosen by the
-// running version:
+// GitHub Releases is the update channel. Every push to main publishes a
+// stable release (0.1.<run-number>), checked at every launch, with two
+// tracks chosen by the running version:
 //
-//   - stable installs (e.g. 0.1.0) follow the latest-release API, which
-//     excludes prereleases, so they only ever move to tagged releases;
-//   - beta installs (e.g. 0.1.0-beta.13 — what every push to main
-//     publishes) follow the newest release of any kind, so each push
-//     reaches them. Before this they followed the stable API too, which
-//     404s while only prereleases exist, so betas never updated.
+//   - stable installs (e.g. 0.1.25) follow the latest-release API;
+//   - beta installs (0.1.0-beta.N, published by pushes before stable-
+//     per-push) follow the newest release of any kind, which is now a
+//     stable one — so they move onto the stable track at their next
+//     update.
 //
 // Per-asset digests provide integrity and asset URLs are permanent. No
 // credentials are involved anywhere.

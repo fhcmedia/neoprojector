@@ -42,6 +42,8 @@ type OptimizeStatus struct {
 	Pct    int    `json:"pct"`
 	Reason string `json:"reason"`
 	Error  string `json:"error,omitempty"`
+	// Quality the copy is being made at ("1080p" | "720p" | "480p").
+	Quality string `json:"quality"`
 }
 
 const optimizeEvent = "media:optimize"
@@ -53,6 +55,10 @@ type optimizer struct {
 	mu     sync.Mutex
 	status map[int64]*OptimizeStatus
 	failed map[int64]bool // not retried automatically
+	// User-requested conversions (a retry, or a lighter copy of a video
+	// that stutters), with their quality. Run even when the file is
+	// already inside the playback envelope.
+	forced map[int64]transcode.Quality
 	wake   chan struct{}
 	// files that couldn't be deleted yet (e.g. still open) — retried.
 	pendingDeletes map[string]bool
@@ -67,6 +73,7 @@ func newOptimizer(svc *Service, isLive func() bool) *optimizer {
 		isLive:         isLive,
 		status:         map[int64]*OptimizeStatus{},
 		failed:         map[int64]bool{},
+		forced:         map[int64]transcode.Quality{},
 		wake:           make(chan struct{}, 1),
 		pendingDeletes: map[string]bool{},
 	}
@@ -91,12 +98,31 @@ func (s *Service) OptimizeStatus(_ context.Context) []OptimizeStatus {
 }
 
 // RetryOptimize clears a failed conversion so it is attempted again.
-func (s *Service) RetryOptimize(_ context.Context, id int64) {
+func (s *Service) RetryOptimize(ctx context.Context, id int64) {
+	s.Reoptimize(ctx, id, string(transcode.Q1080))
+}
+
+// Reoptimize (re)makes a video's playback copy at quality ("1080p",
+// "720p" or "480p"): after a failed conversion, or to get a lighter
+// copy for a PC that stutters. Never upscales — asking for more than
+// the file has keeps its size. Runs when nothing is live, like every
+// conversion.
+func (s *Service) Reoptimize(ctx context.Context, id int64, quality string) error {
+	row, err := s.q.MediaByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if row.Type != "video" {
+		return errors.New("only videos can be optimized")
+	}
+	q := transcode.ParseQuality(quality)
 	s.opt.mu.Lock()
 	delete(s.opt.failed, id)
-	delete(s.opt.status, id)
+	s.opt.forced[id] = q
 	s.opt.mu.Unlock()
+	s.opt.set(OptimizeStatus{MediaID: id, State: "queued", Reason: "requested " + string(q) + " copy", Quality: string(q)})
 	s.opt.poke()
+	return nil
 }
 
 func (o *optimizer) poke() {
@@ -137,7 +163,12 @@ func (o *optimizer) cycle(ctx context.Context) {
 		o.mu.Lock()
 		failed := o.failed[m.ID]
 		st := o.status[m.ID]
+		_, forced := o.forced[m.ID]
 		o.mu.Unlock()
+		if forced {
+			todo = append(todo, m)
+			continue
+		}
 		if failed || (st != nil && st.State == "done") {
 			continue
 		}
@@ -146,7 +177,7 @@ func (o *optimizer) cycle(ctx context.Context) {
 			continue
 		}
 		if st == nil {
-			o.set(OptimizeStatus{MediaID: m.ID, State: "queued", Reason: reason})
+			o.set(OptimizeStatus{MediaID: m.ID, State: "queued", Reason: reason, Quality: string(transcode.Q1080)})
 		}
 		todo = append(todo, m)
 	}
@@ -168,6 +199,12 @@ func (o *optimizer) cycle(ctx context.Context) {
 
 // convert makes and swaps in one playback copy.
 func (o *optimizer) convert(parent context.Context, m database.Medium) {
+	o.mu.Lock()
+	quality, forced := o.forced[m.ID]
+	o.mu.Unlock()
+	if !forced {
+		quality = transcode.Q1080
+	}
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	// Going live mid-conversion cancels it; it is retried after.
@@ -212,8 +249,8 @@ func (o *optimizer) convert(parent context.Context, m database.Medium) {
 	id := uuid.NewString()
 	tmp := filepath.Join(dir, "tmp-"+id+".mp4")
 	final := filepath.Join(dir, id+".mp4")
-	o.update(m.ID, func(s *OptimizeStatus) { s.State, s.Pct = "converting", 0 })
-	err = transcode.Encode(ctx, tools, m.Path, tmp, dur, func(pct int) {
+	o.update(m.ID, func(s *OptimizeStatus) { s.State, s.Pct, s.Quality = "converting", 0, string(quality) })
+	err = transcode.Encode(ctx, tools, m.Path, tmp, dur, quality, func(pct int) {
 		o.update(m.ID, func(s *OptimizeStatus) { s.State, s.Pct = "converting", pct })
 	})
 	if err != nil {
@@ -246,6 +283,9 @@ func (o *optimizer) convert(parent context.Context, m database.Medium) {
 		return
 	}
 	o.deleteFile(m.Path)
+	o.mu.Lock()
+	delete(o.forced, m.ID)
+	o.mu.Unlock()
 	o.update(m.ID, func(s *OptimizeStatus) { s.State, s.Pct, s.Error = "done", 100, "" })
 	log.Info("media: playback copy ready", "id", m.ID, "file", filepath.Base(final))
 }
@@ -264,6 +304,7 @@ func (o *optimizer) fail(id int64, err error) {
 	log.Warn("media: playback copy failed", "id", id, "err", err)
 	o.mu.Lock()
 	o.failed[id] = true
+	delete(o.forced, id) // a retry is the user's call (Reoptimize)
 	o.mu.Unlock()
 	msg := err.Error()
 	if len(msg) > 300 {
@@ -296,6 +337,7 @@ func (o *optimizer) update(id int64, fn func(*OptimizeStatus)) {
 func (o *optimizer) clear(id int64) {
 	o.mu.Lock()
 	delete(o.status, id)
+	delete(o.forced, id)
 	o.mu.Unlock()
 	emitOptimize(OptimizeStatus{MediaID: id, State: "cleared"})
 }

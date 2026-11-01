@@ -19,6 +19,11 @@ export class OptimizeStatus {
     "reason": string;
     "error"?: string;
 
+    /**
+     * Quality the copy is being made at ("1080p" | "720p" | "480p").
+     */
+    "quality": string;
+
     /** Creates a new OptimizeStatus instance. */
     constructor($$source: Partial<OptimizeStatus> = {}) {
         if (!("media_id" in $$source)) {
@@ -32,6 +37,9 @@ export class OptimizeStatus {
         }
         if (!("reason" in $$source)) {
             this["reason"] = "";
+        }
+        if (!("quality" in $$source)) {
+            this["quality"] = "";
         }
 
         Object.assign(this, $$source);
@@ -70,6 +78,13 @@ export class VideoInfo {
      */
     "support": string;
 
+    /**
+     * Width/Height of the video track (0 when not parsed), so the UI can
+     * offer only quality presets that don't exceed the file.
+     */
+    "width": number;
+    "height": number;
+
     /** Creates a new VideoInfo instance. */
     constructor($$source: Partial<VideoInfo> = {}) {
         if (!("codec" in $$source)) {
@@ -80,6 +95,12 @@ export class VideoInfo {
         }
         if (!("support" in $$source)) {
             this["support"] = "";
+        }
+        if (!("width" in $$source)) {
+            this["width"] = 0;
+        }
+        if (!("height" in $$source)) {
+            this["height"] = 0;
         }
 
         Object.assign(this, $$source);

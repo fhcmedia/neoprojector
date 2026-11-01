@@ -48,9 +48,9 @@ import { Progress } from "@/components/progress"
 import {
   isOptimizing,
   optimizeLabel,
-  retryOptimize,
   useOptimizeStatus,
 } from "@/lib/media-optimize"
+import { QualityPicker } from "@/features/library/quality-picker"
 import { Slider } from "@/components/slider"
 import {
   useAddSlide,
@@ -1445,25 +1445,31 @@ function MediaPreview({
               />
         </div>
       ) : optimize?.state === "failed" ? (
-        <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
-          <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-amber-400" />
-          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="font-medium text-amber-300">
-              Couldn't make a playback copy
-            </span>
-            <span className="break-words text-muted-foreground">
-              {optimize.error}
-            </span>
+        <div className="flex flex-col gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
+          <div className="flex items-start gap-2">
+            <TriangleAlertIcon className="mt-0.5 size-3.5 shrink-0 text-amber-400" />
+            <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span className="font-medium text-amber-300">
+                Couldn't make a playback copy
+              </span>
+              <span className="text-muted-foreground">
+                Try again, or pick a lower quality — smaller copies are
+                easier to make and to play.
+              </span>
+              <span className="line-clamp-2 break-words font-mono text-[10px] text-muted-foreground/70" title={optimize.error}>
+                {optimize.error}
+              </span>
+            </div>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="shrink-0"
-            onClick={() => mediaId && retryOptimize(mediaId)}
-          >
-            <RotateCcwIcon className="size-3.5" />
-            Retry
-          </Button>
+          {mediaId ? (
+            <QualityPicker
+              mediaId={mediaId}
+              width={videoInfo?.width ?? 0}
+              height={videoInfo?.height ?? 0}
+              failed
+              actionLabel="Retry"
+            />
+          ) : null}
         </div>
       ) : problem && (
         <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
@@ -1474,6 +1480,24 @@ function MediaPreview({
           </div>
         </div>
       )}
+
+      {/* A video that still stutters on this PC: offer a lighter copy.
+          Not while live — conversions wait for the service to end. */}
+      {isVideo && mediaId && !isLive && !optimizing && optimize?.state !== "failed" && (videoInfo?.height ?? 0) > 480 ? (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/40 bg-muted/20 px-3 py-2 text-xs">
+          <div className="flex flex-col gap-0.5">
+            <span className="font-medium">Stutters on this PC?</span>
+            <span className="text-muted-foreground">
+              Now {videoInfo?.width}×{videoInfo?.height}. Make a lighter copy — it replaces this one.
+            </span>
+          </div>
+          <QualityPicker
+            mediaId={mediaId}
+            width={videoInfo?.width ?? 0}
+            height={videoInfo?.height ?? 0}
+          />
+        </div>
+      ) : null}
 
       {/* Transport — drives the live playhead on every screen. */}
       {(isVideo || isAudio) && isLive ? (

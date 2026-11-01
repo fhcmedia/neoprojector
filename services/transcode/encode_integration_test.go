@@ -28,7 +28,7 @@ func TestEncodeReal(t *testing.T) {
 	}
 	out := filepath.Join(t.TempDir(), "out.mp4")
 	var last int
-	if err := Encode(ctx, tools, in, out, d, func(p int) { last = p }); err != nil {
+	if err := Encode(ctx, tools, in, out, d, Q720, func(p int) { last = p }); err != nil {
 		t.Fatal(err)
 	}
 	if st, err := os.Stat(out); err != nil || st.Size() == 0 {
@@ -41,7 +41,7 @@ func TestEncodeReal(t *testing.T) {
 	// Cancelling stops ffmpeg and reports the cancellation.
 	cctx, cancel := context.WithCancel(ctx)
 	cancel()
-	if err := Encode(cctx, tools, in, filepath.Join(t.TempDir(), "c.mp4"), d, nil); err == nil {
+	if err := Encode(cctx, tools, in, filepath.Join(t.TempDir(), "c.mp4"), d, Q1080, nil); err == nil {
 		t.Fatal("expected an error from a cancelled encode")
 	}
 }

@@ -76,24 +76,36 @@ export function correction(
 // Seek pacing. A big video on a modest PC can take longer to seek than
 // one sync tick; seeking again before it lands restarts the seek, and the
 // element freezes in a seek loop. So: never correct while a seek or a
-// buffer stall is in progress, measure how long seeks take here, wait at
-// least twice that before the next seek, and aim the seek that much
-// ahead so it lands on time instead of already behind.
+// buffer stall is in progress, and wait at least twice the measured seek
+// time before the next seek.
+//
+// A playing element keeps losing ground while it seeks, so seeks aim
+// ahead by a lead. The lead is learned from where seeks actually land
+// (once the element can play again): land 0.4s behind and the next seek
+// aims 0.4s further ahead. Guessing it from timing alone overshot when a
+// slow first seek was followed by a fast (cached) one.
 export const MIN_SEEK_COOLDOWN_MS = 750
 export const MAX_SEEK_COOLDOWN_MS = 4000
-// Never lead a seek by more than this (a pathological measurement).
+// Never lead a seek by more than this.
 export const MAX_SEEK_LEAD = 1.5
+// A landing error beyond this is a loop wrap or a clock change, not
+// seek latency — don't learn from it.
+const MAX_LEARNABLE_ERROR = 3
 
 export type SeekPacer = {
-  // EMA of measured seek durations, ms (0 = nothing measured yet).
+  // EMA of measured seek durations (issue → playable), ms; 0 = none yet.
   latencyMs: number
-  // When the last seek was issued (0 = never) and when it completed.
+  // Seconds to aim ahead when seeking a playing element.
+  lead: number
+  // When the last seek was issued (0 = never), whether it hasn't landed
+  // yet, and whether the element was meant to be playing.
   issuedAt: number
   pending: boolean
+  playingSeek: boolean
 }
 
 export function newSeekPacer(): SeekPacer {
-  return { latencyMs: 0, issuedAt: 0, pending: false }
+  return { latencyMs: 0, lead: 0, issuedAt: 0, pending: false, playingSeek: false }
 }
 
 // seekCooldownMs: how long after a seek before another may be issued.
@@ -112,15 +124,35 @@ export function canSeek(p: SeekPacer, nowMs: number): boolean {
 
 // seekLead: seconds to aim ahead when seeking a playing element.
 export function seekLead(p: SeekPacer): number {
-  return Math.min(MAX_SEEK_LEAD, p.latencyMs / 1000)
+  return p.lead
 }
 
-// seekLanded records a finished seek's duration into the EMA.
-export function seekLanded(p: SeekPacer, nowMs: number) {
+// seekIssued records a seek that was just started.
+export function seekIssued(p: SeekPacer, nowMs: number, playing: boolean) {
+  p.issuedAt = nowMs
+  p.pending = true
+  p.playingSeek = playing
+}
+
+// seekLanded records a finished seek: how long it took until playable,
+// and — for a playing element — how far behind (+) or ahead (−) of the
+// clock it landed, which corrects the lead for next time.
+export function seekLanded(p: SeekPacer, nowMs: number, behindBy = 0) {
   if (!p.pending) return
   p.pending = false
   const took = Math.max(0, nowMs - p.issuedAt)
   p.latencyMs = p.latencyMs === 0 ? took : p.latencyMs * 0.6 + took * 0.4
+  if (p.playingSeek && Math.abs(behindBy) <= MAX_LEARNABLE_ERROR) {
+    p.lead = Math.min(MAX_SEEK_LEAD, Math.max(0, p.lead + behindBy))
+  }
+}
+
+// rearm readies a pacer for a new clock (operator seek/pause/play): the
+// first correction may happen at once, while what was learned about this
+// element's seeks is kept.
+export function rearm(p: SeekPacer) {
+  p.issuedAt = 0
+  p.pending = false
 }
 
 // useSyncedPlayback keeps a media element on the clock. `clock` null
@@ -133,6 +165,8 @@ export function useSyncedPlayback(
   // Latest clock in a ref so the interval reads it without re-arming.
   const clockRef = useRef(clock)
   clockRef.current = clock
+  // Per-element seek learning survives clock changes (see rearm).
+  const pacerRef = useRef<SeekPacer>(newSeekPacer())
 
   useEffect(() => {
     if (!clock) return
@@ -140,7 +174,8 @@ export function useSyncedPlayback(
     // loading); the interval reads ref.current each tick, so it picks
     // the element up whenever it arrives.
     const el = ref.current
-    const pacer = newSeekPacer()
+    const pacer = pacerRef.current
+    rearm(pacer)
     const step = () => {
       const c = clockRef.current
       const media = ref.current
@@ -153,10 +188,11 @@ export function useSyncedPlayback(
       // A seek still landing, or a playing element stalled for data:
       // correcting now would only restart the wait. Let it finish.
       if (media.seeking || (wantPlaying && media.readyState < 3)) return
-      // seeked is only listened for on the element present at arm time;
-      // one that mounted later still lands its seeks here.
-      if (pacer.pending) seekLanded(pacer, now)
       const target = targetPosition(c, now, media.duration)
+      // A seek has landed once the element is settled and (if playing)
+      // playable again — measured here rather than on "seeked", which
+      // fires before a playing element can actually move.
+      if (pacer.pending) seekLanded(pacer, now, target - media.currentTime)
       const fix = correction(media.currentTime, target, wantPlaying)
       if (fix.seek !== null && canSeek(pacer, now)) {
         const lead = wantPlaying ? seekLead(pacer) : 0
@@ -165,8 +201,7 @@ export function useSyncedPlayback(
         if (Number.isFinite(d) && d > 0) {
           to = c.loop ? to % d : Math.min(to, Math.max(0, d - 0.05))
         }
-        pacer.issuedAt = now
-        pacer.pending = true
+        seekIssued(pacer, now, wantPlaying)
         media.currentTime = to
         if (media.playbackRate !== 1) media.playbackRate = 1
         return
@@ -180,10 +215,7 @@ export function useSyncedPlayback(
           : fix.rate
       if (media.playbackRate !== rate) media.playbackRate = rate
     }
-    const onSeeked = () => {
-      seekLanded(pacer, Date.now())
-      step()
-    }
+    const onSeeked = () => step()
     step()
     const timer = window.setInterval(step, 250)
     // React to the moment data arrives (first frame, after a seek

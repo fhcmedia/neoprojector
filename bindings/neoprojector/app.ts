@@ -35,6 +35,19 @@ export function MediaServer(): $CancellablePromise<$models.MediaServerInfo> {
     });
 }
 
+/**
+ * ReleaseNotes returns the "What's new" list of this build's GitHub
+ * release, for the startup notification. Dev builds and offline
+ * machines get an empty list (the notification then shows just the
+ * version).
+ */
+export function ReleaseNotes(): $CancellablePromise<string[]> {
+    return $Call.ByID(410447619).then(($result: any) => {
+        return $$createType2($result);
+    });
+}
+
 // Private type creation functions
 const $$createType0 = $models.AppInfo.createFrom;
 const $$createType1 = $models.MediaServerInfo.createFrom;
+const $$createType2 = $Create.Array($Create.Any);

@@ -35,6 +35,10 @@ type VideoInfo struct {
 	//   "no"     — cannot play in the app; convert it
 	//   "unknown"— couldn't tell
 	Support string `json:"support"`
+	// Width/Height of the video track (0 when not parsed), so the UI can
+	// offer only quality presets that don't exceed the file.
+	Width  int `json:"width"`
+	Height int `json:"height"`
 }
 
 // codecs maps sample-entry fourccs to a label and support level.
@@ -71,14 +75,16 @@ func ProbeVideo(path string) VideoInfo {
 	if info, ok := otherContainers[ext]; ok {
 		return info
 	}
-	fourcc, err := probeVideoCodec(path)
+	m, err := probeMP4(path)
+	fourcc := m.Fourcc
 	if err != nil || fourcc == "" {
 		return VideoInfo{Codec: "", Name: "Unknown format", Support: "unknown"}
 	}
+	info := VideoInfo{Codec: fourcc, Name: strings.ToUpper(fourcc), Support: "unknown", Width: m.Width, Height: m.Height}
 	if c, ok := codecs[fourcc]; ok {
-		return VideoInfo{Codec: fourcc, Name: c[0], Support: c[1]}
+		info.Name, info.Support = c[0], c[1]
 	}
-	return VideoInfo{Codec: fourcc, Name: strings.ToUpper(fourcc), Support: "unknown"}
+	return info
 }
 
 // mp4Info is what probeMP4 reads from an MP4/MOV file's boxes.

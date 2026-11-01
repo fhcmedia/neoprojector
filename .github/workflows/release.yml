@@ -1,23 +1,28 @@
 name: Release
 
 # Triggers:
-#   - push to main: build all three platforms, publish a PRERELEASE
-#     versioned `<config-version>-beta.<run-number>`. This is the
-#     "every commit becomes a beta build" path.
-#   - push of a tag matching `v*` (e.g. v0.1.1): build all three
-#     platforms, publish a STABLE release at that tag. This is the
-#     "manual cut a real version" path.
+#   - push to main: build all three platforms and publish a STABLE
+#     release versioned `<major>.<minor>.<run-number>` (major.minor
+#     from build/config.yml). Every push is a release that installed
+#     copies pick up at their next launch — the splash updater follows
+#     releases/latest. Old beta installs (0.1.0-beta.N) move onto it
+#     too: 0.1.0-beta.N < 0.1.0 < 0.1.<run-number>.
+#   - push of a tag matching `v*`: the same, at exactly that version,
+#     for a deliberate bump. Bump build/config.yml's minor to match
+#     afterwards, or later pushes (0.1.<run>) would rank below it and
+#     never reach installs.
 #
-# Both flows reuse the same build matrix and upload-to-Release
-# steps so beta and stable artifacts look identical except for the
-# tag and the prerelease flag.
+# The release body starts with a "What's new" list built from the
+# commit subjects since the previous release; the app shows it in its
+# post-update notification (features/whats-new).
 on:
   push:
     branches: [main]
     tags: ["v*"]
 
-# Cancel an in-progress run if a new push lands on the same ref —
-# avoids stacking beta builds on a fast-moving branch.
+# Cancel an in-progress run if a new push lands on the same ref — the
+# newer push supersedes it, and its notes still include the cancelled
+# commits (they're listed from the last *published* tag).
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
@@ -40,8 +45,12 @@ jobs:
       version: ${{ steps.compute.outputs.version }}
       tag: ${{ steps.compute.outputs.tag }}
       prerelease: ${{ steps.compute.outputs.prerelease }}
+      notes: ${{ steps.notes.outputs.notes }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history + tags, to list the commits since the last release.
+          fetch-depth: 0
       - id: compute
         shell: bash
         run: |
@@ -49,26 +58,43 @@ jobs:
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             TAG="${{ github.ref_name }}"
             VERSION="${TAG#v}"
-            PRERELEASE="false"
           else
-            # Pull the base version from build/config.yml — the
-            # single source of truth for "what version are we
-            # working toward." Beta builds append .beta.<run-number>
-            # so every commit produces a unique, monotonically-
-            # increasing tag the CI can publish without conflicts.
+            # major.minor from build/config.yml — the single source of
+            # truth for the version line; the patch is the run number,
+            # so every push gets a unique, ever-increasing version.
             BASE=$(awk -F'"' '/^  version:/ {print $2}' build/config.yml)
             if [[ -z "$BASE" ]]; then
               echo "could not read version from build/config.yml" >&2
               exit 1
             fi
-            VERSION="${BASE}-beta.${{ github.run_number }}"
+            MAJOR_MINOR=$(echo "$BASE" | cut -d. -f1,2)
+            VERSION="${MAJOR_MINOR}.${{ github.run_number }}"
             TAG="v${VERSION}"
-            PRERELEASE="true"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
-          echo "::notice::Building $TAG (prerelease=$PRERELEASE)"
+          echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::Building $TAG"
+      - id: notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          # User-facing commit subjects (feat/fix/perf) since the
+          # previous release tag: "fix(media): stop the x" -> "- Stop the x".
+          PREV=$(git describe --tags --abbrev=0 --match 'v*' HEAD^ 2>/dev/null || true)
+          git log --no-merges --pretty='%s' "${PREV:+$PREV..}HEAD" \
+            | grep -E '^(feat|fix|perf)(\([^)]*\))?!?: ' \
+            | sed -E 's/^[a-z]+(\([^)]*\))?!?: //; s/^(.)/\U\1/; s/^/- /' \
+            | head -30 > notes.md || true
+          if [[ ! -s notes.md ]]; then
+            echo "- Improvements and fixes" > notes.md
+          fi
+          cat notes.md
+          {
+            echo "notes<<NOTES_EOF"
+            cat notes.md
+            echo "NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
 
   # --- macOS: universal .app bundle ---------------------------------------
   # We lipo the arm64 + amd64 binaries together so one .app runs on
@@ -230,8 +256,7 @@ jobs:
       # links never need updating:
       #   github.com/fhcmedia/neoprojector/releases/latest/download/neoprojector-mac.zip
       # (`releases/latest/download/` resolves by asset NAME, so the
-      # name must be identical across releases.) Betas skip this —
-      # `latest` never points at a prerelease anyway.
+      # name must be identical across releases.)
       - name: Add stable-named assets
         if: needs.version.outputs.prerelease == 'false'
         env:
@@ -254,7 +279,13 @@ jobs:
           # Everything in artifacts/ — the three versioned archives,
           # plus the stable-named duplicates on stable releases.
           files: artifacts/*
+          # The app's post-update notification reads the list under
+          # "## What's new" (up to the next heading or ---); keep it first.
           body: |
+            ## What's new
+            ${{ needs.version.outputs.notes }}
+
+            ---
             Built from `${{ github.sha }}` on `${{ github.ref }}`.
 
             **Artifacts**
@@ -265,6 +296,6 @@ jobs:
             On first launch macOS/Windows users may need to bypass
             Gatekeeper / SmartScreen — this build is not yet signed.
 
-            Installed copies on v0.1.1+ pick this release up
-            automatically at next launch (the splash-screen updater
-            follows `releases/latest`, so betas are never offered).
+            Installed copies pick this release up automatically at their
+            next launch (the splash-screen updater follows
+            `releases/latest`).
