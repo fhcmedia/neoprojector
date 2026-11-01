@@ -11,6 +11,8 @@ import {
   type WidgetKind,
 } from "@/features/overlays/types"
 import { BehaviorRules } from "@/features/overlays/editor/behavior-rules"
+import { ScreenPicker } from "@/features/overlays/editor/screen-picker"
+import { useLive } from "@/features/live/live-context"
 import {
   useUpdateOverlayItemConfig,
   useUpdateOverlayItemRules,
@@ -20,8 +22,8 @@ import {
 // and behavior rules in place. Layouts stay snapshotted from add time —
 // operators tweak the visual style by going to the library and creating
 // a new variant. The flow mirrors the picker's ConfigureStep but writes
-// back instead of creating. Changes apply the next time the overlay is
-// turned on (an already-active overlay keeps its activation snapshot).
+// back instead of creating. Saving also updates the overlay if it's on
+// screen right now (see useLive().updateOverlay).
 export function OverlayItemEditor({
   item,
   onDone,
@@ -45,11 +47,16 @@ export function OverlayItemEditor({
   )
   const saving = configMut.isPending || rulesMut.isPending
 
+  const { updateOverlay } = useLive()
   async function handleSave() {
+    const configJSON = JSON.stringify(config)
+    const rulesJSON = JSON.stringify(rules)
     await Promise.all([
-      configMut.mutateAsync({ itemId: item.id, configJSON: JSON.stringify(config) }),
-      rulesMut.mutateAsync({ itemId: item.id, rulesJSON: JSON.stringify(rules) }),
+      configMut.mutateAsync({ itemId: item.id, configJSON }),
+      rulesMut.mutateAsync({ itemId: item.id, rulesJSON }),
     ])
+    // Already on screen? Apply now (keeps its timer running).
+    updateOverlay(item.id, { configJSON, rulesJSON })
     onDone()
   }
 
@@ -90,6 +97,25 @@ export function OverlayItemEditor({
             Behavior
           </div>
           <BehaviorRules rules={rules} onChange={setRules} />
+        </div>
+        <div className="flex flex-col gap-2 border-t border-border/40 pt-3">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Show on
+          </div>
+          <div className="text-[11px] text-muted-foreground">
+            Which screens this overlay appears on (e.g. only the stage
+            screen the preacher sees).
+          </div>
+          <ScreenPicker
+            selected={rules.display_ids}
+            draft={{ layouts, Renderer: def.Renderer, config }}
+            onChange={(display_ids) => {
+              const next = { ...rules }
+              if (display_ids === undefined) delete next.display_ids
+              else next.display_ids = display_ids
+              setRules(next)
+            }}
+          />
         </div>
       </div>
       <div className="flex shrink-0 justify-end border-t border-border/40 p-2">

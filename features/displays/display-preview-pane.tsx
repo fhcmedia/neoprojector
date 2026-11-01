@@ -12,6 +12,7 @@ import {
   Slash,
   GripVerticalIcon,
   type LucideIcon,
+  SquareIcon,
 } from "lucide-react"
 import {
   useDisplays,
@@ -67,7 +68,7 @@ import { cn } from "@/lib/utils"
 export function DisplayPreviewPane() {
   const { data: displays, isLoading } = useDisplays()
   const { data: templates } = useTemplates()
-  const { live, activeOverlays, serviceBackground } = useLive()
+  const { live, activeOverlays, serviceBackground, stopOverlay, clearOverlays } = useLive()
   const reorderMut = useReorderDisplays()
   // The background is global per live moment (same for every tile), so the
   // pane resolves it once and a single Stage renders it; tiles mirror it.
@@ -108,6 +109,41 @@ export function DisplayPreviewPane() {
       {/* No pane-level "Preview" label — each tile carries its own
           header now, so a stray title would just double up. */}
       <div className="flex h-full flex-col">
+        {activeOverlays.length > 0 && (
+          // Overlays on screen right now, from any service, each with a
+          // stop button — a sticky sermon timer survives Esc and may
+          // belong to a service that isn't open.
+          <div className="flex shrink-0 flex-col gap-1 border-b border-border/40 px-2 py-1.5">
+            <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+              <LayersIcon className="size-3" />
+              On screen
+              {activeOverlays.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => clearOverlays()}
+                  className="ml-auto rounded px-1.5 py-0.5 normal-case tracking-normal text-red-400 hover:bg-red-500/15 hover:text-red-300"
+                >
+                  Stop all
+                </button>
+              )}
+            </div>
+            {activeOverlays.map((o) => (
+              <div key={o.scheduleItemId} className="flex items-center gap-1.5 text-xs">
+                <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-red-500" />
+                <span className="min-w-0 flex-1 truncate">{o.name}</span>
+                <button
+                  type="button"
+                  aria-label={`Stop ${o.name}`}
+                  onClick={() => stopOverlay(o.scheduleItemId)}
+                  className="flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-red-400 hover:bg-red-500/15 hover:text-red-300"
+                >
+                  <SquareIcon className="size-2.5 fill-current" />
+                  Stop
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         {isLoading ? (
           <div className="grid flex-1 place-items-center text-xs text-muted-foreground/60">
             Loading…

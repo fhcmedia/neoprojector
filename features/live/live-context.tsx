@@ -125,6 +125,15 @@ type Ctx = {
   activeOverlays: ActiveOverlay[]
   toggleOverlay: (o: Omit<ActiveOverlay, "activatedAt">) => void
   isOverlayActive: (scheduleItemId: number) => boolean
+  // stopOverlay turns one overlay off (sticky ones included) — the
+  // explicit stop for a sermon timer, from wherever it's listed.
+  stopOverlay: (scheduleItemId: number) => void
+  // updateOverlay applies edited config/rules to an overlay that's on
+  // screen now (screen choice, time limit…), keeping its start time.
+  updateOverlay: (
+    scheduleItemId: number,
+    patch: Partial<Pick<ActiveOverlay, "configJSON" | "rulesJSON" | "name">>
+  ) => void
   // Operator-side media playback controls. Each call updates the
   // current live slide's fill.media and re-pushes the payload so
   // output windows can reflect the new state. No-ops when the
@@ -165,6 +174,8 @@ const LiveContext = createContext<Ctx>({
   activeOverlays: [],
   toggleOverlay: () => {},
   isOverlayActive: () => false,
+  stopOverlay: () => {},
+  updateOverlay: () => {},
   setMediaPlayback: () => {},
   restartMedia: () => {},
   seekMedia: () => {},
@@ -205,6 +216,28 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         if (idx >= 0) return prev.filter((_, i) => i !== idx)
         return [...prev, { ...o, activatedAt: Date.now() }]
       })
+    },
+    []
+  )
+
+  const stopOverlay = useCallback((scheduleItemId: number) => {
+    setActiveOverlays((prev) =>
+      prev.filter((a) => a.scheduleItemId !== scheduleItemId)
+    )
+  }, [])
+
+  const updateOverlay = useCallback(
+    (
+      scheduleItemId: number,
+      patch: Partial<Pick<ActiveOverlay, "configJSON" | "rulesJSON" | "name">>
+    ) => {
+      setActiveOverlays((prev) =>
+        prev.some((a) => a.scheduleItemId === scheduleItemId)
+          ? prev.map((a) =>
+              a.scheduleItemId === scheduleItemId ? { ...a, ...patch } : a
+            )
+          : prev
+      )
     },
     []
   )
@@ -452,6 +485,8 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         activeOverlays,
         toggleOverlay,
         isOverlayActive,
+        stopOverlay,
+        updateOverlay,
         setMediaPlayback,
         restartMedia,
         seekMedia,

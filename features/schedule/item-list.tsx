@@ -12,6 +12,7 @@ import {
   CircleIcon,
   PencilIcon,
   XIcon,
+  SquareIcon,
 } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 import type {
@@ -159,7 +160,7 @@ function ItemRow({
 }) {
   const { isPlayed, toggle } = usePlayed()
   const played = isPlayed(item.id)
-  const { live, toggleOverlay, isOverlayActive } = useLive()
+  const { live, toggleOverlay, isOverlayActive, stopOverlay } = useLive()
   // Bible rows edit in the drawer, not the modal: the pencil arms the
   // Bible tab for this row. Which row is being edited is shown by the
   // library chip + the selected row, so the pencil itself stays a plain
@@ -278,6 +279,22 @@ function ItemRow({
             />
             <span className="truncate">{label}</span>
           </button>
+          {overlayActive && (
+            // Always visible while on screen: a sticky sermon timer
+            // survives Esc, so it needs an obvious off switch.
+            <button
+              type="button"
+              aria-label={`Stop ${label}`}
+              title="Stop — take it off the screens"
+              onClick={(e) => {
+                e.stopPropagation()
+                stopOverlay(item.id)
+              }}
+              className="grid size-5 shrink-0 place-items-center rounded text-red-400 transition hover:bg-red-500/20 hover:text-red-300"
+            >
+              <SquareIcon className="size-3 fill-current" />
+            </button>
+          )}
           {editable && (
             <ItemAction
               ariaLabel="Edit"

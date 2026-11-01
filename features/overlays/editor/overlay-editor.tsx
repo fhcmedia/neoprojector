@@ -59,6 +59,12 @@ type OverlayEditorCtx = {
 
 const Ctx = createContext<OverlayEditorCtx | null>(null)
 
+// useOverlayEditorOptional: the editor context when inside the library
+// overlay editor, null elsewhere (e.g. the schedule item editor).
+export function useOverlayEditorOptional(): OverlayEditorCtx | null {
+  return useContext(Ctx)
+}
+
 export function useOverlayEditor(): OverlayEditorCtx {
   const ctx = useContext(Ctx)
   if (!ctx) throw new Error("useOverlayEditor outside provider")

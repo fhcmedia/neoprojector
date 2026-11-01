@@ -23,7 +23,7 @@ import { useLive } from "@/features/live/live-context"
 import { resolveLayout, type OverlayLayouts } from "@/features/overlays/types"
 import type { Display, Template } from "@/bindings/neoprojector/database"
 import type { ScreenInfo } from "@/bindings/neoprojector/services/displays"
-import { useOverlayEditor } from "./overlay-editor"
+import { useOverlayEditorOptional } from "./overlay-editor"
 
 // ScreenPicker: the overlay editor's "Show on" control. Opens a window
 // that draws the operator's real monitor arrangement (positions and
@@ -41,12 +41,27 @@ import { useOverlayEditor } from "./overlay-editor"
 
 type Selection = number[] | undefined
 
+// PickerDraft: the overlay being placed, drawn on each monitor's mirror.
+// The library editor supplies it through its context; other editors
+// (the schedule item editor) pass it as a prop.
+export type PickerDraft = {
+  layouts: OverlayLayouts
+  Renderer: React.ComponentType<{
+    config: any
+    style: Record<string, unknown>
+    activatedAt?: number
+  }>
+  config: Record<string, unknown>
+}
+
 export function ScreenPicker({
   selected,
   onChange,
+  draft,
 }: {
   selected: Selection
   onChange: (next: Selection) => void
+  draft?: PickerDraft
 }) {
   const [open, setOpen] = useState(false)
   const { data: displays } = useDisplays()
@@ -95,7 +110,7 @@ export function ScreenPicker({
             </DialogDescription>
           </DialogHeader>
           {open && (
-            <PickerBody displays={list} selected={selected} onChange={onChange} />
+            <PickerBody displays={list} selected={selected} onChange={onChange} draft={draft} />
           )}
         </DialogContent>
       </Dialog>
@@ -107,15 +122,17 @@ function PickerBody({
   displays,
   selected,
   onChange,
+  draft: draftProp,
 }: {
   displays: Display[]
   selected: Selection
   onChange: (next: Selection) => void
+  draft?: PickerDraft
 }) {
   const { data: screens } = useScreens()
   const { data: templates } = useTemplates()
   const { live, activeOverlays, serviceBackground } = useLive()
-  const { layouts, def, config } = useOverlayEditor()
+  const editor = useOverlayEditorOptional()
   const templateById = useMemo(() => {
     const map = new Map<number, Template>()
     for (const t of templates ?? []) map.set(t.id, t)
@@ -141,8 +158,11 @@ function PickerBody({
     (d) => !d.screen_id.Valid || !screenIds.has(d.screen_id.String)
   )
   const surfaceProps = { templateById, live, activeOverlays, serviceBackground }
-  const draft =
-    def && config ? { layouts, Renderer: def.Renderer, config } : null
+  const draft: PickerDraft | null =
+    draftProp ??
+    (editor?.def && editor.config
+      ? { layouts: editor.layouts, Renderer: editor.def.Renderer, config: editor.config }
+      : null)
 
   return (
     <BackgroundStage background={live?.background ?? serviceBackground ?? null}>
