@@ -127,6 +127,7 @@ type ServiceItem struct {
 	BackgroundID sql.NullInt64 `json:"background_id"`
 	CreatedAt    string        `json:"created_at"`
 	UpdatedAt    string        `json:"updated_at"`
+	TemplateID   sql.NullInt64 `json:"template_id"`
 }
 
 type ServiceItemBible struct {

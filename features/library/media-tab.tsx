@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { libraryDragProps } from "@/features/schedule/library-drag"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSessionState } from "@/hooks/use-session-state"
 import {
@@ -195,6 +196,8 @@ function MediaTile({
   return (
     <div
       ref={tileRef}
+      // Drag into the schedule to add it there.
+      {...libraryDragProps({ type: "media", id: medium.id, label: medium.title })}
       className={cn(
         "group relative flex flex-col overflow-hidden rounded border bg-background transition-colors",
         active

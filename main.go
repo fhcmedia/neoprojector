@@ -192,8 +192,8 @@ func main() {
 			application.NewService(displaysSvc),
 			// Stage display: the sermon timer on a phone/tablet/TV over the
 			// network (for HDMI-splitter setups, see services/stage).
-			application.NewService(stage.New(func() []displays.OverlayActivation {
-				return displaysSvc.CurrentLive(context.Background()).ActiveOverlays
+			application.NewService(stage.New(func() displays.LivePayload {
+				return displaysSvc.CurrentLive(context.Background())
 			})),
 			application.NewService(overlays.New(db)),
 			application.NewService(presentations.New(db)),

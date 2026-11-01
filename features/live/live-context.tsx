@@ -58,6 +58,9 @@ export type LiveSlide = {
   // the same size — verses across all translations stay visually
   // aligned. Stamped onto every slide dispatched via setLive; each
   // audience window looks up its own template's entry.
+  // The item's own template (dropped onto it from the library); it
+  // replaces every display's song/Bible template for this slide.
+  templateId?: number
   fontSizeOverrideByTemplate?: {
     [templateId: number]: number
   }
@@ -394,6 +397,7 @@ export function LiveProvider({ children }: { children: ReactNode }) {
         source_item_id: live.sourceItemId ?? 0,
         slide_index: live.slideIndex,
         font_size_override_by_template: overrideByTemplate,
+        template_id: live.templateId || 0,
         fill: new LiveFill({
           primary: asString(live.fill.primary),
           secondary: asString(live.fill.secondary),

@@ -13,7 +13,7 @@ import {
 import { BehaviorRules } from "@/features/overlays/editor/behavior-rules"
 import { ScreenPicker } from "@/features/overlays/editor/screen-picker"
 import { useLive } from "@/features/live/live-context"
-import { StageDisplayCard } from "@/features/stage/stage-display"
+import { StageDisplayCard, StageTargetToggle } from "@/features/stage/stage-display"
 import {
   useUpdateOverlayItemConfig,
   useUpdateOverlayItemRules,
@@ -117,7 +117,14 @@ export function OverlayItemEditor({
               setRules(next)
             }}
           />
-          {item.overlay_kind === "sermon_timer" && <StageDisplayCard compact />}
+          <StageTargetToggle
+            kind={item.overlay_kind}
+            value={rules.stage}
+            onChange={(stage) => setRules({ ...rules, stage })}
+          />
+          {(item.overlay_kind === "sermon_timer" || item.overlay_kind === "message") && (
+            <StageDisplayCard compact />
+          )}
         </div>
       </div>
       <div className="flex shrink-0 justify-end border-t border-border/40 p-2">

@@ -28,6 +28,7 @@ import { useVideoAssetUrl } from "@/lib/media-url"
 import { clockFrom, useSyncedPlayback, type PlayClock } from "@/lib/media-sync"
 import { IS_OPERATOR_WINDOW } from "@/features/live/live-context"
 import { useMediaItem } from "@/lib/media-item"
+import { useTransitionMs, withSpeed } from "@/lib/transition-speed"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -339,11 +340,17 @@ export function LiveTemplateView({
   // template-declared transition.
   transitionOverride?: { kind: string; duration_ms: number }
 }) {
+  // The global transition speed (Settings → Output) overrides the
+  // duration, never the style.
+  const speedMs = useTransitionMs()
   const transition = useMemo(() => {
-    if (transitionOverride) return transitionOverride
-    if (!template) return DEFAULT_TRANSITION
-    return parseTemplateBody(template.data_json).transition ?? DEFAULT_TRANSITION
-  }, [template, transitionOverride])
+    const base = transitionOverride
+      ? transitionOverride
+      : !template
+        ? DEFAULT_TRANSITION
+        : parseTemplateBody(template.data_json).transition ?? DEFAULT_TRANSITION
+    return withSpeed(base, speedMs) ?? base
+  }, [template, transitionOverride, speedMs])
   const durationMs = transition.duration_ms
 
   // Two distinct state buckets:

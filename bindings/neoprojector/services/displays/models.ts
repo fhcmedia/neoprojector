@@ -448,6 +448,13 @@ export class SlideChannel {
      */
     "font_size_override_by_template"?: { [_ in string]?: number };
 
+    /**
+     * TemplateID, when set, is the item's own template (dropped onto it
+     * from the library); it replaces each display's song/Bible template
+     * for this slide. 0 = use the display's template.
+     */
+    "template_id"?: number;
+
     /** Creates a new SlideChannel instance. */
     constructor($$source: Partial<SlideChannel> = {}) {
         if (!("kind" in $$source)) {

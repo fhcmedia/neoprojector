@@ -280,6 +280,7 @@ export class ListServiceItemsWithContentRow {
     "position": number;
     "background_id": number;
     "section_background_id": number;
+    "template_id": number;
     "kind": string;
     "song_id": number;
     "book": string;
@@ -311,6 +312,9 @@ export class ListServiceItemsWithContentRow {
         }
         if (!("section_background_id" in $$source)) {
             this["section_background_id"] = 0;
+        }
+        if (!("template_id" in $$source)) {
+            this["template_id"] = 0;
         }
         if (!("kind" in $$source)) {
             this["kind"] = "";
@@ -619,6 +623,7 @@ export class ServiceItem {
     "background_id": sql$0.NullInt64;
     "created_at": string;
     "updated_at": string;
+    "template_id": sql$0.NullInt64;
 
     /** Creates a new ServiceItem instance. */
     constructor($$source: Partial<ServiceItem> = {}) {
@@ -640,6 +645,9 @@ export class ServiceItem {
         if (!("updated_at" in $$source)) {
             this["updated_at"] = "";
         }
+        if (!("template_id" in $$source)) {
+            this["template_id"] = (new sql$0.NullInt64());
+        }
 
         Object.assign(this, $$source);
     }
@@ -649,9 +657,13 @@ export class ServiceItem {
      */
     static createFrom($$source: any = {}): ServiceItem {
         const $$createField3_0 = $$createType0;
+        const $$createField6_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("background_id" in $$parsedSource) {
             $$parsedSource["background_id"] = $$createField3_0($$parsedSource["background_id"]);
+        }
+        if ("template_id" in $$parsedSource) {
+            $$parsedSource["template_id"] = $$createField6_0($$parsedSource["template_id"]);
         }
         return new ServiceItem($$parsedSource as Partial<ServiceItem>);
     }

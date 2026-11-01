@@ -13,7 +13,7 @@ import (
 const createServiceItem = `-- name: CreateServiceItem :one
 INSERT INTO service_item (section_id, position)
 VALUES (?, ?)
-RETURNING id, section_id, position, background_id, created_at, updated_at
+RETURNING id, section_id, position, background_id, created_at, updated_at, template_id
 `
 
 type CreateServiceItemParams struct {
@@ -31,6 +31,7 @@ func (q *Queries) CreateServiceItem(ctx context.Context, arg CreateServiceItemPa
 		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TemplateID,
 	)
 	return i, err
 }
@@ -41,7 +42,7 @@ VALUES (
   ?1,
   COALESCE((SELECT MAX(position) + 1 FROM service_item WHERE service_item.section_id = ?1), 0)
 )
-RETURNING id, section_id, position, background_id, created_at, updated_at
+RETURNING id, section_id, position, background_id, created_at, updated_at, template_id
 `
 
 func (q *Queries) CreateServiceItemAppend(ctx context.Context, sectionID int64) (ServiceItem, error) {
@@ -54,6 +55,7 @@ func (q *Queries) CreateServiceItemAppend(ctx context.Context, sectionID int64) 
 		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TemplateID,
 	)
 	return i, err
 }
@@ -68,7 +70,7 @@ func (q *Queries) DeleteServiceItem(ctx context.Context, id int64) error {
 }
 
 const listServiceItems = `-- name: ListServiceItems :many
-SELECT id, section_id, position, background_id, created_at, updated_at FROM service_item
+SELECT id, section_id, position, background_id, created_at, updated_at, template_id FROM service_item
 WHERE section_id = ?
 ORDER BY position
 `
@@ -89,6 +91,7 @@ func (q *Queries) ListServiceItems(ctx context.Context, sectionID int64) ([]Serv
 			&i.BackgroundID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TemplateID,
 		); err != nil {
 			return nil, err
 		}
@@ -112,6 +115,8 @@ SELECT
   -- resolves item -> section -> service default at go-live time.
   CAST(COALESCE(si.background_id, 0) AS INTEGER) AS background_id,
   CAST(COALESCE(sec.background_id, 0) AS INTEGER) AS section_background_id,
+  -- Per-item template (0 = the displays' song/Bible template).
+  CAST(COALESCE(si.template_id, 0) AS INTEGER) AS template_id,
   CASE
     WHEN sis.item_id IS NOT NULL THEN 'song'
     WHEN sib.item_id IS NOT NULL THEN 'bible'
@@ -154,6 +159,7 @@ type ListServiceItemsWithContentRow struct {
 	Position            int64  `json:"position"`
 	BackgroundID        int64  `json:"background_id"`
 	SectionBackgroundID int64  `json:"section_background_id"`
+	TemplateID          int64  `json:"template_id"`
 	Kind                string `json:"kind"`
 	SongID              int64  `json:"song_id"`
 	Book                string `json:"book"`
@@ -185,6 +191,7 @@ func (q *Queries) ListServiceItemsWithContent(ctx context.Context, sectionID int
 			&i.Position,
 			&i.BackgroundID,
 			&i.SectionBackgroundID,
+			&i.TemplateID,
 			&i.Kind,
 			&i.SongID,
 			&i.Book,
@@ -217,7 +224,7 @@ const moveServiceItem = `-- name: MoveServiceItem :one
 UPDATE service_item
 SET section_id = ?, position = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, section_id, position, background_id, created_at, updated_at
+RETURNING id, section_id, position, background_id, created_at, updated_at, template_id
 `
 
 type MoveServiceItemParams struct {
@@ -236,6 +243,7 @@ func (q *Queries) MoveServiceItem(ctx context.Context, arg MoveServiceItemParams
 		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TemplateID,
 	)
 	return i, err
 }
@@ -254,7 +262,7 @@ func (q *Queries) NextServiceItemPosition(ctx context.Context, sectionID int64) 
 }
 
 const serviceItemByID = `-- name: ServiceItemByID :one
-SELECT id, section_id, position, background_id, created_at, updated_at FROM service_item WHERE id = ?
+SELECT id, section_id, position, background_id, created_at, updated_at, template_id FROM service_item WHERE id = ?
 `
 
 func (q *Queries) ServiceItemByID(ctx context.Context, id int64) (ServiceItem, error) {
@@ -267,6 +275,7 @@ func (q *Queries) ServiceItemByID(ctx context.Context, id int64) (ServiceItem, e
 		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TemplateID,
 	)
 	return i, err
 }
@@ -275,7 +284,7 @@ const setItemBackground = `-- name: SetItemBackground :one
 UPDATE service_item
 SET background_id = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, section_id, position, background_id, created_at, updated_at
+RETURNING id, section_id, position, background_id, created_at, updated_at, template_id
 `
 
 type SetItemBackgroundParams struct {
@@ -293,6 +302,7 @@ func (q *Queries) SetItemBackground(ctx context.Context, arg SetItemBackgroundPa
 		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TemplateID,
 	)
 	return i, err
 }
@@ -313,11 +323,28 @@ func (q *Queries) SetServiceItemPosition(ctx context.Context, arg SetServiceItem
 	return err
 }
 
+const setServiceItemTemplate = `-- name: SetServiceItemTemplate :exec
+UPDATE service_item
+SET template_id = NULLIF(CAST(?1 AS INTEGER), 0), updated_at = CURRENT_TIMESTAMP
+WHERE id = ?2
+`
+
+type SetServiceItemTemplateParams struct {
+	TemplateID int64 `json:"template_id"`
+	ID         int64 `json:"id"`
+}
+
+// 0 clears the override (back to the displays' template).
+func (q *Queries) SetServiceItemTemplate(ctx context.Context, arg SetServiceItemTemplateParams) error {
+	_, err := q.db.ExecContext(ctx, setServiceItemTemplate, arg.TemplateID, arg.ID)
+	return err
+}
+
 const updateServiceItemPosition = `-- name: UpdateServiceItemPosition :one
 UPDATE service_item
 SET position = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, section_id, position, background_id, created_at, updated_at
+RETURNING id, section_id, position, background_id, created_at, updated_at, template_id
 `
 
 type UpdateServiceItemPositionParams struct {
@@ -335,6 +362,7 @@ func (q *Queries) UpdateServiceItemPosition(ctx context.Context, arg UpdateServi
 		&i.BackgroundID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TemplateID,
 	)
 	return i, err
 }

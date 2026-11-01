@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS service_item (
   position      INTEGER NOT NULL,
   background_id INTEGER,
   created_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+  updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  template_id   INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS bible (

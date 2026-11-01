@@ -14,7 +14,7 @@ import {
   useItemSlides,
   type Slide,
 } from "@/features/live/slides"
-import { useLive } from "@/features/live/live-context"
+import { useLive, type LiveSlide } from "@/features/live/live-context"
 import { useBackgrounds } from "@/features/backgrounds/api"
 import {
   resolveBackgroundId,
@@ -228,7 +228,23 @@ export function ShowPane({
   const updateBibleItem = useUpdateBibleItem()
   const { state: bibleTranslations } = useBibleTranslations()
 
-  const { live, setLive, isLive, registerNavigators } = useLive()
+  const { live, setLive: setLiveCtx, isLive, registerNavigators } = useLive()
+  // A song/Bible item can carry its own template (dropped onto it from
+  // the library). Every slide this pane sends live carries it, so each
+  // screen renders the item with it instead of its default template.
+  const itemTemplateId =
+    item && (item.kind === "song" || item.kind === "bible")
+      ? item.template_id || 0
+      : 0
+  const setLive = useCallback(
+    (s: LiveSlide | null) =>
+      setLiveCtx(
+        s && itemTemplateId && (s.kind === "song" || s.kind === "bible")
+          ? { ...s, templateId: itemTemplateId }
+          : s
+      ),
+    [setLiveCtx, itemTemplateId]
+  )
 
   // Item/section background override, resolved once per item against
   // the merged (seeds + DB) background list. Stamped onto every
@@ -633,7 +649,13 @@ export function ShowPane({
   const bibleTemplate = useShowTemplate("bible")
   const songTemplate = useShowTemplate("song")
 
+  const ownTemplate = itemTemplateId
+    ? allTemplates?.find((t) => t.id === itemTemplateId)
+    : undefined
+
   function templateForSlide(slide: Slide): Template | undefined {
+    if (ownTemplate && (slide.kind === "bible" || slide.kind === "song"))
+      return ownTemplate
     if (slide.kind === "bible") return bibleTemplate
     if (slide.kind === "song") return songTemplate
     return undefined
@@ -655,6 +677,12 @@ export function ShowPane({
           ? songTemplate?.id
           : undefined
     const ids = new Set<number>()
+    // The item's own template replaces every display's binding.
+    if (ownTemplate) {
+      return parseTemplateBody(ownTemplate.data_json).crossSlideUniform === true
+        ? [ownTemplate]
+        : []
+    }
     if (visibleId !== undefined) ids.add(visibleId)
     for (const d of displays ?? []) {
       if (d.enabled === 0) continue
@@ -666,7 +694,7 @@ export function ShowPane({
       .map((id) => allTemplates.find((t) => t.id === id))
       .filter((t): t is Template => !!t)
       .filter((t) => parseTemplateBody(t.data_json).crossSlideUniform === true)
-  }, [allTemplates, displays, bibleTemplate, songTemplate, slideKind])
+  }, [allTemplates, displays, bibleTemplate, songTemplate, slideKind, ownTemplate])
 
   // Push the slide at idx live, or clear it if it's already live (a
   // second click on the live unit blanks output — same toggle the old

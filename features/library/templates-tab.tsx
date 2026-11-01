@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { libraryDragProps } from "@/features/schedule/library-drag"
 import { AnimatePresence, motion } from "motion/react"
 import {
   BookOpenIcon,
@@ -194,6 +195,8 @@ function TemplateTile({
       <button
         type="button"
         onClick={onOpen}
+        // Drag onto a song or Bible item to use this template for it.
+        {...libraryDragProps({ type: "template", id: template.id, label: template.name, kind: template.kind })}
         className="relative block aspect-video w-full bg-muted/40 text-left"
       >
         <ScaledTemplate

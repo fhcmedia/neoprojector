@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { libraryDragProps } from "@/features/schedule/library-drag"
 import { AnimatePresence, motion } from "motion/react"
 import {
   CopyIcon,
@@ -154,6 +155,18 @@ function OverlayTile({
       <button
         type="button"
         onClick={onOpen}
+        // Drag into the schedule to add this overlay there.
+        {...libraryDragProps({
+          type: "overlay",
+          label: overlay.name,
+          spec: {
+            kind: overlay.kind,
+            name: overlay.name,
+            config_json: overlay.config_json,
+            layouts_json: overlay.layouts_json,
+            rules_json: overlay.rules_json,
+          },
+        })}
         className="relative block aspect-video w-full text-left"
         style={{
           // Overlays are always transparent — the checker (same

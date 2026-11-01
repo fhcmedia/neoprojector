@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from "react"
+import { libraryDragProps } from "@/features/schedule/library-drag"
 import { useQuery } from "@tanstack/react-query"
 import { Service as Bible } from "@/bindings/neoprojector/services/bible"
 import type { BibleBook } from "@/bindings/neoprojector/database"
@@ -399,6 +400,23 @@ function VersesPane({
             type="button"
             data-verse={v.verse}
             onClick={(e) => onPick(v.verse, e.shiftKey)}
+            // Drag into the schedule: the selected range if this verse
+            // is in it, else just this verse.
+            {...libraryDragProps(
+              (() => {
+                const inRange =
+                  verseStart !== undefined &&
+                  v.verse >= verseStart &&
+                  v.verse <= (verseEnd ?? verseStart)
+                const vs = inRange ? verseStart! : v.verse
+                const ve = inRange ? verseEnd ?? verseStart! : v.verse
+                return {
+                  type: "bible" as const,
+                  label: `${book} ${chapter}:${vs}${ve !== vs ? `-${ve}` : ""}`,
+                  ref: { book: book!, chapter: chapter!, verse_start: vs, verse_end: ve },
+                }
+              })()
+            )}
             className={cn(
               "flex w-full gap-2 px-3 py-1.5 text-left text-xs leading-snug transition-colors",
               inRange

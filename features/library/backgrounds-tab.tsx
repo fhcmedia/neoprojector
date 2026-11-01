@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { libraryDragProps } from "@/features/schedule/library-drag"
 import { AnimatePresence, motion } from "motion/react"
 import { RotateCcwIcon, Trash2Icon, XIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -128,7 +129,13 @@ function BackgroundTile({
       transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
       className="group relative flex flex-col overflow-hidden border border-border/50 bg-background transition-colors hover:border-border"
     >
-      <button type="button" onClick={onOpen} className="block text-left">
+      <button
+        type="button"
+        onClick={onOpen}
+        // Drag onto a schedule section or item to make it its background.
+        {...libraryDragProps({ type: "background", id: background.id, label: background.name })}
+        className="block text-left"
+      >
         <div className="relative aspect-video w-full overflow-hidden bg-black">
           <BackgroundView
             background={{

@@ -13,7 +13,7 @@ import { ANIM_KINDS, type AnimKind } from "@/features/animations/variants"
 import type { Display } from "@/bindings/neoprojector/database"
 import { useOverlayEditor } from "./overlay-editor"
 import { ScreenPicker } from "./screen-picker"
-import { StageDisplayCard } from "@/features/stage/stage-display"
+import { StageDisplayCard, StageTargetToggle } from "@/features/stage/stage-display"
 import { BehaviorRules } from "./behavior-rules"
 
 // OverlayEditorOptions renders in the LEFT (schedule) pane while the
@@ -105,9 +105,16 @@ export function OverlayEditorOptions() {
               commitRules(next)
             }}
           />
-          {def?.kind === "sermon_timer" && (
-            <div className="pt-2">
-              <StageDisplayCard compact />
+          {def && (
+            <div className="flex flex-col gap-2 pt-2">
+              <StageTargetToggle
+                kind={def.kind}
+                value={rules.stage}
+                onChange={(stage) => commitRules({ ...rules, stage })}
+              />
+              {(def.kind === "sermon_timer" || def.kind === "message") && (
+                <StageDisplayCard compact />
+              )}
             </div>
           )}
         </Section>

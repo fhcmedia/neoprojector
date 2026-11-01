@@ -14,9 +14,27 @@ import { createPresentationFromDeck } from "@/features/presentations/import-flow
 // presentation item (pages import in the background with progress).
 
 export const SECTION_DROP_PREFIX = "schedule-section:"
+export const SERVICE_DROP_PREFIX = "schedule-service:"
 
 export function sectionDropTarget(sectionId: number): string {
   return `${SECTION_DROP_PREFIX}${sectionId}`
+}
+
+// serviceDropTarget: the whole open service (below/between sections).
+// Drops there go to the last section, or a new one when there's none.
+export function serviceDropTarget(serviceId: number): string {
+  return `${SERVICE_DROP_PREFIX}${serviceId}`
+}
+
+// lastSectionOf returns the service's last section, creating one when
+// the service has none yet.
+export async function lastSectionOf(serviceId: number): Promise<number> {
+  const sections = (await Schedule.ListSections(serviceId)) as unknown as { id: number; position: number }[]
+  if (sections.length > 0) {
+    return [...sections].sort((a, b) => a.position - b.position)[sections.length - 1].id
+  }
+  const created = (await Schedule.CreateSection(serviceId, "Untitled section")) as unknown as { id: number }
+  return created.id
 }
 
 type DropPayload = { paths?: string[]; target_id?: string }
@@ -27,11 +45,19 @@ export function useScheduleDrop() {
     const off = Events.On("media:files-dropped", (event: { data?: DropPayload }) => {
       const data = event?.data ?? {}
       const target = data.target_id ?? ""
-      if (!target.startsWith(SECTION_DROP_PREFIX)) return
-      const sectionId = Number(target.slice(SECTION_DROP_PREFIX.length))
       const paths = data.paths ?? []
-      if (!sectionId || paths.length === 0) return
-      void addToSection(sectionId, paths)
+      if (paths.length === 0) return
+      if (target.startsWith(SECTION_DROP_PREFIX)) {
+        const sectionId = Number(target.slice(SECTION_DROP_PREFIX.length))
+        if (sectionId) void addToSection(sectionId, paths)
+      } else if (target.startsWith(SERVICE_DROP_PREFIX)) {
+        const serviceId = Number(target.slice(SERVICE_DROP_PREFIX.length))
+        if (serviceId)
+          void lastSectionOf(serviceId).then((sid) => {
+            qc.invalidateQueries({ queryKey: ["schedule"] })
+            return addToSection(sid, paths)
+          })
+      }
     })
     async function addToSection(sectionId: number, paths: string[]) {
       let added = 0

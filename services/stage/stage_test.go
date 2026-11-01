@@ -11,13 +11,19 @@ import (
 )
 
 func testService() *Service {
-	s := New(func() []displays.OverlayActivation {
-		return []displays.OverlayActivation{
-			{Kind: "qr", Name: "QR"},
-			{Kind: "sermon_timer", Name: "Old", ConfigJSON: `{"target_seconds":60}`, ActivatedAtMs: 100},
-			{Kind: "sermon_timer", Name: "New", ConfigJSON: `{"target_seconds":1800}`,
-				LayoutsJSON: `{"default":{"style":{"color":"#00ff00"}}}`, ActivatedAtMs: 200},
-			{Kind: "sermon_timer", Name: "Broken", ConfigJSON: `not json`, ActivatedAtMs: 50},
+	s := New(func() displays.LivePayload {
+		return displays.LivePayload{
+			ActiveOverlays: []displays.OverlayActivation{
+				{Kind: "qr", Name: "QR"},
+				{Kind: "sermon_timer", Name: "Old", ConfigJSON: `{"target_seconds":60}`, ActivatedAtMs: 100},
+				{Kind: "sermon_timer", Name: "New", ConfigJSON: `{"target_seconds":1800}`,
+					LayoutsJSON: `{"default":{"style":{"color":"#00ff00"}}}`, ActivatedAtMs: 200},
+				{Kind: "sermon_timer", Name: "Broken", ConfigJSON: `not json`, ActivatedAtMs: 50},
+				{Kind: "sermon_timer", Name: "Projector only", RulesJSON: `{"stage":false}`, ActivatedAtMs: 300},
+				{Kind: "message", Name: "Wrap up", ConfigJSON: `{"text":"Please wrap up"}`, RulesJSON: `{"stage":true}`, ActivatedAtMs: 150},
+				{Kind: "message", Name: "Audience msg", ConfigJSON: `{"text":"Welcome"}`, ActivatedAtMs: 160},
+			},
+			Slide: &displays.SlideChannel{Kind: "song", Fill: displays.LiveFill{Primary: "Amazing grace", Caption: "Verse 1"}},
 		}
 	})
 	s.cfg = settings{Enabled: true, Token: "abc23456"}
@@ -47,24 +53,41 @@ func TestStageLinkToken(t *testing.T) {
 	}
 }
 
-func TestStageStateOnlyTimersNewestFirst(t *testing.T) {
+func TestStageStateFollowsShowOn(t *testing.T) {
+	st := testService().snapshot(false)
+	var names []string
+	for _, o := range st.Overlays {
+		names = append(names, o.Name)
+	}
+	// Timers unless turned off for the stage; messages only when sent to
+	// it; never other kinds. Newest first.
+	want := []string{"New", "Wrap up", "Old", "Broken"}
+	if strings.Join(names, ",") != strings.Join(want, ",") {
+		t.Fatalf("got %v, want %v", names, want)
+	}
+	if st.Overlays[0].Color != "#00ff00" {
+		t.Fatalf("timer colour: %+v", st.Overlays[0])
+	}
+	if string(st.Overlays[3].Config) != "{}" {
+		t.Fatalf("invalid config must become {}: %s", st.Overlays[3].Config)
+	}
+	if st.Slide != nil {
+		t.Fatal("slide text only when enabled")
+	}
+	if st2 := testService().snapshot(true); st2.Slide == nil || st2.Slide.Primary != "Amazing grace" {
+		t.Fatalf("slide text when enabled: %+v", st2.Slide)
+	}
+}
+
+func TestStageStateEndpoint(t *testing.T) {
 	rec := httptest.NewRecorder()
 	testService().handler().ServeHTTP(rec, httptest.NewRequest("GET", "/s/abc23456/state", nil))
 	var st state
 	if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil {
 		t.Fatal(err)
 	}
-	if len(st.Overlays) != 3 {
-		t.Fatalf("got %d overlays, want the 3 sermon timers", len(st.Overlays))
-	}
-	if st.Overlays[0].Name != "New" || st.Overlays[0].Color != "#00ff00" {
-		t.Fatalf("newest first with its colour: %+v", st.Overlays[0])
-	}
-	if string(st.Overlays[2].Config) != "{}" {
-		t.Fatalf("invalid config must become {}: %s", st.Overlays[2].Config)
-	}
-	if st.NowMs == 0 {
-		t.Fatal("server clock missing")
+	if len(st.Overlays) != 4 || st.NowMs == 0 {
+		t.Fatalf("state: %+v", st)
 	}
 }
 

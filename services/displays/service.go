@@ -110,6 +110,10 @@ type SlideChannel struct {
 	// uniform-fit pass so translations stay aligned and verses never
 	// jump size. Empty when no uniform pass has reported.
 	FontSizeOverrideByTemplate map[string]int64 `json:"font_size_override_by_template,omitempty"`
+	// TemplateID, when set, is the item's own template (dropped onto it
+	// from the library); it replaces each display's song/Bible template
+	// for this slide. 0 = use the display's template.
+	TemplateID int64 `json:"template_id,omitempty"`
 }
 
 // PresentationChannel is presentation playback (z3): the current

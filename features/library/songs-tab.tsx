@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
+import { libraryDragProps } from "@/features/schedule/library-drag"
 import { AnimatePresence, motion } from "motion/react"
 import { MusicIcon, RadioIcon, Trash2Icon } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -89,6 +90,8 @@ export function SongsTab({ search }: { search: string }) {
                       <button
                         type="button"
                         onClick={() => setSelectedId(song.id)}
+                        // Drag into the schedule to add the song there.
+                        {...libraryDragProps({ type: "song", id: song.id, label: song.title })}
                         className="flex min-w-0 flex-1 items-center gap-2 px-3 py-1.5 text-left"
                       >
                         <MusicIcon className="size-3.5 shrink-0 opacity-70" />

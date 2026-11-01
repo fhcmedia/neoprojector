@@ -28,6 +28,10 @@ export function StageDisplayCard({ compact }: { compact?: boolean }) {
     mutationFn: (on: boolean) => Stage.SetEnabled(on) as unknown as Promise<Status>,
     onSuccess: set,
   })
+  const showSlide = useMutation({
+    mutationFn: (on: boolean) => Stage.SetShowSlide(on) as unknown as Promise<Status>,
+    onSuccess: set,
+  })
   const newLink = useMutation({
     mutationFn: () => Stage.NewLink() as unknown as Promise<Status>,
     onSuccess: set,
@@ -91,6 +95,22 @@ export function StageDisplayCard({ compact }: { compact?: boolean }) {
         </div>
       )}
       {st?.enabled && !compact && (
+        <label className="flex items-center justify-between gap-3">
+          <span className="flex flex-col gap-0.5">
+            <span className="font-medium">Show the lyrics / verse too</span>
+            <span className="text-muted-foreground">
+              Under the timer, the stage display shows what's on screen — for
+              a worship leader or preacher reading along.
+            </span>
+          </span>
+          <Switch
+            checked={!!st.show_slide}
+            onCheckedChange={(v) => showSlide.mutate(v)}
+            aria-label="Show lyrics and verses on the stage display"
+          />
+        </label>
+      )}
+      {st?.enabled && !compact && (
         <span className="text-[10px] text-muted-foreground/70">
           The device must be on the same network as this computer. If
           Windows asks about the firewall, allow private networks. Set the
@@ -98,5 +118,46 @@ export function StageDisplayCard({ compact }: { compact?: boolean }) {
         </span>
       )}
     </div>
+  )
+}
+
+// Kinds the stage display can show, and whether each goes there by
+// default (when the overlay hasn't chosen).
+const STAGE_KINDS: Record<string, boolean> = { sermon_timer: true, message: false }
+
+export function stageDefault(kind: string): boolean | undefined {
+  return STAGE_KINDS[kind]
+}
+
+// StageTargetToggle: the "Show on" choice for the stage display, next to
+// the monitor picker — with an HDMI splitter the monitors all mirror one
+// picture, so this is how a timer or message reaches only the preacher.
+export function StageTargetToggle({
+  kind,
+  value,
+  onChange,
+}: {
+  kind: string
+  value: boolean | undefined
+  onChange: (next: boolean) => void
+}) {
+  const def = stageDefault(kind)
+  if (def === undefined) return null
+  const on = value ?? def
+  return (
+    <label className="flex items-center justify-between gap-3 rounded-md border border-border/50 bg-muted/20 px-3 py-2 text-xs">
+      <span className="flex items-center gap-2">
+        <MonitorSmartphoneIcon className="size-4 shrink-0 text-muted-foreground" />
+        <span className="flex flex-col gap-0.5">
+          <span className="font-medium">Stage display (phone / tablet / TV)</span>
+          <span className="text-muted-foreground">
+            {kind === "message"
+              ? "Send this message to the preacher's device. Turn its screens off above to keep it off the projector."
+              : "Show this timer on the preacher's device. Turn its screens off above to keep it off the projector."}
+          </span>
+        </span>
+      </span>
+      <Switch checked={on} onCheckedChange={onChange} aria-label="Show on the stage display" />
+    </label>
   )
 }

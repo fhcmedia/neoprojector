@@ -53,6 +53,9 @@ export type OverlayRules = {
   // it clears. Time-based widgets keep running (activatedAt is
   // untouched), so a sermon timer never resets while hidden.
   hide_on_content?: boolean
+  // Also show on the stage display (phone/tablet/TV, services/stage).
+  // Unset = the kind's default: on for sermon timers, off for messages.
+  stage?: boolean
   // Displays (by id) this overlay renders on. Absent = every display,
   // including ones added later; an empty list = none.
   display_ids?: number[]

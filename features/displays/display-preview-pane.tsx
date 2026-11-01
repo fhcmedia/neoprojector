@@ -477,7 +477,12 @@ export function DisplaySurface({
           : null
       : null
 
-  const template = bindingId !== null ? templateById.get(bindingId) ?? null : null
+  // The item's own template (see SlideChannel.template_id) beats the
+  // display binding, as on the output window.
+  const ownTemplateId = slideShown && slideLive ? slideLive.templateId ?? 0 : 0
+  const ownTemplate = ownTemplateId ? templateById.get(ownTemplateId) : undefined
+  const template =
+    ownTemplate ?? (bindingId !== null ? templateById.get(bindingId) ?? null : null)
 
   // cover_slide overlays blank the slide TEXT beneath them — the z0
   // slot (background/media) stays visible; overlays are transparent

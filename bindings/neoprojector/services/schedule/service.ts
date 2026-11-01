@@ -138,6 +138,14 @@ export function SetItemBackground(id: number, backgroundID: number): $Cancellabl
     });
 }
 
+/**
+ * SetItemTemplate makes a song or Bible item use its own template on
+ * every screen (0 = back to each display's template).
+ */
+export function SetItemTemplate(id: number, templateID: number): $CancellablePromise<void> {
+    return $Call.ByID(4248507322, id, templateID);
+}
+
 export function SetSectionBackground(id: number, backgroundID: number): $CancellablePromise<database$0.ServiceSection> {
     return $Call.ByID(862888770, id, backgroundID).then(($result: any) => {
         return $$createType1($result);

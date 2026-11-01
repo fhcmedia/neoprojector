@@ -13,8 +13,12 @@ import {
   PencilIcon,
   XIcon,
   SquareIcon,
+  LayoutTemplateIcon,
 } from "lucide-react"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { addToSchedule, useLibraryDropZone } from "@/features/schedule/library-drag"
+import { useTemplates } from "@/features/library/templates-api"
+import { Service as Schedule } from "@/bindings/neoprojector/services/schedule"
 import type {
   ListServiceItemsWithContentRow,
   Medium,
@@ -161,6 +165,20 @@ function ItemRow({
   const { isPlayed, toggle } = usePlayed()
   const played = isPlayed(item.id)
   const { live, toggleOverlay, isOverlayActive, stopOverlay } = useLive()
+  const qc = useQueryClient()
+  const { data: templateList } = useTemplates()
+  const itemTemplateName = item.template_id
+    ? templateList?.find((t) => t.id === item.template_id)?.name
+    : undefined
+  // Library drops onto this row: songs/media/… are inserted just above
+  // it; a background or template applies to this item.
+  const libraryDrop = useLibraryDropZone((drag) => {
+    void addToSchedule(qc, drag, {
+      sectionId: item.section_id,
+      itemId: item.id,
+      itemKind: item.kind,
+    })
+  }, true)
   // Bible rows edit in the drawer, not the modal: the pencil arms the
   // Bible tab for this row. Which row is being edited is shown by the
   // library chip + the selected row, so the pencil itself stays a plain
@@ -219,6 +237,13 @@ function ItemRow({
         rowRef.current = node
       }}
       style={style}
+      {...libraryDrop.props}
+      className={cn(
+        "relative",
+        // Insert marker: a line above the row it'll be placed before.
+        libraryDrop.hover &&
+          "before:pointer-events-none before:absolute before:inset-x-0 before:-top-px before:z-10 before:h-0.5 before:bg-foreground/70"
+      )}
     >
       <div
         className={cn(
@@ -279,6 +304,26 @@ function ItemRow({
             />
             <span className="truncate">{label}</span>
           </button>
+          {item.template_id ? (
+            // This item uses its own template (dropped from the
+            // library). Click to go back to the displays' template.
+            <button
+              type="button"
+              title={`Uses “${itemTemplateName ?? "a custom template"}” — click to use the default template again`}
+              aria-label="Use the default template"
+              onClick={(e) => {
+                e.stopPropagation()
+                void Schedule.SetItemTemplate(item.id, 0).then(() =>
+                  qc.invalidateQueries({ queryKey: ["schedule"] })
+                )
+              }}
+              className="flex max-w-24 shrink-0 items-center gap-1 rounded border border-border/50 px-1 py-0.5 text-[9px] text-muted-foreground hover:border-border hover:text-foreground"
+            >
+              <LayoutTemplateIcon className="size-2.5 shrink-0" />
+              <span className="truncate">{itemTemplateName ?? "Template"}</span>
+              <XIcon className="size-2.5 shrink-0" />
+            </button>
+          ) : null}
           {overlayActive && (
             // Always visible while on screen: a sticky sermon timer
             // survives Esc, so it needs an obvious off switch.

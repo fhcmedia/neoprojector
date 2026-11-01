@@ -46,6 +46,8 @@ const Port = 7120
 // Status is what Settings shows.
 type Status struct {
 	Enabled bool `json:"enabled"`
+	// ShowSlide: the stage display also shows the lyrics/verse on screen.
+	ShowSlide bool `json:"show_slide"`
 	// Running is false when enabled but the port couldn't be opened.
 	Running bool     `json:"running"`
 	URLs    []string `json:"urls"` // one per LAN address, best first
@@ -53,13 +55,14 @@ type Status struct {
 }
 
 type settings struct {
-	Enabled bool   `json:"enabled"`
-	Token   string `json:"token"`
+	Enabled   bool   `json:"enabled"`
+	Token     string `json:"token"`
+	ShowSlide bool   `json:"show_slide"`
 }
 
 // Service runs the stage display server.
 type Service struct {
-	overlays func() []displays.OverlayActivation
+	live func() displays.LivePayload
 
 	mu     sync.Mutex
 	cfg    settings
@@ -67,10 +70,10 @@ type Service struct {
 	runErr string
 }
 
-// New takes how to read the overlays that are on right now (the live
-// payload the operator window pushes).
-func New(overlays func() []displays.OverlayActivation) *Service {
-	return &Service{overlays: overlays}
+// New takes how to read what's live right now (the payload the operator
+// window pushes).
+func New(live func() displays.LivePayload) *Service {
+	return &Service{live: live}
 }
 
 func (*Service) ServiceName() string { return "stage" }
@@ -114,6 +117,16 @@ func (s *Service) SetEnabled(_ context.Context, on bool) Status {
 	return s.statusLocked()
 }
 
+// SetShowSlide sets whether the stage display also shows the current
+// lyrics/verse (for worship leaders and preachers reading along).
+func (s *Service) SetShowSlide(_ context.Context, on bool) Status {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cfg.ShowSlide = on
+	_ = saveSettings(s.cfg)
+	return s.statusLocked()
+}
+
 // NewLink replaces the link token (old links and QR codes stop working).
 func (s *Service) NewLink(context.Context) Status {
 	s.mu.Lock()
@@ -124,7 +137,7 @@ func (s *Service) NewLink(context.Context) Status {
 }
 
 func (s *Service) statusLocked() Status {
-	st := Status{Enabled: s.cfg.Enabled, Running: s.srv != nil, Error: s.runErr}
+	st := Status{Enabled: s.cfg.Enabled, ShowSlide: s.cfg.ShowSlide, Running: s.srv != nil, Error: s.runErr}
 	if s.srv != nil {
 		for _, ip := range lanIPs() {
 			st.URLs = append(st.URLs, fmt.Sprintf("http://%s:%d/s/%s", ip, Port, s.cfg.Token))
@@ -167,18 +180,26 @@ func (s *Service) stopLocked() {
 	s.srv = nil
 }
 
-// stateOverlay is one running timer as the page needs it.
+// stateOverlay is one overlay shown on the stage display.
 type stateOverlay struct {
 	Name          string          `json:"name"`
-	Kind          string          `json:"kind"`
+	Kind          string          `json:"kind"` // sermon_timer | message
 	Config        json.RawMessage `json:"config"`
 	Color         string          `json:"color"`
 	ActivatedAtMs int64           `json:"activated_at_ms"`
 }
 
+type stateSlide struct {
+	Kind      string `json:"kind"` // song | bible
+	Primary   string `json:"primary"`
+	Secondary string `json:"secondary,omitempty"`
+	Caption   string `json:"caption,omitempty"`
+}
+
 type state struct {
 	NowMs    int64          `json:"now_ms"` // server clock, for skew
 	Overlays []stateOverlay `json:"overlays"`
+	Slide    *stateSlide    `json:"slide,omitempty"`
 }
 
 func (s *Service) handler() http.Handler {
@@ -188,6 +209,7 @@ func (s *Service) handler() http.Handler {
 		token, sub, _ := strings.Cut(rest, "/")
 		s.mu.Lock()
 		ok := token != "" && token == s.cfg.Token
+		showSlide := s.cfg.ShowSlide
 		s.mu.Unlock()
 		if !ok {
 			http.Error(w, "This stage display link is no longer valid. Scan the new QR code in NeoProjector → Settings.", http.StatusNotFound)
@@ -200,7 +222,7 @@ func (s *Service) handler() http.Handler {
 			_, _ = w.Write(pageHTML)
 		case "state":
 			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(s.snapshot())
+			_ = json.NewEncoder(w).Encode(s.snapshot(showSlide))
 		default:
 			http.NotFound(w, r)
 		}
@@ -208,13 +230,30 @@ func (s *Service) handler() http.Handler {
 	return mux
 }
 
-// snapshot lists the running sermon timers (all of them, whatever
-// screens they're set to show on — "not shown anywhere" plus the stage
-// display is exactly the HDMI-splitter setup), newest first.
-func (s *Service) snapshot() state {
+// onStage decides whether an overlay goes to the stage display, from its
+// "Show on" choice (rules.stage). Sermon timers go unless turned off
+// there; messages only when sent to it.
+func onStage(kind, rulesJSON string) bool {
+	var r struct {
+		Stage *bool `json:"stage"`
+	}
+	_ = json.Unmarshal([]byte(rulesJSON), &r)
+	switch kind {
+	case "sermon_timer":
+		return r.Stage == nil || *r.Stage
+	case "message":
+		return r.Stage != nil && *r.Stage
+	}
+	return false
+}
+
+// snapshot is what the stage page shows: overlays sent to it (newest
+// first) and, when enabled, the lyrics/verse on screen.
+func (s *Service) snapshot(showSlide bool) state {
 	st := state{NowMs: time.Now().UnixMilli(), Overlays: []stateOverlay{}}
-	for _, o := range s.overlays() {
-		if o.Kind != "sermon_timer" {
+	live := s.live()
+	for _, o := range live.ActiveOverlays {
+		if !onStage(o.Kind, o.RulesJSON) {
 			continue
 		}
 		cfg := json.RawMessage(o.ConfigJSON)
@@ -230,6 +269,12 @@ func (s *Service) snapshot() state {
 	sort.Slice(st.Overlays, func(i, j int) bool {
 		return st.Overlays[i].ActivatedAtMs > st.Overlays[j].ActivatedAtMs
 	})
+	if showSlide && live.Slide != nil && (live.Slide.Kind == "song" || live.Slide.Kind == "bible") {
+		f := live.Slide.Fill
+		if f.Primary != "" {
+			st.Slide = &stateSlide{Kind: live.Slide.Kind, Primary: f.Primary, Secondary: f.Secondary, Caption: f.Caption}
+		}
+	}
 	return st
 }
 

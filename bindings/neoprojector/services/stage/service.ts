@@ -33,6 +33,16 @@ export function SetEnabled(on: boolean): $CancellablePromise<$models.Status> {
 }
 
 /**
+ * SetShowSlide sets whether the stage display also shows the current
+ * lyrics/verse (for worship leaders and preachers reading along).
+ */
+export function SetShowSlide(on: boolean): $CancellablePromise<$models.Status> {
+    return $Call.ByID(3738635936, on).then(($result: any) => {
+        return $$createType0($result);
+    });
+}
+
+/**
  * Status reports whether the stage display is on and its links.
  */
 export function Status(): $CancellablePromise<$models.Status> {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
+import { libraryDragProps } from "@/features/schedule/library-drag"
 import { AnimatePresence, motion } from "motion/react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { FilePlus2Icon, FilmIcon, ImageIcon, Trash2Icon, XIcon } from "lucide-react"
@@ -128,7 +129,11 @@ function PresentationTile({
       transition={{ duration: 0.14, ease: [0.32, 0.72, 0, 1] }}
       className="group relative flex flex-col overflow-hidden rounded border border-border/50 bg-background transition-colors hover:border-border"
     >
-      <div className="block text-left">
+      <div
+        className="block cursor-grab text-left"
+        // Drag into the schedule to add it there.
+        {...libraryDragProps({ type: "presentation", id: presentation.id, label: presentation.name })}
+      >
         <div className="relative aspect-video w-full overflow-hidden bg-muted/40">
           {firstMedium?.type === "image" && firstSlide ? (
             <img

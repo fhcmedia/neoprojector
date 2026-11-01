@@ -12,6 +12,11 @@ export class Status {
     "enabled": boolean;
 
     /**
+     * ShowSlide: the stage display also shows the lyrics/verse on screen.
+     */
+    "show_slide": boolean;
+
+    /**
      * Running is false when enabled but the port couldn't be opened.
      */
     "running": boolean;
@@ -27,6 +32,9 @@ export class Status {
         if (!("enabled" in $$source)) {
             this["enabled"] = false;
         }
+        if (!("show_slide" in $$source)) {
+            this["show_slide"] = false;
+        }
         if (!("running" in $$source)) {
             this["running"] = false;
         }
@@ -41,10 +49,10 @@ export class Status {
      * Creates a new Status instance from a string or object.
      */
     static createFrom($$source: any = {}): Status {
-        const $$createField2_0 = $$createType0;
+        const $$createField3_0 = $$createType0;
         let $$parsedSource = typeof $$source === 'string' ? JSON.parse($$source) : $$source;
         if ("urls" in $$parsedSource) {
-            $$parsedSource["urls"] = $$createField2_0($$parsedSource["urls"]);
+            $$parsedSource["urls"] = $$createField3_0($$parsedSource["urls"]);
         }
         return new Status($$parsedSource as Partial<Status>);
     }

@@ -35,6 +35,7 @@ import { BackgroundCrossfade } from "@/features/backgrounds/background-crossfade
 import { useVideoAssetUrl } from "@/lib/media-url"
 import { FORWARDED_KEYS, OUTPUT_KEY_EVENT } from "@/hooks/use-keybinds"
 import { useMediaItem } from "@/lib/media-item"
+import { useTransitionMs } from "@/lib/transition-speed"
 import { clockFrom, useSyncedPlayback } from "@/lib/media-sync"
 
 // /output/$displayId is rendered inside each fullscreen secondary
@@ -146,6 +147,11 @@ function OutputWindow() {
 
   const template = useMemo(() => {
     if (!display || !slide || !templates || !slideShown) return null
+    // The item's own template beats the display's binding.
+    if (slide.template_id) {
+      const own = templates.find((t) => t.id === slide.template_id)
+      if (own) return own
+    }
     const binding =
       slide.kind === "bible"
         ? display.bible_template_id
@@ -348,7 +354,9 @@ function DualLayerMediaCanvas({
   nextMediaId: number
   transition: { kind: string; duration_ms: number } | undefined
 }) {
-  const durationMs = transition?.duration_ms ?? 500
+  // Global transition speed (Settings → Output) wins when set.
+  const speedMs = useTransitionMs()
+  const durationMs = speedMs ?? transition?.duration_ms ?? 500
   // Slot state: each slot holds the media id it's currently displaying
   // (or pre-decoding). visibleSlot says which one is currently in
   // front. A and B trade off on every slide change so neither has to

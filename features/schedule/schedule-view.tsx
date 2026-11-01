@@ -55,7 +55,13 @@ import {
   PALETTE_COLORS,
 } from "@/features/schedule/section-palette"
 import { AddArea } from "@/components/add-area"
-import { sectionDropTarget, useScheduleDrop } from "@/features/schedule/schedule-drop"
+import {
+  lastSectionOf,
+  sectionDropTarget,
+  serviceDropTarget,
+  useScheduleDrop,
+} from "@/features/schedule/schedule-drop"
+import { addToSchedule, useLibraryDropZone } from "@/features/schedule/library-drag"
 
 // Palette swap animations — when the user opens the color picker the
 // per-action icons fade up and the colored dots cascade in from below.
@@ -119,6 +125,11 @@ export function ScheduleView({
   const qc = useQueryClient()
   // Files dragged from Explorer onto a section are added to it.
   useScheduleDrop()
+  const serviceDrop = useLibraryDropZone((drag) => {
+    void lastSectionOf(serviceId).then((sectionId) =>
+      addToSchedule(qc, drag, { sectionId })
+    )
+  })
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } })
   )
@@ -299,7 +310,16 @@ export function ScheduleView({
         )}
       </div>
 
-      <div className="flex flex-1 flex-col overflow-y-auto py-1">
+      <div
+        // Files from Explorer / library items dropped below or between
+        // sections go to the last section (one is created if needed).
+        data-file-drop-target={serviceDropTarget(serviceId)}
+        {...serviceDrop.props}
+        className={cn(
+          "flex flex-1 flex-col overflow-y-auto py-1",
+          serviceDrop.hover && "bg-foreground/[0.03]"
+        )}
+      >
         {isLoading ? (
           <div className="px-3 py-2 text-xs text-muted-foreground/60">
             Loading…
@@ -387,6 +407,12 @@ function SectionRow({
     ? section.background_id.Int64
     : 0
   const headerRef = useRef<HTMLDivElement>(null)
+  const qc = useQueryClient()
+  // Library items dropped on the section (not on one of its rows) go at
+  // the end; a background dropped here becomes the section's.
+  const libraryDrop = useLibraryDropZone((drag) => {
+    void addToSchedule(qc, drag, { sectionId: section.id })
+  }, true) // stop: the service-wide zone around it must not add it again
 
   // Reset transient state (pending-delete, open palette) when the user
   // clicks anywhere outside the header.
@@ -408,7 +434,11 @@ function SectionRow({
       ref={setNodeRef}
       style={style}
       data-file-drop-target={sectionDropTarget(section.id)}
-      className="border-b border-border/40 [&.file-drop-target-active]:bg-foreground/5 [&.file-drop-target-active]:outline [&.file-drop-target-active]:outline-1 [&.file-drop-target-active]:-outline-offset-1 [&.file-drop-target-active]:outline-foreground/40"
+      {...libraryDrop.props}
+      className={cn(
+        "border-b border-border/40 [&.file-drop-target-active]:bg-foreground/5 [&.file-drop-target-active]:outline [&.file-drop-target-active]:outline-1 [&.file-drop-target-active]:-outline-offset-1 [&.file-drop-target-active]:outline-foreground/40",
+        libraryDrop.hover && "bg-foreground/5 outline outline-1 -outline-offset-1 outline-foreground/40"
+      )}
     >
       <div
         ref={headerRef}

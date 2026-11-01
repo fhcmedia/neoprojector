@@ -3,6 +3,12 @@ import * as AppService from "@/bindings/neoprojector/app"
 import type { AppInfo } from "@/bindings/neoprojector/models"
 import { useStartupNoticeSetting } from "@/features/whats-new/startup-notice"
 import { StageDisplayCard } from "@/features/stage/stage-display"
+import { OptionSelect } from "@/components/option-select"
+import {
+  setTransitionMs,
+  TRANSITION_PRESETS,
+  useTransitionMs,
+} from "@/lib/transition-speed"
 import { MinusIcon, PlusIcon } from "lucide-react"
 import { Switch } from "@/components/switch"
 import { Input } from "@/components/input"
@@ -287,6 +293,12 @@ function OutputPanel() {
           aria-label="Bypass display requirement"
         />
       </Row>
+      <Row
+        label="Transition speed"
+        description="How long slides, images and videos take to change on every screen. “Each template's own” keeps each template's and presentation's timing; the others apply one speed everywhere (the style — fade, slide… — stays)."
+      >
+        <TransitionSpeedSelect />
+      </Row>
       <div className="py-3">
         <StageDisplayCard />
       </div>
@@ -428,6 +440,19 @@ function TranslationRow({
 
 // VersionInfo shows the running build and its update channel — the quick
 // way to tell what a given church PC is actually running.
+function TransitionSpeedSelect() {
+  const ms = useTransitionMs()
+  return (
+    <OptionSelect
+      value={ms === null ? "default" : String(ms)}
+      options={TRANSITION_PRESETS}
+      onChange={(v) => setTransitionMs(v === "default" ? null : Number(v))}
+      ariaLabel="Transition speed"
+      className="w-56"
+    />
+  )
+}
+
 function StartupNoticeToggle() {
   const { enabled, setEnabled } = useStartupNoticeSetting()
   return (

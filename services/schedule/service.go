@@ -136,6 +136,15 @@ func (s *Service) SetItemBackground(ctx context.Context, id, backgroundID int64)
 	})
 }
 
+// SetItemTemplate makes a song or Bible item use its own template on
+// every screen (0 = back to each display's template).
+func (s *Service) SetItemTemplate(ctx context.Context, id, templateID int64) error {
+	return s.q.SetServiceItemTemplate(ctx, database.SetServiceItemTemplateParams{
+		TemplateID: templateID,
+		ID:         id,
+	})
+}
+
 // ReorderSections sets section positions to match the given id order.
 func (s *Service) ReorderSections(ctx context.Context, ids []int64) error {
 	return s.inTx(ctx, func(q *database.Queries) error {

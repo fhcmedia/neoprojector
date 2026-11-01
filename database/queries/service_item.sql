@@ -37,6 +37,8 @@ SELECT
   -- resolves item -> section -> service default at go-live time.
   CAST(COALESCE(si.background_id, 0) AS INTEGER) AS background_id,
   CAST(COALESCE(sec.background_id, 0) AS INTEGER) AS section_background_id,
+  -- Per-item template (0 = the displays' song/Bible template).
+  CAST(COALESCE(si.template_id, 0) AS INTEGER) AS template_id,
   CASE
     WHEN sis.item_id IS NOT NULL THEN 'song'
     WHEN sib.item_id IS NOT NULL THEN 'bible'
@@ -93,3 +95,9 @@ RETURNING *;
 
 -- name: DeleteServiceItem :exec
 DELETE FROM service_item WHERE id = ?;
+
+-- name: SetServiceItemTemplate :exec
+-- 0 clears the override (back to the displays' template).
+UPDATE service_item
+SET template_id = NULLIF(CAST(sqlc.arg(template_id) AS INTEGER), 0), updated_at = CURRENT_TIMESTAMP
+WHERE id = sqlc.arg(id);
