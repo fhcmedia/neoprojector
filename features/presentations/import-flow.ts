@@ -4,7 +4,9 @@ import { toast } from "sonner"
 import { Service as Presentations } from "@/bindings/neoprojector/services/presentations"
 import type { Presentation } from "@/bindings/neoprojector/database"
 import { presentationKeys } from "@/features/presentations/api"
-import { DECK_FILE_PATTERN, deckName, importDeck } from "@/features/presentations/deck-import"
+import { DECK_FILE_PATTERN, deckName, importDeck, isDeckPath } from "@/features/presentations/deck-import"
+import { Service as Media } from "@/bindings/neoprojector/services/media"
+import type { Medium } from "@/bindings/neoprojector/database"
 
 // pickDeckFiles opens the file dialog for PDFs / PowerPoint files.
 export async function pickDeckFiles(): Promise<string[]> {
@@ -107,4 +109,54 @@ export function errorText(err: unknown): string {
     // not JSON
   }
   return raw
+}
+
+// addFilesToPresentation appends files in order: PDFs/PowerPoint become
+// one slide per page (with the progress toast), images and videos one
+// slide each (imported into the library first). onStatus gets a short
+// label while it works (null when done).
+export async function addFilesToPresentation(
+  qc: QueryClient,
+  presentationId: number,
+  paths: string[],
+  onStatus?: (label: string | null) => void
+) {
+  const refresh = () =>
+    qc.invalidateQueries({ queryKey: presentationKeys.slides(presentationId) })
+  try {
+    for (const path of paths) {
+      const name = path.split(/[\/]/).pop() ?? path
+      if (isDeckPath(path)) {
+        onStatus?.(`Importing ${name}…`)
+        await runDeckImport(qc, presentationId, path)
+      } else {
+        onStatus?.(`Adding ${name}…`)
+        const imported = (await Media.ImportFiles([path])) as unknown as Medium[]
+        if (imported.length === 0) toast.error(`${name} isn't an image or video`)
+        for (const m of imported) await Presentations.AddSlide(presentationId, m.id)
+      }
+      await refresh()
+    }
+  } finally {
+    onStatus?.(null)
+    qc.invalidateQueries({ queryKey: ["media", "list"] })
+  }
+}
+
+// pickSlideFiles opens the file dialog for anything that can be a slide.
+export async function pickSlideFiles(): Promise<string[]> {
+  const picked = await openFilesSafe({
+    Title: "Add slides",
+    AllowsMultipleSelection: true,
+    CanChooseFiles: true,
+    CanChooseDirectories: false,
+    Filters: [
+      {
+        DisplayName: "Slides (images, videos, PowerPoint, PDF)",
+        Pattern: `*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp;*.mp4;*.webm;*.mov;*.m4v;${DECK_FILE_PATTERN}`,
+      },
+      { DisplayName: "All files", Pattern: "*.*" },
+    ],
+  })
+  return Array.isArray(picked) ? picked : typeof picked === "string" && picked ? [picked] : []
 }

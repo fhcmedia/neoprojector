@@ -118,41 +118,7 @@ export function usePresentationSlides(
 
   const slides = useMemo<Slide[]>(() => {
     if (!slidesQ.data) return []
-    return slidesQ.data.map((s, idx) => {
-      // media_title comes from a LEFT JOIN to keep the slide row even
-      // if the media was deleted (we'd rather show "Slide N" than 404
-      // the whole presentation). The sqlc NullString shape wraps the
-      // string with a Valid flag; unwrap defensively.
-      const title =
-        s.media_title && s.media_title.Valid
-          ? s.media_title.String
-          : `Slide ${idx + 1}`
-      return {
-        kind: "media",
-        caption: title,
-        body: title,
-        presentationSlideId: s.id,
-        excluded: s.enabled === 0,
-        durationMs: s.duration_ms,
-        source: s.source,
-        fill: {
-          media: {
-            mediaId: s.media_id,
-            // Deck pages are whole slides: letterbox, never crop (a 4:3
-            // deck on a 16:9 screen keeps its edges).
-            ...(s.source ? { mode: "contain" as const } : {}),
-            // Background-style playback: video slides loop muted by
-            // default so the operator doesn't have to babysit a per-
-            // slide control surface. Tweak in the schedule editor if
-            // you want sound or a one-shot.
-            playing: true,
-            loop: true,
-            muted: true,
-            restartToken: 0,
-          },
-        },
-      }
-    })
+    return slidesQ.data.map(presentationRowToSlide)
   }, [slidesQ.data])
 
   if (!enabled)
@@ -479,5 +445,47 @@ export function useItemSlides(
       return presentation
     default:
       return { slides: [], isLoading: false, playback: null }
+  }
+}
+
+// presentationRowToSlide maps one presentation_slide row to a media
+// slide — shared by the Show pane and the presentation editor so both
+// show (and play) slides identically.
+export function presentationRowToSlide(
+  s: ListPresentationSlidesRow,
+  idx: number
+): Slide {
+  // media_title comes from a LEFT JOIN to keep the slide row even
+  // if the media was deleted (we'd rather show "Slide N" than 404
+  // the whole presentation). The sqlc NullString shape wraps the
+  // string with a Valid flag; unwrap defensively.
+  const title =
+    s.media_title && s.media_title.Valid
+      ? s.media_title.String
+      : `Slide ${idx + 1}`
+  return {
+    kind: "media",
+    caption: title,
+    body: title,
+    presentationSlideId: s.id,
+    excluded: s.enabled === 0,
+    durationMs: s.duration_ms,
+    source: s.source,
+    fill: {
+      media: {
+        mediaId: s.media_id,
+        // Deck pages are whole slides: letterbox, never crop (a 4:3
+        // deck on a 16:9 screen keeps its edges).
+        ...(s.source ? { mode: "contain" as const } : {}),
+        // Background-style playback: video slides loop muted by
+        // default so the operator doesn't have to babysit a per-
+        // slide control surface. Tweak in the schedule editor if
+        // you want sound or a one-shot.
+        playing: true,
+        loop: true,
+        muted: true,
+        restartToken: 0,
+      },
+    },
   }
 }

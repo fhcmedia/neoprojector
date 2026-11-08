@@ -31,6 +31,7 @@ import { snapshotFor } from "@/features/backgrounds/resolve"
 import { parseSurface, type Surface } from "@/features/surfaces/surface-search"
 import { useSurfaceEsc } from "@/features/surfaces/use-surface-esc"
 import { SettingsSurface } from "@/features/settings/settings-surface"
+import { PresentationEditor } from "@/features/presentations/presentation-editor"
 import { TemplateEditorProvider } from "@/features/templates/editor/template-editor"
 import { TemplateEditorOptions } from "@/features/templates/editor/template-editor-options"
 import { TemplateEditorCanvas } from "@/features/templates/editor/template-editor-canvas"
@@ -186,6 +187,7 @@ function Projector() {
   const templateEditorOpen = surface === "template" && editId !== undefined
   const overlayEditorOpen = surface === "overlay" && editId !== undefined
   const backgroundEditorOpen = surface === "background" && editId !== undefined
+  const presentationEditorOpen = surface === "presentation" && editId !== undefined
   // activeItemId persisted to sessionStorage so leaving for the
   // template editor (or any other route) and coming back lands the
   // user on the same item they were on. Cleared explicitly on
@@ -444,6 +446,8 @@ function Projector() {
               <OverlayEditorCanvas />
             ) : backgroundEditorOpen ? (
               <BackgroundEditorCanvas />
+            ) : presentationEditorOpen && editId !== undefined ? (
+              <PresentationEditor id={editId} onClose={closeSurface} />
             ) : (
               <ShowPane
                 activeItemId={activeItemId}

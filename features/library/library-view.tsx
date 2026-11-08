@@ -472,7 +472,19 @@ export function LibraryView({
               />
             )}
             {activeTab === "presentations" && (
-              <PresentationsTab search={presentationSearch} />
+              <PresentationsTab
+                search={presentationSearch}
+                onOpen={(p) =>
+                  navigate({
+                    to: "/",
+                    search: (prev) => ({
+                      ...prev,
+                      surface: "presentation",
+                      editId: p.id,
+                    }),
+                  })
+                }
+              />
             )}
             {activeTab === "backgrounds" && (
               <BackgroundsTab

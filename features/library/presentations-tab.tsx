@@ -2,8 +2,9 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { libraryDragProps } from "@/features/schedule/library-drag"
 import { AnimatePresence, motion } from "motion/react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { FilePlus2Icon, FilmIcon, ImageIcon, Trash2Icon, XIcon } from "lucide-react"
+import { FilePlus2Icon, FilmIcon, ImageIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react"
 import { Button } from "@/components/button"
+import { Service as Presentations } from "@/bindings/neoprojector/services/presentations"
 import {
   createPresentationFromDeck,
   pickDeckFiles,
@@ -21,6 +22,8 @@ import { useVideoAssetUrl } from "@/lib/media-url"
 
 type Props = {
   search: string
+  // Opens the presentation editor (new presentations open in it too).
+  onOpen: (p: Presentation) => void
 }
 
 // PresentationsTab — tile grid mirroring the Templates / Overlays
@@ -29,7 +32,7 @@ type Props = {
 // PowerPoint / PDF" makes a presentation per file; slides are edited
 // (added, skipped, timed, reordered) in the Show pane once the
 // presentation is in a service.
-export function PresentationsTab({ search }: Props) {
+export function PresentationsTab({ search, onOpen }: Props) {
   const { data: presentations, isLoading } = usePresentations()
   const deleteMut = useDeletePresentation()
   const qc = useQueryClient()
@@ -51,7 +54,21 @@ export function PresentationsTab({ search }: Props) {
 
   return (
     <div className="h-full w-full overflow-y-auto p-3">
-      <div className="mb-2 flex justify-end">
+      <div className="mb-2 flex justify-end gap-1.5">
+        <Button
+          size="sm"
+          onClick={() =>
+            void Presentations.CreatePresentation(
+              `Presentation ${(presentations?.length ?? 0) + 1}`
+            ).then((p) => {
+              qc.invalidateQueries({ queryKey: ["presentations"] })
+              onOpen(p as unknown as Presentation)
+            })
+          }
+        >
+          <PlusIcon className="size-3.5" />
+          New presentation
+        </Button>
         <Button size="sm" variant="outline" onClick={() => void importDecks()}>
           <FilePlus2Icon className="size-3.5" />
           Import PowerPoint / PDF…
@@ -64,6 +81,7 @@ export function PresentationsTab({ search }: Props) {
               key={p.id}
               presentation={p}
               onDelete={() => deleteMut.mutate(p.id)}
+              onOpen={() => onOpen(p)}
             />
           ))}
         </AnimatePresence>
@@ -82,9 +100,11 @@ export function PresentationsTab({ search }: Props) {
 function PresentationTile({
   presentation,
   onDelete,
+  onOpen,
 }: {
   presentation: Presentation
   onDelete: () => void
+  onOpen: () => void
 }) {
   const { data: slides } = usePresentationSlides(presentation.id)
   const { data: mediaList } = useQuery({
@@ -130,7 +150,14 @@ function PresentationTile({
       className="group relative flex flex-col overflow-hidden rounded border border-border/50 bg-background transition-colors hover:border-border"
     >
       <div
-        className="block cursor-grab text-left"
+        role="button"
+        tabIndex={0}
+        title="Click to edit · drag into the schedule to add it"
+        onClick={onOpen}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") onOpen()
+        }}
+        className="block cursor-pointer text-left"
         // Drag into the schedule to add it there.
         {...libraryDragProps({ type: "presentation", id: presentation.id, label: presentation.name })}
       >
