@@ -36,6 +36,7 @@ import { useVideoAssetUrl } from "@/lib/media-url"
 import { FORWARDED_KEYS, OUTPUT_KEY_EVENT } from "@/hooks/use-keybinds"
 import { useMediaItem } from "@/lib/media-item"
 import { useTransitionMs } from "@/lib/transition-speed"
+import { resolveFit, useMediaFit } from "@/lib/media-fit"
 import { clockFrom, useSyncedPlayback } from "@/lib/media-sync"
 
 // /output/$displayId is rendered inside each fullscreen secondary
@@ -477,8 +478,9 @@ function MediaLayer({
   const videoSrc = useVideoAssetUrl(
     item?.type === "video" && mediaId > 0 ? mediaId : undefined
   )
-  const objectFit =
-    live?.mode === "contain" ? "contain" : "cover"
+  // Its own framing (deck pages: "contain"), else Settings → Picture fit.
+  const settingFit = useMediaFit()
+  const objectFit = resolveFit(live?.mode, settingFit)
 
   if (!src) {
     return (

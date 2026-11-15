@@ -9,6 +9,7 @@ import {
   TRANSITION_PRESETS,
   useTransitionMs,
 } from "@/lib/transition-speed"
+import { MEDIA_FIT_OPTIONS, setMediaFit, useMediaFit, type MediaFit } from "@/lib/media-fit"
 import { MinusIcon, PlusIcon } from "lucide-react"
 import { Switch } from "@/components/switch"
 import { Input } from "@/components/input"
@@ -299,6 +300,12 @@ function OutputPanel() {
       >
         <TransitionSpeedSelect />
       </Row>
+      <Row
+        label="Picture fit"
+        description="How photos and videos fill the screen. “Show the whole picture” never cuts anything off (black bars appear when a picture's shape doesn't match the screen, like portrait photos or 4:3 projectors). “Fill the screen” has no bars but crops the edges."
+      >
+        <MediaFitSelect />
+      </Row>
       <div className="py-3">
         <StageDisplayCard />
       </div>
@@ -448,6 +455,19 @@ function TransitionSpeedSelect() {
       options={TRANSITION_PRESETS}
       onChange={(v) => setTransitionMs(v === "default" ? null : Number(v))}
       ariaLabel="Transition speed"
+      className="w-56"
+    />
+  )
+}
+
+function MediaFitSelect() {
+  const fit = useMediaFit()
+  return (
+    <OptionSelect
+      value={fit}
+      options={MEDIA_FIT_OPTIONS}
+      onChange={(v) => setMediaFit(v as MediaFit)}
+      ariaLabel="Picture fit"
       className="w-56"
     />
   )

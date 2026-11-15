@@ -5,8 +5,8 @@ import { useVideoAssetUrl } from "@/lib/media-url"
 
 // SlideMedia draws a presentation slide's image or video. thumb: a still
 // (videos parked on an early frame, never playing); otherwise videos play
-// muted and looping, like on the projector. fit: deck pages letterbox
-// ("contain"), photos fill ("cover"), as the outputs do.
+// muted and looping, like on the projector. fit: pass what the outputs
+// use (resolveFit in lib/media-fit.ts) so the preview matches the screen.
 export function SlideMedia({
   mediaId,
   fit = "cover",

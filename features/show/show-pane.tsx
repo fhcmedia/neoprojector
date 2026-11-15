@@ -40,6 +40,7 @@ import { songSectionType } from "@/features/songs/section-types"
 import { cn } from "@/lib/utils"
 import { useVideoAssetUrl } from "@/lib/media-url"
 import { clockFrom, useSyncedPlayback } from "@/lib/media-sync"
+import { resolveFit, useMediaFit } from "@/lib/media-fit"
 import {
   useVideoInfo,
   useVideoPlayback,
@@ -1257,7 +1258,7 @@ function SlideTile({
         // don't have a templated text layer — render the media bytes
         // directly as the tile background, same approach the audience
         // output uses when no template binding exists for the kind.
-        <MediaThumb mediaId={slide.fill.media.mediaId} />
+        <MediaThumb mediaId={slide.fill.media.mediaId} mode={slide.fill.media.mode} />
       ) : (
         <div className="grid h-full w-full place-items-center text-[10px] text-muted-foreground/40">
           No template
@@ -1350,8 +1351,11 @@ function SlideTile({
 // pane tiles. Picks the right element (<img> for image media,
 // muted <video> for video media) by checking the media list cache.
 // Falls back to a placeholder icon if the media row is missing from
-// the cache (deleted, or query hasn't loaded yet).
-function MediaThumb({ mediaId }: { mediaId: number }) {
+// the cache (deleted, or query hasn't loaded yet). Framed like the
+// projector (Settings → Picture fit) so a tile never hides what the
+// screen will show.
+function MediaThumb({ mediaId, mode }: { mediaId: number; mode?: string }) {
+  const fit = resolveFit(mode, useMediaFit()) === "contain" ? "object-contain" : "object-cover"
   const { data: list } = useQuery({
     queryKey: ["media", "list"],
     queryFn: () => Media.ListMedia() as unknown as Promise<Medium[]>,
@@ -1371,13 +1375,13 @@ function MediaThumb({ mediaId }: { mediaId: number }) {
       <img
         src={`/media-asset/${mediaId}`}
         alt={medium.title || ""}
-        className="absolute inset-0 h-full w-full object-cover"
+        className={cn("absolute inset-0 h-full w-full", fit)}
         loading="lazy"
       />
     )
   }
   if (medium.type === "video") {
-    return <VideoThumb src={videoSrc} />
+    return <VideoThumb src={videoSrc} fit={fit} />
   }
   return (
     <div className="grid h-full w-full place-items-center bg-muted/30 text-muted-foreground/40">
@@ -1392,13 +1396,13 @@ function MediaThumb({ mediaId }: { mediaId: number }) {
 // satisfy the seek; once cached, clicking the tile to go live is
 // instant because the same /media-asset URL is already warm in this
 // webview's HTTP cache.
-function VideoThumb({ src }: { src: string | undefined }) {
+function VideoThumb({ src, fit }: { src: string | undefined; fit: string }) {
   const ref = useRef<HTMLVideoElement>(null)
   return (
     <video
       ref={ref}
       src={src}
-      className="absolute inset-0 h-full w-full object-cover"
+      className={cn("absolute inset-0 h-full w-full", fit)}
       preload="auto"
       muted
       playsInline

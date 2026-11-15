@@ -16,6 +16,7 @@ import { Button } from "@/components/button"
 import { Input } from "@/components/input"
 import { OptionSelect } from "@/components/option-select"
 import { cn } from "@/lib/utils"
+import { resolveFit, useMediaFit } from "@/lib/media-fit"
 import { motionProps, type AnimKind } from "@/features/animations/variants"
 import { presentationRowToSlide, type PresentationPlayback } from "@/features/live/slides"
 import { dwellMs, nextIndex } from "@/features/live/presentation-nav"
@@ -88,6 +89,8 @@ export function PresentationEditor({ id, onClose }: { id: number; onClose: () =>
   const rename = useRenamePresentation()
   const updatePlayback = useUpdatePlayback(id)
   const reorder = useReorderSlides(id)
+  // Same framing the projector uses (Settings → Picture fit).
+  const settingFit = useMediaFit()
 
   // Name: edit locally, save on blur / Enter.
   const [name, setName] = useState("")
@@ -269,7 +272,7 @@ export function PresentationEditor({ id, onClose }: { id: number; onClose: () =>
                   >
                     <SlideMedia
                       mediaId={shown.fill.media!.mediaId}
-                      fit={shown.fill.media?.mode === "contain" ? "contain" : "cover"}
+                      fit={resolveFit(shown.fill.media?.mode, settingFit)}
                     />
                   </motion.div>
                 )}
@@ -356,7 +359,7 @@ export function PresentationEditor({ id, onClose }: { id: number; onClose: () =>
                   >
                     <SlideMedia
                       mediaId={slide.fill.media!.mediaId}
-                      fit={slide.fill.media?.mode === "contain" ? "contain" : "cover"}
+                      fit={resolveFit(slide.fill.media?.mode, settingFit)}
                       thumb
                     />
                     <span className="absolute left-1 top-1 rounded bg-black/70 px-1 text-[10px] tabular-nums text-white/80">

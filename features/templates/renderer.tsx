@@ -29,6 +29,7 @@ import { clockFrom, useSyncedPlayback, type PlayClock } from "@/lib/media-sync"
 import { IS_OPERATOR_WINDOW } from "@/features/live/live-context"
 import { useMediaItem } from "@/lib/media-item"
 import { useTransitionMs, withSpeed } from "@/lib/transition-speed"
+import { resolveFit, useMediaFit, type MediaFit } from "@/lib/media-fit"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -555,10 +556,11 @@ function BackgroundLayer({
   if (background.type === "media") {
     // Template-declared media background: no operator playback state
     // travels with this path, so we render a static media surface.
-    // Defaults: image → cover; video → playing+looping muted; audio
+    // Defaults: image → cover (backgrounds always fill); video → playing+looping muted; audio
     // → unsupported as a background (renders nothing).
     return (
       <MediaSurface
+        fallbackFit="cover"
         media={{
           mediaId: background.mediaId,
           mode: background.mode,
@@ -615,17 +617,18 @@ function BackgroundLayer({
 // a controlled renderer that mirrors them imperatively to the video
 // /audio element so the audience output stays in sync with whatever
 // the operator clicked, with no autonomous playhead drift.
-function MediaSurface({ media }: { media: MediaRef }) {
+function MediaSurface({ media, fallbackFit }: { media: MediaRef; fallbackFit?: MediaFit }) {
   const { item } = useMediaItem(media.mediaId)
   const src = `/media-asset/${media.mediaId}`
   const videoSrc = useVideoAssetUrl(media.mediaId)
   // `mode` is overloaded: legacy values "cover"/"contain" map directly
   // to object-fit; "loop" is a legacy flag that meant "video should
-  // loop" before the explicit `loop` boolean existed. We treat
-  // anything that isn't "contain" as cover, and OR the legacy loop
-  // hint into the explicit boolean.
-  const objectFit: "cover" | "contain" =
-    media.mode === "contain" ? "contain" : "cover"
+  // loop" before the explicit `loop` boolean existed. Anything without
+  // its own framing follows the Picture fit setting (Settings → Output),
+  // unless the caller pins a fallback (template backgrounds always
+  // fill). The legacy loop hint is ORed into the explicit boolean.
+  const settingFit = useMediaFit()
+  const objectFit = resolveFit(media.mode, fallbackFit ?? settingFit)
   const wantLoop = !!media.loop || media.mode === "loop"
   const wantPlaying = media.playing !== false
   // Sound only ever comes from output windows (one of them — see
