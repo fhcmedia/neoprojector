@@ -88,7 +88,7 @@ export function isOptimizing(st: OptimizeStatus | undefined): boolean {
     (st.state === "queued" ||
       st.state === "downloading" ||
       st.state === "converting" ||
-      st.state === "waiting_live")
+      st.state === "ready")
   )
 }
 
@@ -102,8 +102,8 @@ export function optimizeLabel(st: OptimizeStatus): string {
       return st.quality && st.quality !== "1080p"
         ? `Making ${st.quality} copy ${st.pct}%`
         : `Optimizing ${st.pct}%`
-    case "waiting_live":
-      return "Optimizing after the service"
+    case "ready":
+      return "Smooth copy ready"
     case "failed":
       return "Couldn't optimize"
     default:

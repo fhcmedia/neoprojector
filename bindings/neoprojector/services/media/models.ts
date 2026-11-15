@@ -12,7 +12,8 @@ export class OptimizeStatus {
     "media_id": number;
 
     /**
-     * queued | downloading | converting | waiting_live | done | failed
+     * queued | downloading | converting | ready (copy made, waiting for
+     * the video to leave the screen) | done | failed
      */
     "state": string;
     "pct": number;

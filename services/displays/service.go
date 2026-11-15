@@ -3,6 +3,7 @@ package displays
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"runtime"
 	"sync"
@@ -446,6 +447,23 @@ func (s *Service) IsLive(_ context.Context) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.live != nil
+}
+
+// LiveJSON returns what the screens are showing (the last pushed
+// payload) as JSON, or "" when nothing is live. A package func, not a
+// method, so it isn't bound to the frontend; the media optimizer uses
+// it to never swap a video's file while that video is on screen.
+func LiveJSON(s *Service) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.live == nil {
+		return ""
+	}
+	b, err := json.Marshal(s.lastSlot)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 // dwmColorNone is DWMWA_COLOR_NONE: tells DWM to draw no window border.

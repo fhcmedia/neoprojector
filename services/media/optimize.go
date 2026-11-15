@@ -3,12 +3,13 @@ package media
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"neoprojector/database"
@@ -25,9 +26,13 @@ import (
 // Videos outside the playback envelope (see policy.go) are converted,
 // one at a time, into a playback copy that replaces the original. The
 // rules that keep this from ever hurting a service:
-//   - it never runs while live: going live cancels the running job (the
-//     partial file is discarded) and it resumes once output stops;
-//   - ffmpeg runs at below-normal priority on half the cores;
+//   - ffmpeg runs on half the cores at below-normal priority, dropping to
+//     idle priority while a service is live (it then only gets CPU time
+//     nothing else wants), so conversions carry on during a service;
+//   - a copy is never swapped in while its video is on screen (in the
+//     live payload, or a template's background): the swap would reload
+//     the video mid-play. The finished copy waits as ready-<uuid>.mp4
+//     and swaps in within seconds of the video leaving the screen;
 //   - the swap is atomic: the copy is verified, renamed into place, and
 //     the media row is re-pointed only if it still points at the file the
 //     copy was made from; the heavy original is deleted afterwards.
@@ -37,7 +42,8 @@ import (
 // OptimizeStatus is one video's conversion state, sent to the UI.
 type OptimizeStatus struct {
 	MediaID int64 `json:"media_id"`
-	// queued | downloading | converting | waiting_live | done | failed
+	// queued | downloading | converting | ready (copy made, waiting for
+	// the video to leave the screen) | done | failed
 	State  string `json:"state"`
 	Pct    int    `json:"pct"`
 	Reason string `json:"reason"`
@@ -51,6 +57,8 @@ const optimizeEvent = "media:optimize"
 type optimizer struct {
 	svc    *Service
 	isLive func() bool
+	// onScreen reports whether the live payload shows this media.
+	onScreen func(id int64) bool
 
 	mu     sync.Mutex
 	status map[int64]*OptimizeStatus
@@ -62,15 +70,28 @@ type optimizer struct {
 	wake   chan struct{}
 	// files that couldn't be deleted yet (e.g. still open) — retried.
 	pendingDeletes map[string]bool
+	// finished copies waiting for their video to leave the screen.
+	ready map[int64]readyCopy
 }
 
-func newOptimizer(svc *Service, isLive func() bool) *optimizer {
+// readyCopy is a verified playback copy not yet swapped in.
+type readyCopy struct {
+	path string // ready-<uuid>.mp4 next to the original
+	from string // the original it was made from
+}
+
+func newOptimizer(svc *Service, isLive func() bool, onScreen func(id int64) bool) *optimizer {
 	if isLive == nil {
 		isLive = func() bool { return false }
+	}
+	if onScreen == nil {
+		onScreen = func(int64) bool { return false }
 	}
 	return &optimizer{
 		svc:            svc,
 		isLive:         isLive,
+		onScreen:       onScreen,
+		ready:          map[int64]readyCopy{},
 		status:         map[int64]*OptimizeStatus{},
 		failed:         map[int64]bool{},
 		forced:         map[int64]transcode.Quality{},
@@ -105,8 +126,7 @@ func (s *Service) RetryOptimize(ctx context.Context, id int64) {
 // Reoptimize (re)makes a video's playback copy at quality ("1080p",
 // "720p" or "480p"): after a failed conversion, or to get a lighter
 // copy for a PC that stutters. Never upscales — asking for more than
-// the file has keeps its size. Runs when nothing is live, like every
-// conversion.
+// the file has keeps its size.
 func (s *Service) Reoptimize(ctx context.Context, id int64, quality string) error {
 	row, err := s.q.MediaByID(ctx, id)
 	if err != nil {
@@ -119,6 +139,11 @@ func (s *Service) Reoptimize(ctx context.Context, id int64, quality string) erro
 	s.opt.mu.Lock()
 	delete(s.opt.failed, id)
 	s.opt.forced[id] = q
+	// A copy still waiting to swap in is superseded by this request.
+	if rc, ok := s.opt.ready[id]; ok {
+		delete(s.opt.ready, id)
+		os.Remove(rc.path)
+	}
 	s.opt.mu.Unlock()
 	s.opt.set(OptimizeStatus{MediaID: id, State: "queued", Reason: "requested " + string(q) + " copy", Quality: string(q)})
 	s.opt.poke()
@@ -136,6 +161,20 @@ func (o *optimizer) run(ctx context.Context) {
 	o.sweepPartials()
 	tick := time.NewTicker(15 * time.Second)
 	defer tick.Stop()
+	// Ready copies swap in soon after their video leaves the screen,
+	// even while another conversion is running.
+	go func() {
+		t := time.NewTicker(3 * time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				o.swapReady(ctx)
+			}
+		}
+	}()
 	for {
 		o.cycle(ctx)
 		select {
@@ -148,7 +187,7 @@ func (o *optimizer) run(ctx context.Context) {
 }
 
 // cycle queues every video that needs a copy, then works through the
-// queue newest-first until it's empty or a service goes live.
+// queue newest-first.
 func (o *optimizer) cycle(ctx context.Context) {
 	o.retryDeletes()
 	rows, err := o.svc.q.ListMedia(ctx)
@@ -164,7 +203,11 @@ func (o *optimizer) cycle(ctx context.Context) {
 		failed := o.failed[m.ID]
 		st := o.status[m.ID]
 		_, forced := o.forced[m.ID]
+		_, waiting := o.ready[m.ID]
 		o.mu.Unlock()
+		if waiting {
+			continue
+		}
 		if forced {
 			todo = append(todo, m)
 			continue
@@ -187,12 +230,6 @@ func (o *optimizer) cycle(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		if o.isLive() {
-			for _, w := range todo {
-				o.update(w.ID, func(s *OptimizeStatus) { s.State, s.Pct = "waiting_live", 0 })
-			}
-			return
-		}
 		o.convert(ctx, m)
 	}
 }
@@ -205,26 +242,7 @@ func (o *optimizer) convert(parent context.Context, m database.Medium) {
 	if !forced {
 		quality = transcode.Q1080
 	}
-	ctx, cancel := context.WithCancel(parent)
-	defer cancel()
-	// Going live mid-conversion cancels it; it is retried after.
-	var wentLive atomic.Bool
-	go func() {
-		t := time.NewTicker(time.Second)
-		defer t.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-t.C:
-				if o.isLive() {
-					wentLive.Store(true)
-					cancel()
-					return
-				}
-			}
-		}
-	}()
+	ctx := parent
 
 	toolsDir, err := dataSubdir("tools")
 	if err != nil {
@@ -236,26 +254,25 @@ func (o *optimizer) convert(parent context.Context, m database.Medium) {
 		o.update(m.ID, func(s *OptimizeStatus) { s.State, s.Pct = "downloading", pct })
 	})
 	if err != nil {
-		o.interrupted(m.ID, wentLive.Load(), err)
+		o.interrupted(m.ID, err)
 		return
 	}
 	dur, err := transcode.Duration(ctx, tools, m.Path)
 	if err != nil {
-		o.interrupted(m.ID, wentLive.Load(), err)
+		o.interrupted(m.ID, err)
 		return
 	}
 
 	dir := filepath.Dir(m.Path)
 	id := uuid.NewString()
 	tmp := filepath.Join(dir, "tmp-"+id+".mp4")
-	final := filepath.Join(dir, id+".mp4")
 	o.update(m.ID, func(s *OptimizeStatus) { s.State, s.Pct, s.Quality = "converting", 0, string(quality) })
 	err = transcode.Encode(ctx, tools, m.Path, tmp, dur, quality, func(pct int) {
 		o.update(m.ID, func(s *OptimizeStatus) { s.State, s.Pct = "converting", pct })
-	})
+	}, o.isLive)
 	if err != nil {
 		os.Remove(tmp)
-		o.interrupted(m.ID, wentLive.Load(), err)
+		o.interrupted(m.ID, err)
 		return
 	}
 	// The copy must itself be inside the envelope, or something is off.
@@ -264,37 +281,111 @@ func (o *optimizer) convert(parent context.Context, m database.Medium) {
 		o.fail(m.ID, errors.New("converted file still not playable: "+reason))
 		return
 	}
-	if err := os.Rename(tmp, final); err != nil {
-		os.Remove(tmp)
-		o.fail(m.ID, err)
+	if o.inUse(ctx, m.ID) {
+		// On screen right now: park it; swapReady swaps it in later.
+		ready := filepath.Join(dir, "ready-"+id+".mp4")
+		if err := os.Rename(tmp, ready); err != nil {
+			os.Remove(tmp)
+			o.fail(m.ID, err)
+			return
+		}
+		o.mu.Lock()
+		o.ready[m.ID] = readyCopy{path: ready, from: m.Path}
+		o.mu.Unlock()
+		o.update(m.ID, func(s *OptimizeStatus) { s.State, s.Pct, s.Error = "ready", 100, "" })
+		log.Info("media: playback copy waiting for the video to leave the screen", "id", m.ID)
 		return
 	}
-	n, err := o.svc.q.SwapMediaPath(parent, database.SwapMediaPathParams{
-		Path: final, ID: m.ID, Path_2: m.Path,
+	o.swapIn(ctx, m.ID, tmp, m.Path)
+}
+
+// swapIn renames a verified copy into place and re-points the media row
+// at it, then deletes the original.
+func (o *optimizer) swapIn(ctx context.Context, mediaID int64, copyPath, from string) {
+	final := filepath.Join(filepath.Dir(copyPath), uuid.NewString()+".mp4")
+	if err := os.Rename(copyPath, final); err != nil {
+		os.Remove(copyPath)
+		o.fail(mediaID, err)
+		return
+	}
+	n, err := o.svc.q.SwapMediaPath(ctx, database.SwapMediaPathParams{
+		Path: final, ID: mediaID, Path_2: from,
 	})
 	if err != nil || n == 0 {
 		// Deleted or changed meanwhile: drop the copy, keep whatever's there.
 		os.Remove(final)
 		if err != nil {
-			o.fail(m.ID, err)
+			o.fail(mediaID, err)
 		} else {
-			o.clear(m.ID)
+			o.clear(mediaID)
 		}
 		return
 	}
-	o.deleteFile(m.Path)
+	o.deleteFile(from)
 	o.mu.Lock()
-	delete(o.forced, m.ID)
+	delete(o.forced, mediaID)
 	o.mu.Unlock()
-	o.update(m.ID, func(s *OptimizeStatus) { s.State, s.Pct, s.Error = "done", 100, "" })
-	log.Info("media: playback copy ready", "id", m.ID, "file", filepath.Base(final))
+	o.update(mediaID, func(s *OptimizeStatus) { s.State, s.Pct, s.Error = "done", 100, "" })
+	log.Info("media: playback copy ready", "id", mediaID, "file", filepath.Base(final))
 }
 
-// interrupted handles a stopped job: a go-live is a pause, anything else
-// a failure.
-func (o *optimizer) interrupted(id int64, wentLive bool, err error) {
-	if wentLive || errors.Is(err, context.Canceled) {
-		o.update(id, func(s *OptimizeStatus) { s.State, s.Pct = "waiting_live", 0 })
+// swapReady swaps in every parked copy whose video has left the screen.
+func (o *optimizer) swapReady(ctx context.Context) {
+	o.mu.Lock()
+	ids := make([]int64, 0, len(o.ready))
+	for id := range o.ready {
+		ids = append(ids, id)
+	}
+	o.mu.Unlock()
+	for _, id := range ids {
+		if ctx.Err() != nil || o.inUse(ctx, id) {
+			continue
+		}
+		o.mu.Lock()
+		rc, ok := o.ready[id]
+		delete(o.ready, id)
+		o.mu.Unlock()
+		if ok {
+			o.swapIn(ctx, id, rc.path, rc.from)
+		}
+	}
+}
+
+// inUse reports whether swapping this video now would reload it on a
+// screen: a service is live and it's in the live payload or is the
+// background of a template.
+func (o *optimizer) inUse(ctx context.Context, id int64) bool {
+	if !o.isLive() {
+		return false
+	}
+	if o.onScreen(id) {
+		return true
+	}
+	tpls, err := o.svc.q.ListTemplates(ctx)
+	if err != nil {
+		return true // can't tell: wait
+	}
+	for _, t := range tpls {
+		if ReferencesMedia(t.DataJson, id) {
+			return true
+		}
+	}
+	return false
+}
+
+// ReferencesMedia reports whether a JSON document (a live payload, a
+// template; also JSON nested inside its strings) names this media id
+// under any of the keys media is referenced by.
+func ReferencesMedia(doc string, id int64) bool {
+	re := regexp.MustCompile(fmt.Sprintf(`\\?"(?:mediaId|media_id|next_media_id)\\?"\s*:\s*%d(?:[^0-9]|$)`, id))
+	return re.MatchString(doc)
+}
+
+// interrupted handles a stopped job: the app closing (the copy is made
+// again next launch) or a failure.
+func (o *optimizer) interrupted(id int64, err error) {
+	if errors.Is(err, context.Canceled) {
+		o.update(id, func(s *OptimizeStatus) { s.State, s.Pct = "queued", 0 })
 		return
 	}
 	o.fail(id, err)
@@ -368,8 +459,8 @@ func (o *optimizer) retryDeletes() {
 	}
 }
 
-// sweepPartials deletes tmp-* conversion outputs left by a crash or a
-// closed app (they're never referenced by a media row).
+// sweepPartials deletes tmp-*/ready-* conversion outputs left by a crash
+// or a closed app (they're never referenced by a media row).
 func (o *optimizer) sweepPartials() {
 	dir, err := dataSubdir("media")
 	if err != nil {
@@ -380,7 +471,9 @@ func (o *optimizer) sweepPartials() {
 		return
 	}
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasPrefix(e.Name(), "tmp-") {
+		// ready-* copies never got swapped in before the app closed;
+		// they're remade (cheaper than proving they still match).
+		if !e.IsDir() && (strings.HasPrefix(e.Name(), "tmp-") || strings.HasPrefix(e.Name(), "ready-")) {
 			os.Remove(filepath.Join(dir, e.Name()))
 		}
 	}

@@ -24,10 +24,12 @@ type Service struct {
 }
 
 // New creates the media service. isLive reports whether a service is
-// live; background video conversions pause while it returns true.
-func New(db *sql.DB, isLive func() bool) *Service {
+// live (background video conversions then run at idle priority);
+// onScreen whether the live payload shows a media id (its playback copy
+// then waits to swap in, so the video never reloads mid-play).
+func New(db *sql.DB, isLive func() bool, onScreen func(id int64) bool) *Service {
 	s := &Service{db: db, q: database.New(db)}
-	s.opt = newOptimizer(s, isLive)
+	s.opt = newOptimizer(s, isLive, onScreen)
 	return s
 }
 

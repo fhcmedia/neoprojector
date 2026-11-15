@@ -174,8 +174,12 @@ func main() {
 	wailsLog := slog.New(newCharmSlogHandler(charmlog.Default().WithPrefix("wails")))
 
 	displaysSvc := displays.New(db)
-	// Video conversions pause while a service is live (see media/optimize.go).
-	mediaSvc := media.New(db, func() bool { return displaysSvc.IsLive(context.Background()) })
+	// Video conversions keep going during a service, at idle priority, and
+	// never swap the file of a video that's on screen (see media/optimize.go).
+	mediaSvc := media.New(db,
+		func() bool { return displaysSvc.IsLive(context.Background()) },
+		func(id int64) bool { return media.ReferencesMedia(displays.LiveJSON(displaysSvc), id) },
+	)
 
 	app := application.New(application.Options{
 		Name:        "neoprojector",

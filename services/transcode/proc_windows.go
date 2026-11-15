@@ -5,6 +5,8 @@ package transcode
 import (
 	"os/exec"
 	"syscall"
+
+	"golang.org/x/sys/windows"
 )
 
 const (
@@ -21,4 +23,20 @@ func HideWindow(cmd *exec.Cmd) {
 		HideWindow:    true,
 		CreationFlags: createNoWindow | belowNormalPriorityClass,
 	}
+}
+
+// setBackground moves a running helper to idle priority (it only gets
+// CPU time nothing else wants — used while a service is live) or back
+// to below-normal.
+func setBackground(pid int, idle bool) {
+	h, err := windows.OpenProcess(windows.PROCESS_SET_INFORMATION, false, uint32(pid))
+	if err != nil {
+		return
+	}
+	defer windows.CloseHandle(h)
+	class := uint32(windows.BELOW_NORMAL_PRIORITY_CLASS)
+	if idle {
+		class = windows.IDLE_PRIORITY_CLASS
+	}
+	_ = windows.SetPriorityClass(h, class)
 }

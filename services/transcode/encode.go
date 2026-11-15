@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Quality is a playback-copy preset.
@@ -117,7 +118,10 @@ func Duration(ctx context.Context, t Tools, path string) (float64, error) {
 
 // Encode writes a playback copy of in to out, reporting 0–100 progress.
 // Cancelling ctx kills ffmpeg (the caller removes the partial output).
-func Encode(ctx context.Context, t Tools, in, out string, durationSec float64, q Quality, progress func(pct int)) error {
+// gentle (optional) is polled every second: while it reports true,
+// ffmpeg runs at idle priority, so it only uses CPU time nothing else
+// wants (a live service keeps playing smoothly while the copy is made).
+func Encode(ctx context.Context, t Tools, in, out string, durationSec float64, q Quality, progress func(pct int), gentle func() bool) error {
 	cmd := exec.CommandContext(ctx, t.FFmpeg, PlaybackArgs(in, out, Threads(), q)...)
 	HideWindow(cmd)
 	stdout, err := cmd.StdoutPipe()
@@ -129,6 +133,11 @@ func Encode(ctx context.Context, t Tools, in, out string, durationSec float64, q
 	if err := cmd.Start(); err != nil {
 		return err
 	}
+	if gentle != nil {
+		done := make(chan struct{})
+		defer close(done)
+		go followPriority(cmd.Process.Pid, gentle, done)
+	}
 	parseProgress(stdout, durationSec, progress)
 	if err := cmd.Wait(); err != nil {
 		if ctx.Err() != nil {
@@ -137,6 +146,27 @@ func Encode(ctx context.Context, t Tools, in, out string, durationSec float64, q
 		return fmt.Errorf("ffmpeg: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	return nil
+}
+
+// followPriority keeps ffmpeg's priority in step with gentle until done.
+func followPriority(pid int, gentle func() bool, done <-chan struct{}) {
+	idle := gentle()
+	if idle {
+		setBackground(pid, true)
+	}
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case <-t.C:
+			if g := gentle(); g != idle {
+				idle = g
+				setBackground(pid, idle)
+			}
+		}
+	}
 }
 
 // parseProgress reads ffmpeg's -progress key=value stream. out_time_us

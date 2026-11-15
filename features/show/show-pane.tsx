@@ -1566,14 +1566,14 @@ function MediaPreview({
                 {optimizeLabel(optimize)}
               </span>
               <span className="text-muted-foreground">
-                {optimize.state === "waiting_live"
-                  ? "Paused so the service runs smoothly — it continues when you stop presenting."
-                  : `Making a smooth playback copy (${optimize.reason}). It replaces the original automatically when it's done.`}
+                {optimize.state === "ready"
+                  ? "It swaps in a few seconds after this video leaves the screen, so nothing jumps mid-service."
+                  : `Making a smooth playback copy (${optimize.reason}). It replaces the original automatically when it's done — it keeps going while you present, using only spare computer power.`}
               </span>
             </div>
           </div>
           <Progress
-                value={optimize.state === "converting" || optimize.state === "downloading" ? optimize.pct : 0}
+                value={optimize.state === "converting" || optimize.state === "downloading" || optimize.state === "ready" ? optimize.pct : 0}
                 className="h-1 bg-white/10 [&>[data-slot=progress-indicator]]:bg-sky-400"
               />
         </div>

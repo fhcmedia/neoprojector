@@ -80,7 +80,7 @@ func TestDeleteMediaUsedInService(t *testing.T) {
 	item := exec(`INSERT INTO service_item (section_id, position) VALUES (?, 0)`, sec)
 	exec(`INSERT INTO service_item_media (item_id, media_id) VALUES (?, ?)`, item, mid)
 
-	if err := New(db, nil).DeleteMedia(ctx, mid); err != nil {
+	if err := New(db, nil, nil).DeleteMedia(ctx, mid); err != nil {
 		t.Fatalf("DeleteMedia: %v", err)
 	}
 	var n int
