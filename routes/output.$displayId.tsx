@@ -371,39 +371,39 @@ function DualLayerMediaCanvas({
   const [visible, setVisible] = useState<"A" | "B">("A")
   const lastLiveId = useRef(mediaRef.mediaId)
 
-  // React to the live mediaId changing. Three cases:
-  //   - same: just a playback-state ping, nothing to do here.
-  //   - matches the hidden slot: ideal — flip visibility.
-  //   - matches neither: cold swap into the hidden slot, then flip.
+  // One effect drives both slots so the preload can never clobber a
+  // live swap. (As two effects, an out-of-order click loaded the
+  // clicked media into the hidden slot and, in the same commit, the
+  // preload overwrote that slot with next_media_id — the screen then
+  // flipped to the slide AFTER the one clicked.)
   useEffect(() => {
-    if (mediaRef.mediaId === lastLiveId.current) return
-    lastLiveId.current = mediaRef.mediaId
     const hidden: "A" | "B" = visible === "A" ? "B" : "A"
     const hiddenId = hidden === "A" ? slotA.mediaId : slotB.mediaId
-    if (mediaRef.mediaId === hiddenId) {
-      setVisible(hidden)
+    // React to the live mediaId changing:
+    //   - matches the hidden slot: ideal — flip visibility.
+    //   - otherwise: cold swap into the hidden slot, then flip. The
+    //     flip is on rAF so the new src has at least one paint to
+    //     start decoding before the fade begins.
+    if (mediaRef.mediaId !== lastLiveId.current) {
+      lastLiveId.current = mediaRef.mediaId
+      if (mediaRef.mediaId === hiddenId) {
+        setVisible(hidden)
+        return
+      }
+      if (hidden === "A") setSlotA({ mediaId: mediaRef.mediaId })
+      else setSlotB({ mediaId: mediaRef.mediaId })
+      requestAnimationFrame(() => setVisible(hidden))
       return
     }
-    // Cold swap path: load new media into the hidden slot, then on
-    // next paint flip. The flip is on rAF so the new src has at
-    // least one paint to start decoding before the fade begins.
-    if (hidden === "A") setSlotA({ mediaId: mediaRef.mediaId })
-    else setSlotB({ mediaId: mediaRef.mediaId })
-    requestAnimationFrame(() => setVisible(hidden))
-  }, [mediaRef.mediaId, visible, slotA.mediaId, slotB.mediaId])
-
-  // Keep the hidden slot pointed at the upcoming next slide id so
-  // its decoder is ready by the time the operator (or auto-advance)
-  // pushes that media live. Only updates the hidden slot — the
-  // visible one keeps showing its content uninterrupted.
-  useEffect(() => {
+    // Keep the hidden slot pointed at the upcoming next slide so its
+    // decoder is ready by the time the operator (or auto-advance)
+    // pushes it live. Never touch a hidden slot holding the live
+    // media: that's a cold swap waiting for its flip.
     if (nextMediaId <= 0) return
-    const hidden: "A" | "B" = visible === "A" ? "B" : "A"
-    const hiddenId = hidden === "A" ? slotA.mediaId : slotB.mediaId
-    if (nextMediaId === hiddenId) return
+    if (hiddenId === mediaRef.mediaId || nextMediaId === hiddenId) return
     if (hidden === "A") setSlotA({ mediaId: nextMediaId })
     else setSlotB({ mediaId: nextMediaId })
-  }, [nextMediaId, visible, slotA.mediaId, slotB.mediaId])
+  }, [mediaRef.mediaId, nextMediaId, visible, slotA.mediaId, slotB.mediaId])
 
   return (
     <>
