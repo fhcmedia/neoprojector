@@ -5,6 +5,7 @@ import { Service as Bible } from "@/bindings/neoprojector/services/bible"
 import type { BibleBook } from "@/bindings/neoprojector/database"
 import type { ChapterVerse } from "@/bindings/neoprojector/services/bible"
 import { useSessionState } from "@/hooks/use-session-state"
+import { useBibleTranslations } from "@/hooks/use-bible-translations"
 import { useBibleEdit } from "@/features/schedule/bible-edit-context"
 import { useLive } from "@/features/live/live-context"
 import { parseBibleRef } from "@/features/schedule/bible-ref"
@@ -357,10 +358,15 @@ function VersesPane({
   verseEnd: number | undefined
   onPick: (verse: number, extend: boolean) => void
 }) {
+  // The verse text reads in the primary translation (Settings > Bibles),
+  // the same one the screens show.
+  const translation = useBibleTranslations().state.primary
   const { data: verses } = useQuery({
-    queryKey: ["bible", "verses", book, chapter],
+    queryKey: ["bible", "verses", book, chapter, translation],
     queryFn: () =>
-      Bible.ListVerses(book!, chapter!) as unknown as Promise<ChapterVerse[]>,
+      Bible.ListVersesIn(book!, chapter!, translation) as unknown as Promise<
+        ChapterVerse[]
+      >,
     enabled: !!book && !!chapter,
   })
 

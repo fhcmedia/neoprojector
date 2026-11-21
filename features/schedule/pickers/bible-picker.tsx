@@ -9,6 +9,7 @@ import type { BibleBook } from "@/bindings/neoprojector/database"
 import { Input } from "@/components/input"
 import { Button } from "@/components/button"
 import { useDebounce } from "@/hooks/use-debounce"
+import { useBibleTranslations } from "@/hooks/use-bible-translations"
 import { cn } from "@/lib/utils"
 import { useAddBibleItem, useUpdateBibleItem } from "@/features/schedule/api"
 import { parseBibleRef } from "@/features/schedule/bible-ref"
@@ -152,10 +153,11 @@ export function BiblePicker(props: Props) {
   // Pull the active chapter's verses up here so we know the chapter's max
   // verse number — used to clamp a typed range like "Gen 1:45-100" down to
   // 31 and to drive the muted hint below the verse view.
+  const translation = useBibleTranslations().state.primary
   const { data: chapterVerses } = useQuery({
-    queryKey: ["bible", "verses", sel?.book, sel?.chapter],
+    queryKey: ["bible", "verses", sel?.book, sel?.chapter, translation],
     queryFn: () =>
-      Bible.ListVerses(sel!.book, sel!.chapter) as unknown as Promise<
+      Bible.ListVersesIn(sel!.book, sel!.chapter, translation) as unknown as Promise<
         ChapterVerse[]
       >,
     enabled: !!sel?.book && !!sel?.chapter,
@@ -497,10 +499,12 @@ function VersesView({
   to: number | undefined
   onPick: (verse: number, extend: boolean) => void
 }) {
+  // Verse text in the primary translation (Settings > Bibles).
+  const translation = useBibleTranslations().state.primary
   const { data: verses } = useQuery({
-    queryKey: ["bible", "verses", book, chapter],
+    queryKey: ["bible", "verses", book, chapter, translation],
     queryFn: () =>
-      Bible.ListVerses(book!, chapter!) as unknown as Promise<
+      Bible.ListVersesIn(book!, chapter!, translation) as unknown as Promise<
         ChapterVerse[]
       >,
     enabled: !!book && !!chapter,
