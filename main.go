@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"neoprojector/services/backgrounds"
 	"neoprojector/services/bible"
 	"neoprojector/services/displays"
+	"neoprojector/services/liveupdate"
 	"neoprojector/services/media"
 	"neoprojector/services/overlays"
 	"neoprojector/services/presentations"
@@ -176,6 +178,15 @@ func main() {
 	displaysSvc := displays.New(db)
 	// Video conversions keep going during a service, at idle priority, and
 	// never swap the file of a video that's on screen (see media/optimize.go).
+	// An instant update starts the new version with --handoff <file>
+	// (see services/liveupdate).
+	handoffPath := ""
+	for i, a := range os.Args {
+		if a == "--handoff" && i+1 < len(os.Args) {
+			handoffPath = os.Args[i+1]
+		}
+	}
+	liveSvc := liveupdate.New(version, displaysSvc, handoffPath)
 	mediaSvc := media.New(db,
 		func() bool { return displaysSvc.IsLive(context.Background()) },
 		func(id int64) bool { return media.ReferencesMedia(displays.LiveJSON(displaysSvc), id) },
@@ -187,7 +198,8 @@ func main() {
 		Logger:      wailsLog,
 		LogLevel:    slog.LevelDebug,
 		Services: []application.Service{
-			application.NewService(NewApp(db, mediaServerPort, mediaServerToken)),
+			application.NewService(NewApp(db, mediaServerPort, mediaServerToken, liveSvc)),
+			application.NewService(liveSvc),
 			application.NewService(songs.New(db)),
 			application.NewService(bible.New(db)),
 			application.NewService(mediaSvc),

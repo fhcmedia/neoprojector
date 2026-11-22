@@ -209,6 +209,66 @@ func Apply(ctx context.Context, info *Info, progress func(pct int)) error {
 	return swapAndRelaunch(archive)
 }
 
+// Download fetches the update's archive to a temp file and verifies its
+// digest. The caller removes the file (also returned on some errors).
+func Download(ctx context.Context, info *Info, progress func(pct int)) (string, error) {
+	return download(ctx, info, progress)
+}
+
+// Poller re-checks for updates while the app runs (instant updates).
+// On the stable track it sends If-None-Match: GitHub answers an
+// unchanged release with 304, which doesn't count against the hourly
+// limit for unauthenticated calls, so polling every minute is free.
+type Poller struct {
+	etag string
+	rel  *ghRelease
+}
+
+// Check is the package Check, made cheap to repeat.
+func (p *Poller) Check(ctx context.Context, current string) (*Info, error) {
+	cur := "v" + strings.TrimPrefix(current, "v")
+	if !semver.IsValid(cur) {
+		return nil, fmt.Errorf("current version %q is not semver", current)
+	}
+	if semver.Prerelease(cur) != "" {
+		return Check(ctx, current)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releaseAPI, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	if p.etag != "" {
+		req.Header.Set("If-None-Match", p.etag)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case http.StatusNotModified:
+	case http.StatusNotFound:
+		return nil, nil
+	case http.StatusOK:
+		var rel ghRelease
+		if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+			return nil, err
+		}
+		p.rel, p.etag = &rel, resp.Header.Get("ETag")
+	default:
+		return nil, fmt.Errorf("release API: %s", resp.Status)
+	}
+	if p.rel == nil {
+		return nil, nil
+	}
+	suffix, err := assetSuffix()
+	if err != nil {
+		return nil, err
+	}
+	return evaluate(p.rel, cur, suffix)
+}
+
 func download(ctx context.Context, info *Info, progress func(pct int)) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, info.URL, nil)
 	if err != nil {

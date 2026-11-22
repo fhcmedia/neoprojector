@@ -30,6 +30,7 @@ import { useIsMutating } from "@tanstack/react-query"
 import { useLive } from "@/features/live/live-context"
 import { Toaster } from "@/components/sonner"
 import { StartupNotice } from "@/features/whats-new/startup-notice"
+import { InstantUpdateNotice } from "@/features/live/instant-update"
 import { useKeybinds } from "@/hooks/use-keybinds"
 import { CommandPalette } from "@/features/command-palette/command-palette"
 import { UiScaleProvider } from "@/hooks/use-ui-scale"
@@ -212,6 +213,7 @@ function AppShell() {
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       <Toaster position="bottom-right" />
       <StartupNotice />
+      <InstantUpdateNotice />
       <main className="flex-1 min-h-0">
         <Outlet />
       </main>

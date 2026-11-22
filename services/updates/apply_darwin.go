@@ -3,6 +3,7 @@
 package updates
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -80,4 +81,10 @@ func swapAndRelaunch(archive string) error {
 	os.RemoveAll(staging) // deleting the old bundle under a running binary is fine on macOS
 	os.Exit(0)
 	return nil
+}
+
+// Swap is the in-place swap instant updates use. Not supported for the
+// macOS bundle: those installs update at launch only.
+func Swap(string) error {
+	return errors.New("instant updates are not supported on macOS")
 }

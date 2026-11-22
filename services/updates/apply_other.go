@@ -22,16 +22,7 @@ import (
 // running exe is renamed aside (legal while running) and the new one
 // takes its path.
 func swapAndRelaunch(archive string) error {
-	bin, err := openArchiveBinary(archive)
-	if err != nil {
-		return err
-	}
-	defer bin.Close()
-
-	if err := selfupdate.Apply(bin, selfupdate.Options{}); err != nil {
-		if rerr := selfupdate.RollbackError(err); rerr != nil {
-			return fmt.Errorf("update failed and rollback failed — reinstall may be required: %w", err)
-		}
+	if err := Swap(archive); err != nil {
 		return err
 	}
 
@@ -43,6 +34,25 @@ func swapAndRelaunch(archive string) error {
 		return fmt.Errorf("updated, but relaunch failed: %w", err)
 	}
 	os.Exit(0)
+	return nil
+}
+
+// Swap replaces the running executable with the binary inside the
+// downloaded archive without relaunching; the running process carries
+// on as the old version until it exits. On Windows the running exe is
+// renamed aside (legal while running) and the new one takes its path.
+func Swap(archive string) error {
+	bin, err := openArchiveBinary(archive)
+	if err != nil {
+		return err
+	}
+	defer bin.Close()
+	if err := selfupdate.Apply(bin, selfupdate.Options{}); err != nil {
+		if rerr := selfupdate.RollbackError(err); rerr != nil {
+			return fmt.Errorf("update failed and rollback failed — reinstall may be required: %w", err)
+		}
+		return err
+	}
 	return nil
 }
 

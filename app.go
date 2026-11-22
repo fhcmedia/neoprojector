@@ -9,6 +9,7 @@ import (
 
 	"neoprojector/database"
 	"neoprojector/database/seed"
+	"neoprojector/services/liveupdate"
 	"neoprojector/services/updates"
 
 	"github.com/charmbracelet/log"
@@ -24,10 +25,11 @@ type App struct {
 	// path — see MediaServer's doc comment for why.
 	mediaServerPort  int
 	mediaServerToken string
+	live             *liveupdate.Service
 }
 
-func NewApp(db *sql.DB, mediaServerPort int, mediaServerToken string) *App {
-	return &App{db: db, mediaServerPort: mediaServerPort, mediaServerToken: mediaServerToken}
+func NewApp(db *sql.DB, mediaServerPort int, mediaServerToken string, live *liveupdate.Service) *App {
+	return &App{db: db, mediaServerPort: mediaServerPort, mediaServerToken: mediaServerToken, live: live}
 }
 
 // MediaServerInfo is how a caller reaches the loopback media server:
@@ -106,21 +108,31 @@ func (a *App) runInit(splash application.Window) {
 	emit := func(name string, data any) {
 		splash.EmitEvent(name, data)
 	}
+	// The new side of an instant update: the old version is still on
+	// the screens, so skip the update check and the splash delays.
+	resuming := liveupdate.Resuming(a.live)
+	pause := func(d time.Duration) {
+		if !resuming {
+			time.Sleep(d)
+		}
+	}
 
 	// The update gate runs before anything touches the database so the
 	// newest build is always the one that runs migrations. Does not
 	// return if an update applies — the new build relaunches.
-	a.maybeUpdate(emit)
+	if !resuming {
+		a.maybeUpdate(emit)
+	}
 
 	emit("splash:status", "Opening database...")
 	emit("splash:progress", 10)
 	log.Info("database ready")
-	time.Sleep(300 * time.Millisecond)
+	pause(300 * time.Millisecond)
 
 	emit("splash:status", "Verifying license...")
 	emit("splash:progress", 18)
 	log.Info("license verified")
-	time.Sleep(400 * time.Millisecond)
+	pause(400 * time.Millisecond)
 
 	emit("splash:status", "Laying the foundation...")
 	emit("splash:progress", 30)
@@ -131,7 +143,7 @@ func (a *App) runInit(splash application.Window) {
 		return
 	}
 	log.Info("migrations complete")
-	time.Sleep(400 * time.Millisecond)
+	pause(400 * time.Millisecond)
 
 	emit("splash:status", "Etching the living Word......")
 	emit("splash:progress", 35)
@@ -147,15 +159,16 @@ func (a *App) runInit(splash application.Window) {
 
 	emit("splash:status", "Preparing workspace...")
 	emit("splash:progress", 90)
-	time.Sleep(300 * time.Millisecond)
+	pause(300 * time.Millisecond)
 
 	emit("splash:status", "Launching!")
 	emit("splash:progress", 100)
 
 	// One final eye candy sleep :D
-	time.Sleep(1000 * time.Millisecond)
+	pause(1000 * time.Millisecond)
 
-	openMainWindow()
+	liveupdate.PlaceMainWindow(a.live, openMainWindow())
+	go liveupdate.Run(a.live)
 
 	// Small delay ensures the native window is fully registered in the
 	// app's window map before we close the splash. Otherwise the app sees

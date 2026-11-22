@@ -22,6 +22,13 @@ import type { SlotFill } from "@/features/templates/types"
 import { widgetDef } from "@/features/overlays/widgets"
 import { clockFrom, rawPosition } from "@/lib/media-sync"
 import { parseRules, type WidgetKind } from "@/features/overlays/types"
+import { Events } from "@wailsio/runtime"
+import { Service as LiveUpdate } from "@/bindings/neoprojector/services/liveupdate"
+import {
+  restoredLiveState,
+  snapshotSession,
+  type OperatorSnapshot,
+} from "@/features/live/handoff"
 
 // LiveSlide is what's currently broadcasting to the displays. Resolved
 // once at click time so the preview tiles can fan out the same fill to
@@ -192,9 +199,13 @@ const LiveContext = createContext<Ctx>({
 
 // LiveProvider does NOT persist — restarting the app should always
 // start with nothing live, since the operator has no way to confirm
-// what's actually on the screens between sessions.
+// what's actually on the screens between sessions. The one exception
+// is an instant update: the screens never went down, so the new
+// version starts from the old one's state (features/live/handoff.ts).
 export function LiveProvider({ children }: { children: ReactNode }) {
-  const [live, setLiveRaw] = useState<LiveSlide | null>(null)
+  const [live, setLiveRaw] = useState<LiveSlide | null>(
+    () => restoredLiveState()?.live ?? null
+  )
   // Every slide that goes live with media but no clock yet (a fresh
   // send / re-send from the show pane or library) starts its shared
   // playhead now, at 0. Re-sends therefore restart, matching the
@@ -202,12 +213,38 @@ export function LiveProvider({ children }: { children: ReactNode }) {
   const setLive = useCallback((s: LiveSlide | null) => {
     setLiveRaw(stampMediaClock(s))
   }, [])
-  const [activeOverlays, setActiveOverlays] = useState<ActiveOverlay[]>([])
+  const [activeOverlays, setActiveOverlays] = useState<ActiveOverlay[]>(
+    () => restoredLiveState()?.overlays ?? []
+  )
   // The active service's default background. Esc clears `live` (and
   // with it any item override) but never this — the resting state is
   // the service default, not black.
   const [serviceBackground, setServiceBackground] =
-    useState<BackgroundSnapshot | null>(null)
+    useState<BackgroundSnapshot | null>(
+      () => restoredLiveState()?.serviceBackground ?? null
+    )
+
+  // Instant update: hand the running state to the new version when Go
+  // asks (services/liveupdate). Refs so the listener stays mounted.
+  const handoffRef = useRef({ live, activeOverlays, serviceBackground })
+  handoffRef.current = { live, activeOverlays, serviceBackground }
+  useEffect(() => {
+    if (!IS_OPERATOR_WINDOW) return
+    const off = Events.On("liveupdate:snapshot-request", () => {
+      const cur = handoffRef.current
+      const snap: OperatorSnapshot = {
+        url: window.location.pathname + window.location.search,
+        session: snapshotSession(),
+        live: cur.live,
+        overlays: cur.activeOverlays,
+        serviceBackground: cur.serviceBackground,
+      }
+      void LiveUpdate.SubmitSnapshot(JSON.stringify(snap)).catch(() => {})
+    })
+    return () => {
+      off?.()
+    }
+  }, [])
 
   // toggleOverlay flips an overlay schedule item between active /
   // not. Stamps activatedAt at the moment of the on-toggle so

@@ -3,6 +3,7 @@ import * as AppService from "@/bindings/neoprojector/app"
 import type { AppInfo } from "@/bindings/neoprojector/models"
 import { useStartupNoticeSetting } from "@/features/whats-new/startup-notice"
 import { StageDisplayCard } from "@/features/stage/stage-display"
+import { InstantUpdateToggle } from "@/features/live/instant-update"
 import { OptionSelect } from "@/components/option-select"
 import {
   setTransitionMs,
@@ -267,6 +268,12 @@ function GeneralPanel() {
         description="Each time the app opens, show which version is running — and, after an update, what changed."
       >
         <StartupNoticeToggle />
+      </Row>
+      <Row
+        label="Instant updates"
+        description="Install a new version as soon as it's pushed, while the app is running, without waiting for a restart. What's on the screens stays up: the new version opens behind the scenes, picks up the same song, verse or slide, and takes over."
+      >
+        <InstantUpdateToggle />
       </Row>
       <Row
         label="Version"

@@ -66,6 +66,21 @@ function OutputWindow() {
   useEffect(() => {
     Events.Emit("output:ready")
   }, [])
+  // Opened by an instant update: the window is see-through over the
+  // old version's until this reports it has drawn the live content
+  // (fonts loaded, background up, entry fades finished).
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has("instant")) return
+    let cancelled = false
+    void document.fonts.ready.then(() => {
+      window.setTimeout(() => {
+        if (!cancelled) Events.Emit("output:painted")
+      }, 1500)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // A presentation clicker types into whichever window has focus. If a
   // projector window has it, hand navigation keys to the operator

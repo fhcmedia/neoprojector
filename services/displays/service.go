@@ -37,6 +37,14 @@ type Service struct {
 	// by mu.
 	pending   map[string]*application.WebviewWindow
 	readyOnce sync.Once
+
+	// Instant updates (see RestoreHandoff): the next StartLive opens its
+	// windows see-through on top of the old version's, and each turns
+	// opaque once it has painted ("output:painted"). unveiling holds
+	// those still see-through; seeThrough names the windows to open so.
+	instant    bool
+	seeThrough map[string]bool
+	unveiling  map[string]*application.WebviewWindow
 }
 
 // LivePayload carries the full live state as independent render
@@ -188,9 +196,11 @@ type LiveMediaRef struct {
 
 func New(db *sql.DB) *Service {
 	return &Service{
-		db:      db,
-		q:       database.New(db),
-		pending: make(map[string]*application.WebviewWindow),
+		db:         db,
+		q:          database.New(db),
+		pending:    make(map[string]*application.WebviewWindow),
+		seeThrough: make(map[string]bool),
+		unveiling:  make(map[string]*application.WebviewWindow),
 	}
 }
 
@@ -466,6 +476,42 @@ func LiveJSON(s *Service) string {
 	return string(b)
 }
 
+// Handoff is what an instant update carries from the running app to
+// the new version: whether the screens are up, what they show, and the
+// no-displays bypass. Package funcs (not methods), so not bound.
+type Handoff struct {
+	Live    bool        `json:"live"`
+	Bypass  bool        `json:"bypass"`
+	Payload LivePayload `json:"payload"`
+}
+
+// TakeHandoff snapshots the live state for an instant update.
+func TakeHandoff(s *Service) Handoff {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return Handoff{Live: s.live != nil, Bypass: s.bypassDisplayCheck, Payload: s.lastSlot}
+}
+
+// RestoreHandoff seeds the new version with the old one's state before
+// any window opens, so output windows mount straight onto the same
+// slide. The caller then calls StartLive when h.Live.
+func RestoreHandoff(s *Service, h Handoff) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.lastSlot = h.Payload
+	s.bypassDisplayCheck = h.Bypass
+	s.instant = h.Live && runtime.GOOS == "windows"
+}
+
+// OutputsPending is how many output windows are still hidden or
+// see-through, waiting to render (see revealOutput). Zero once every
+// screen is showing.
+func OutputsPending(s *Service) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.pending) + len(s.unveiling)
+}
+
 // dwmColorNone is DWMWA_COLOR_NONE: tells DWM to draw no window border.
 var dwmColorNone uint32 = 0xFFFFFFFE
 
@@ -490,6 +536,8 @@ func (s *Service) StartLive(ctx context.Context) error {
 		return nil
 	}
 	bypass := s.bypassDisplayCheck
+	instant := s.instant
+	s.instant = false
 	s.mu.Unlock()
 
 	app := application.Get()
@@ -502,6 +550,9 @@ func (s *Service) StartLive(ctx context.Context) error {
 	s.readyOnce.Do(func() {
 		app.Event.On("output:ready", func(e *application.CustomEvent) {
 			s.revealOutput(e.Sender)
+		})
+		app.Event.On("output:painted", func(e *application.CustomEvent) {
+			s.unveil(e.Sender)
 		})
 	})
 
@@ -557,7 +608,7 @@ func (s *Service) StartLive(ctx context.Context) error {
 		win := app.Window.NewWithOptions(application.WebviewWindowOptions{
 			Name:                       fmt.Sprintf("output-%d", d.ID),
 			Title:                      d.Name,
-			URL:                        fmt.Sprintf("/output/%d", d.ID),
+			URL:                        outputURL(d.ID, instant),
 			Frameless:                  true,
 			DefaultContextMenuDisabled: true,
 			Screen:                     sc,
@@ -613,6 +664,9 @@ func (s *Service) StartLive(ctx context.Context) error {
 			name := win.Name()
 			s.mu.Lock()
 			s.pending[name] = win
+			if instant {
+				s.seeThrough[name] = true
+			}
 			s.mu.Unlock()
 			// Fallback in case the ready event never arrives (page
 			// error, throttled webview): never leave the audience dark.
@@ -684,12 +738,28 @@ func (s *Service) revealOutput(name string) {
 	s.mu.Lock()
 	win, ok := s.pending[name]
 	delete(s.pending, name)
+	seeThrough := s.seeThrough[name]
+	delete(s.seeThrough, name)
+	if ok && seeThrough {
+		s.unveiling[name] = win
+	}
 	s.mu.Unlock()
 	if !ok {
 		return
 	}
+	if seeThrough {
+		// Instant update: come up see-through over the old version's
+		// window, which keeps the audience's picture until this one
+		// has painted (see unveil).
+		application.InvokeSync(func() { setWindowAlpha(win, 0) })
+		time.AfterFunc(unveilTimeout, func() { s.unveil(name) })
+	}
 	win.Show()
 	win.Fullscreen()
+	if seeThrough {
+		// Above every other topmost window, the old version's included.
+		win.SetAlwaysOnTop(true)
+	}
 	// Show() activates the window and Fullscreen() focuses its
 	// webview; hand focus back so keyboard control keeps working.
 	if main, ok := application.Get().Window.GetByName("main"); ok {
@@ -698,12 +768,43 @@ func (s *Service) revealOutput(name string) {
 	log.Info("StartLive: output window revealed", "window", name)
 }
 
+// unveilTimeout bounds how long a see-through output window waits for
+// "output:painted" before unveil makes it opaque anyway.
+const unveilTimeout = 6 * time.Second
+
+// unveil makes a see-through output window (instant update) opaque.
+// Called by the page's painted event and the fallback timer; the
+// second call is a no-op.
+func (s *Service) unveil(name string) {
+	s.mu.Lock()
+	win, ok := s.unveiling[name]
+	delete(s.unveiling, name)
+	s.mu.Unlock()
+	if !ok {
+		return
+	}
+	application.InvokeSync(func() { setWindowAlpha(win, 255) })
+	log.Info("instant update: output window unveiled", "window", name)
+}
+
+// outputURL is an output window's page; instant marks one opened by an
+// instant update (it reports "output:painted" once drawn).
+func outputURL(displayID int64, instant bool) string {
+	u := fmt.Sprintf("/output/%d", displayID)
+	if instant {
+		u += "?instant=1"
+	}
+	return u
+}
+
 // StopLive closes every output window. Safe to call when not live.
 func (s *Service) StopLive(_ context.Context) {
 	s.mu.Lock()
 	live := s.live
 	s.live = nil
 	clear(s.pending)
+	clear(s.seeThrough)
+	clear(s.unveiling)
 	s.mu.Unlock()
 	for _, w := range live {
 		w.Close()

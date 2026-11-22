@@ -68,6 +68,8 @@ type Service struct {
 	cfg    settings
 	srv    *http.Server
 	runErr string
+	// retries counts back-to-back failed listens (see startLocked).
+	retries int
 }
 
 // New takes how to read what's live right now (the payload the operator
@@ -157,8 +159,21 @@ func (s *Service) startLocked() {
 	if err != nil {
 		s.runErr = fmt.Sprintf("couldn't open port %d: %v", Port, err)
 		log.Warn("stage display: listen failed", "err", err)
+		// During an instant update the old version still holds the
+		// port for a few seconds: keep trying for a while.
+		if s.retries < 60 {
+			s.retries++
+			time.AfterFunc(2*time.Second, func() {
+				s.mu.Lock()
+				defer s.mu.Unlock()
+				if s.cfg.Enabled {
+					s.startLocked()
+				}
+			})
+		}
 		return
 	}
+	s.retries = 0
 	s.runErr = ""
 	srv := &http.Server{Handler: s.handler(), ReadHeaderTimeout: 5 * time.Second}
 	s.srv = srv

@@ -7,25 +7,33 @@ import { ServiceNameFormatProvider } from "@/hooks/use-service-name-format";
 import { BibleTranslationsProvider } from "@/hooks/use-bible-translations";
 import { VimModeProvider } from "@/hooks/use-vim-mode";
 import { LibraryAutoCollapseProvider } from "@/hooks/use-library-auto-collapse";
-import { LiveProvider } from "@/features/live/live-context";
+import { IS_OPERATOR_WINDOW, LiveProvider } from "@/features/live/live-context";
+import { restoreFromHandoff } from "@/features/live/handoff";
 import { routeTree } from "./routeTree.gen";
 import "./app.css";
 import "@/features/templates/fonts-bundle";
 
 const queryClient = new QueryClient();
 
-const router = createRouter({
-  routeTree,
-  defaultPreload: "intent",
-  scrollRestoration: true,
-  context: { queryClient },
-});
+function makeRouter() {
+  return createRouter({
+    routeTree,
+    defaultPreload: "intent",
+    scrollRestoration: true,
+    context: { queryClient },
+  });
+}
 
 declare module "@tanstack/react-router" {
   interface Register {
-    router: typeof router;
+    router: ReturnType<typeof makeRouter>;
   }
 }
+
+// After an instant update, restore the operator window's session and
+// URL first: the router reads the URL when it's created.
+if (IS_OPERATOR_WINDOW) await restoreFromHandoff();
+const router = makeRouter();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
