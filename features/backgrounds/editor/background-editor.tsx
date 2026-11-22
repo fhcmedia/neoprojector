@@ -138,9 +138,16 @@ export function BackgroundEditorProvider({
     setConfigState((c) => ({ ...c, ...patch }))
   }, [])
 
+  // A save still waiting out the debounce is sent at once when the
+  // editor closes instead of being dropped with its timer.
+  const pendingSaveRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => pendingSaveRef.current?.(), [])
+
   // Debounced autosave. Seeds upsert their shadow row (SaveWithID);
   // user rows update in place. Slider drags coalesce into one write.
   useEffect(() => {
+    // Nothing is pending unless this run schedules a save.
+    pendingSaveRef.current = null
     if (!doc || lastLoadedIdRef.current !== id) return
     if (justLoadedRef.current) {
       justLoadedRef.current = false
@@ -152,16 +159,19 @@ export function BackgroundEditorProvider({
     if (live === savedConfig && (trimmedName === doc.name || !trimmedName)) {
       return
     }
-    const handle = window.setTimeout(() => {
-      const input = {
-        id,
-        name: trimmedName || doc.name,
-        engine: "gradflow",
-        configJSON: live,
-      }
+    const input = {
+      id,
+      name: trimmedName || doc.name,
+      engine: "gradflow",
+      configJSON: live,
+    }
+    const save = () => {
+      pendingSaveRef.current = null
       if (isSeed) saveWithIDMut.mutate(input)
       else updateMut.mutate(input)
-    }, 300)
+    }
+    pendingSaveRef.current = save
+    const handle = window.setTimeout(save, 300)
     return () => window.clearTimeout(handle)
     // Mutations are stable; keyed off content only.
     // eslint-disable-next-line react-hooks/exhaustive-deps

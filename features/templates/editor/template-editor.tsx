@@ -106,29 +106,40 @@ export function TemplateEditorProvider({
   // first save upserts a shadow row reusing the seed's negative id
   // (SaveWithID); user rows update in place.
   useEffect(() => {
+    // Nothing is pending unless this run schedules a save.
+    pendingSaveRef.current = null
     if (!template || !body) return
     if (lastLoadedIdRef.current !== template.id) return
     const live = JSON.stringify(body)
     const saved = JSON.stringify(parseTemplateBody(template.data_json))
     const trimmedName = name.trim()
     if (live === saved && trimmedName === template.name) return
-    const handle = window.setTimeout(() => {
-      const input = {
-        id: template.id,
-        name: trimmedName || template.name,
-        kind: template.kind,
-        viewportW: template.viewport_w,
-        viewportH: template.viewport_h,
-        dataJSON: live,
-      }
+    const input = {
+      id: template.id,
+      name: trimmedName || template.name,
+      kind: template.kind,
+      viewportW: template.viewport_w,
+      viewportH: template.viewport_h,
+      dataJSON: live,
+    }
+    const save = () => {
+      pendingSaveRef.current = null
       if (isDefault) saveWithIDMut.mutate(input)
       else updateMut.mutate(input)
-    }, 250)
+    }
+    pendingSaveRef.current = save
+    const handle = window.setTimeout(save, 250)
     return () => window.clearTimeout(handle)
     // Mutations are stable; intentionally omitted to keep the effect
     // keyed purely off content changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [body, name, template, isDefault])
+
+  // A save still waiting out the debounce is sent at once when the
+  // editor closes (switching tabs, closing the surface) instead of
+  // being dropped with its timer.
+  const pendingSaveRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => pendingSaveRef.current?.(), [])
 
   const setBody = useCallback(
     (updater: (b: TemplateBody) => TemplateBody) => {

@@ -83,16 +83,24 @@ export function SongEditor(props: Props) {
   const localSongIdRef = useRef<number | undefined>(editingSongId)
   const nextId = useRef(1)
 
-  const { data: existing, isLoading } = useQuery({
+  const {
+    data: existing,
+    isLoading,
+    isFetchedAfterMount,
+  } = useQuery({
     queryKey: ["songs", "full", editingSongId],
     queryFn: () =>
       Songs.GetSong(editingSongId!) as unknown as Promise<SongFull>,
     enabled: !!editingSongId,
   })
 
+  // Populate from a fetch made after this editor opened, never from a
+  // cached copy: an older copy would show stale lyrics and the next
+  // keystroke would save them over the newer ones.
   const populatedRef = useRef(false)
   useEffect(() => {
-    if (!isEdit || !existing || populatedRef.current) return
+    if (!isEdit || !existing || !isFetchedAfterMount || populatedRef.current)
+      return
     populatedRef.current = true
     setTitle(existing.song.title)
     const localSections: LocalSection[] = existing.sections.map((s) => ({
@@ -101,7 +109,7 @@ export function SongEditor(props: Props) {
       text: s.lines.map((l) => l.text).join("\n"),
     }))
     setSections(localSections)
-  }, [existing, isEdit])
+  }, [existing, isEdit, isFetchedAfterMount])
 
   // Dirty becomes true the first time the user changes anything. Without
   // it the sync effect would fire on initial mount (or right after edit-
@@ -229,7 +237,11 @@ export function SongEditor(props: Props) {
             props.onSaved(created.id)
           }
         }
-        qc.invalidateQueries({ queryKey: ["songs", "list"] })
+        // Every view of the song (library list, the Show pane's slides,
+        // other editors) refreshes now, not when the window next
+        // regains focus; schedule rows carry the title.
+        qc.invalidateQueries({ queryKey: ["songs"] })
+        qc.invalidateQueries({ queryKey: ["schedule", "items"] })
       } catch (err) {
         console.error(err)
       }
@@ -260,7 +272,7 @@ export function SongEditor(props: Props) {
     )
   }, [title, librarySongs, localSongId])
 
-  if (isEdit && isLoading) {
+  if (isEdit && (isLoading || !populatedRef.current)) {
     return (
       <div className="grid h-full place-items-center text-xs text-muted-foreground/60">
         Loading…
