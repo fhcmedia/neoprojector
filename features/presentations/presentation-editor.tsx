@@ -1,4 +1,19 @@
-import { useEffect, useMemo, useRef, useState, type DragEvent } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  arrayMove,
+  rectSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
 import { useQueryClient } from "@tanstack/react-query"
 import { AnimatePresence, motion } from "motion/react"
 import { Events } from "@wailsio/runtime"
@@ -66,8 +81,6 @@ const TRANSITION_SPEEDS: readonly { value: string; label: string }[] = [
   { value: "2000", label: "Very slow — 2 s" },
   { value: "3000", label: "Extra slow — 3 s" },
 ]
-
-const SLIDE_DRAG_MIME = "application/x-neoprojector-slide"
 
 export function PresentationEditor({ id, onClose }: { id: number; onClose: () => void }) {
   const qc = useQueryClient()
@@ -166,14 +179,24 @@ export function PresentationEditor({ id, onClose }: { id: number; onClose: () =>
     }
   }, [playing, shown, slides, cur])
 
-  // Drag to reorder.
-  const [dragId, setDragId] = useState<number | null>(null)
-  function moveBefore(targetId: number) {
-    if (dragId === null || dragId === targetId) return
-    const ids = slides.map((s) => s.presentationSlideId!).filter((x) => x !== dragId)
-    const at = ids.indexOf(targetId)
-    ids.splice(at < 0 ? ids.length : at, 0, dragId)
-    reorder.mutate(ids)
+  // Drag to reorder: the other slides move aside while dragging and the
+  // slide lands exactly where it's dropped. The new order shows at once
+  // (cache updated first) and saves in the background.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
+  )
+  function handleDragEnd({ active, over }: DragEndEvent) {
+    if (!over || active.id === over.id || !rows) return
+    const from = rows.findIndex((r) => r.id === active.id)
+    const to = rows.findIndex((r) => r.id === over.id)
+    if (from < 0 || to < 0) return
+    const next = arrayMove(rows, from, to)
+    qc.setQueryData(presentationKeys.slides(id), next)
+    // Keep the preview on the slide it was showing.
+    const shownId = slides[cur]?.presentationSlideId
+    const at = next.findIndex((r) => r.id === shownId)
+    if (at >= 0) setCurrent(at)
+    reorder.mutate(next.map((r) => r.id))
   }
 
   const included = slides.filter((s) => !s.excluded).length
@@ -319,39 +342,28 @@ export function PresentationEditor({ id, onClose }: { id: number; onClose: () =>
             </div>
           </div>
         ) : (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={slides.map((s) => s.presentationSlideId!)} strategy={rectSortingStrategy}>
           <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2">
             {slides.map((slide, idx) => {
               const sid = slide.presentationSlideId!
               return (
-                <div
+                <SortableSlide
                   key={sid}
-                  draggable
-                  onDragStart={(e: DragEvent) => {
-                    e.dataTransfer.setData(SLIDE_DRAG_MIME, String(sid))
-                    e.dataTransfer.effectAllowed = "move"
-                    setDragId(sid)
-                  }}
-                  onDragEnd={() => setDragId(null)}
-                  onDragOver={(e: DragEvent) => {
-                    if (!e.dataTransfer.types.includes(SLIDE_DRAG_MIME)) return
-                    e.preventDefault()
-                    e.stopPropagation()
-                    e.dataTransfer.dropEffect = "move"
-                  }}
-                  onDrop={(e: DragEvent) => {
-                    if (!e.dataTransfer.types.includes(SLIDE_DRAG_MIME)) return
-                    e.preventDefault()
-                    e.stopPropagation()
-                    moveBefore(sid)
-                    setDragId(null)
-                  }}
-                  className={cn("flex flex-col", dragId === sid && "opacity-40")}
+                  id={sid}
+                  controls={
+                    <SlideControls
+                      slide={slide}
+                      presentationId={id}
+                      intervalMs={playback?.intervalMs ?? 5000}
+                    />
+                  }
                 >
                   <button
                     type="button"
                     onClick={() => setCurrent(idx)}
                     className={cn(
-                      "relative aspect-video w-full overflow-hidden rounded bg-black transition-shadow",
+                      "relative aspect-video w-full cursor-grab overflow-hidden rounded bg-black transition-shadow active:cursor-grabbing",
                       idx === cur ? "ring-2 ring-sky-400" : "hover:ring-1 hover:ring-border",
                       slide.excluded && "opacity-40 grayscale"
                     )}
@@ -366,19 +378,44 @@ export function PresentationEditor({ id, onClose }: { id: number; onClose: () =>
                       {idx + 1}
                     </span>
                   </button>
-                  <SlideControls
-                    slide={slide}
-                    presentationId={id}
-                    intervalMs={playback?.intervalMs ?? 5000}
-                  />
-                </div>
+                </SortableSlide>
               )
             })}
           </div>
+          </SortableContext>
+          </DndContext>
         )}
       </div>
 
       <LibraryPicker open={pickerOpen} onOpenChange={setPickerOpen} onAdd={(ids) => void addMedia(ids)} />
+    </div>
+  )
+}
+
+// SortableSlide is one tile of the editor's grid. The thumbnail is the
+// drag handle (a press that moves 6px starts a drag; a plain click
+// still previews); the slide's controls below it stay clickable.
+function SortableSlide({
+  id,
+  children,
+  controls,
+}: {
+  id: number
+  children: ReactNode
+  controls: ReactNode
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id })
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn("flex flex-col", isDragging && "relative z-10 opacity-80 shadow-lg")}
+    >
+      <div {...attributes} {...listeners} className="touch-none">
+        {children}
+      </div>
+      {controls}
     </div>
   )
 }
