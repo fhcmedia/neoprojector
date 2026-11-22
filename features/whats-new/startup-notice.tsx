@@ -3,6 +3,7 @@ import { toast } from "sonner"
 import { SparklesIcon } from "lucide-react"
 import * as AppService from "@/bindings/neoprojector/app"
 import type { AppInfo } from "@/bindings/neoprojector/models"
+import { restoredLiveState } from "@/features/live/handoff"
 
 // Startup notification: every launch shows which version is running;
 // the first launch on a new version also lists what changed in it (the
@@ -72,9 +73,12 @@ async function showStartupNotice() {
     const info = (await AppService.Info()) as unknown as AppInfo
     const last = read(globalThis.localStorage, LAST_VERSION_KEY)
     write(globalThis.localStorage, LAST_VERSION_KEY, info.version)
-    if (!isEnabled()) return
+    // An instant update always says so, whatever the setting: the
+    // operator saw "Updating…" and needs to know it finished.
+    const instant = restoredLiveState() !== null
+    if (!isEnabled() && !instant) return
     const label = info.version === "0.0.0-dev" ? "dev build" : `v${info.version}`
-    const isNew = last !== info.version
+    const isNew = last !== info.version || instant
     if (!isNew) {
       toast(`NeoProjector ${label}`, {
         description: "Up to date.",
@@ -84,14 +88,18 @@ async function showStartupNotice() {
       return
     }
     const notes = ((await AppService.ReleaseNotes()) ?? []) as string[]
+    const done = instant
+      ? "Installed while running. The screens stayed on."
+      : "Updated automatically."
     toast(
-      last ? `Updated to NeoProjector ${label}` : `NeoProjector ${label}`,
+      last || instant ? `Updated to NeoProjector ${label}` : `NeoProjector ${label}`,
       {
         icon: <SparklesIcon className="size-4 text-sky-400" />,
         duration: notes.length ? 15000 : 6000,
         closeButton: true,
         description: notes.length ? (
           <div className="mt-1 flex flex-col gap-1">
+            {instant && <span className="text-xs">{done}</span>}
             <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
               What's new
             </span>
@@ -106,8 +114,8 @@ async function showStartupNotice() {
               )}
             </ul>
           </div>
-        ) : last ? (
-          "Updated automatically."
+        ) : last || instant ? (
+          done
         ) : undefined,
       }
     )

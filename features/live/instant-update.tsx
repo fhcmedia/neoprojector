@@ -73,14 +73,22 @@ export function InstantUpdateToggle() {
   )
 }
 
-// InstantUpdateNotice tells the operator a switch is happening (so they
-// hold off clicking for a few seconds) or that it failed.
+// InstantUpdateNotice keeps the operator posted on an instant update:
+// found and downloading, switching (hold off clicking for a few
+// seconds), or failed. It's mounted in the operator shell only, where
+// the Toaster lives; projector and stage screens never show it.
 export function InstantUpdateNotice() {
   useEffect(() => {
     const off = Events.On("liveupdate:status", (e: { data?: Status }) => {
       const st = e.data
       if (!st) return
-      if (st.state === "switching") {
+      if (st.state === "downloading") {
+        toast.loading(`New version v${st.version} found`, {
+          id: "liveupdate",
+          description:
+            "Downloading now. It installs by itself in a moment; the screens stay on.",
+        })
+      } else if (st.state === "switching") {
         toast.loading(`Updating to v${st.version}`, {
           id: "liveupdate",
           description: "The screens stay on. Wait a few seconds before clicking.",
