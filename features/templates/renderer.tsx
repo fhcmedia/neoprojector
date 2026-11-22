@@ -305,12 +305,10 @@ type Layer = {
   template: RawTemplate | null
   fill: SlotFill
   empty: ReactNode | null
-  // Mode is fixed at mount. "enter" runs a fade-in animation once.
-  // "exit" runs a fade-out animation once. The component then settles
-  // at the final opacity (fill: "forwards" on the Web Animations API
-  // call). No further opacity changes happen on a Layer — for each
-  // navigation we mint new Layer instances and let old ones be
-  // unmounted by cleanup.
+  // "enter" fades the layer in; flipping it to "exit" fades it out
+  // from wherever it is. A layer keeps its id (and so its mounted
+  // template) when it starts exiting: remounting it there re-measured
+  // and re-laid-out the outgoing text mid-fade, which flickered.
   mode: "enter" | "exit"
 }
 
@@ -402,14 +400,9 @@ export function LiveTemplateView({
     }
     lastSlideKeyRef.current = newSlideKey
     const prevActive = activeRef.current
-    // Clone the previous active as an exit layer (so it gets a fresh
-    // id and its mode is now "exit" — that mounts as a NEW component
-    // and the WAAPI fade-out fires from mount).
-    const exitClone: Layer = {
-      ...prevActive,
-      id: idRef.current++,
-      mode: "exit",
-    }
+    // The previous active turns into an exit layer in place (same id,
+    // same mounted component) and fades out from there.
+    const exitClone: Layer = { ...prevActive, mode: "exit" }
     const nextActive: Layer = {
       id: idRef.current++,
       slideKey: newSlideKey,
@@ -427,9 +420,11 @@ export function LiveTemplateView({
     }, durationMs + 100)
   }, [slideKey, template, fill, empty, durationMs])
 
+  // One keyed list, so a layer moving from active to exiting keeps its
+  // DOM instead of remounting.
   return (
     <>
-      {exiting.map((layer) => (
+      {[...exiting, active].map((layer) => (
         <CrossfadeLayer
           key={layer.id}
           layer={layer}
@@ -439,14 +434,6 @@ export function LiveTemplateView({
           fontSizeOverride={fontSizeOverride}
         />
       ))}
-      <CrossfadeLayer
-        key={active.id}
-        layer={active}
-        durationMs={durationMs}
-        className={className}
-        liveTransparency={liveTransparency}
-        fontSizeOverride={fontSizeOverride}
-      />
     </>
   )
 }
@@ -466,28 +453,27 @@ function CrossfadeLayer({
 }) {
   const ref = useRef<HTMLDivElement>(null)
 
-  // Fire the fade animation exactly once, at mount. Web Animations
-  // API drives this directly — no CSS transitions, no raf-paired
-  // state flips, no MotionGlobalConfig to fight. fill: "forwards"
-  // keeps the element at the final opacity after the animation ends.
+  // Fade on mount and again when the mode flips. Web Animations API
+  // drives this directly — no CSS transitions, no raf-paired state
+  // flips, no MotionGlobalConfig to fight. fill: "forwards" keeps the
+  // element at the final opacity after the animation ends. A flip
+  // mid-fade starts from the current opacity, so nothing jumps.
+  const anim = useRef<Animation | null>(null)
   useLayoutEffect(() => {
     const el = ref.current
     if (!el) return
-    const keyframes =
-      layer.mode === "enter"
-        ? [{ opacity: 0 }, { opacity: 1 }]
-        : [{ opacity: 1 }, { opacity: 0 }]
-    el.animate(keyframes, {
-      duration: durationMs,
-      easing: "ease-in-out",
-      fill: "forwards",
-    })
+    const from = anim.current ? Number(getComputedStyle(el).opacity) : initialOpacity
+    anim.current?.cancel()
+    anim.current = el.animate(
+      [{ opacity: from }, { opacity: layer.mode === "enter" ? 1 : 0 }],
+      { duration: durationMs, easing: "ease-in-out", fill: "forwards" }
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [layer.mode])
 
   // Initial inline opacity matches the WAAPI starting frame so there's
   // no first-paint flash before the animation begins.
-  const initialOpacity = layer.mode === "enter" ? 0 : 1
+  const [initialOpacity] = useState(layer.mode === "enter" ? 0 : 1)
 
   return (
     <div

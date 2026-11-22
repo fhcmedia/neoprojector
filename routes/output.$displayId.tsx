@@ -384,7 +384,64 @@ function DualLayerMediaCanvas({
     mediaId: nextMediaId > 0 ? nextMediaId : 0,
   }))
   const [visible, setVisible] = useState<"A" | "B">("A")
+  // outgoing is the slot still showing the previous slide UNDER the
+  // incoming one while it fades in (null once the fade is done). The
+  // old slide stays fully opaque beneath, so the cut never dips toward
+  // black halfway, and the slot isn't reloaded with the next preload
+  // until it's fully covered (reloading it mid-fade flashed the slide
+  // after the new one).
+  const [outgoing, setOutgoing] = useState<"A" | "B" | null>(null)
   const lastLiveId = useRef(mediaRef.mediaId)
+  // What each slot has finished loading, and a flip waiting on it.
+  const loaded = useRef<{ A: number; B: number }>({ A: 0, B: 0 })
+  const pending = useRef<{ slot: "A" | "B"; mediaId: number; timer: number } | null>(
+    null
+  )
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
+
+  const flip = (slot: "A" | "B") => {
+    if (pending.current) {
+      window.clearTimeout(pending.current.timer)
+      pending.current = null
+    }
+    if (slot === visibleRef.current) return
+    setOutgoing(visibleRef.current)
+    setVisible(slot)
+  }
+  // flipWhenReady shows slot once its media has loaded (decoded, for
+  // images), so a slide never fades in half-drawn; a slow file gets
+  // 600 ms before it's shown anyway.
+  const flipWhenReady = (slot: "A" | "B", mediaId: number) => {
+    if (loaded.current[slot] === mediaId) {
+      flip(slot)
+      return
+    }
+    if (pending.current) window.clearTimeout(pending.current.timer)
+    pending.current = {
+      slot,
+      mediaId,
+      timer: window.setTimeout(() => flip(slot), 600),
+    }
+  }
+  const onReady = (slot: "A" | "B", mediaId: number) => {
+    loaded.current[slot] = mediaId
+    const p = pending.current
+    if (p && p.slot === slot && p.mediaId === mediaId) flip(slot)
+  }
+  useEffect(
+    () => () => {
+      if (pending.current) window.clearTimeout(pending.current.timer)
+    },
+    []
+  )
+
+  // The outgoing slide drops away once the incoming one is opaque.
+  useEffect(() => {
+    if (!outgoing) return
+    const t = window.setTimeout(() => setOutgoing(null), durationMs + 50)
+    return () => window.clearTimeout(t)
+  }, [outgoing, visible, durationMs])
 
   // One effect drives both slots so the preload can never clobber a
   // live swap. (As two effects, an out-of-order click loaded the
@@ -396,44 +453,72 @@ function DualLayerMediaCanvas({
     const hiddenId = hidden === "A" ? slotA.mediaId : slotB.mediaId
     // React to the live mediaId changing:
     //   - matches the hidden slot: ideal — flip visibility.
-    //   - otherwise: cold swap into the hidden slot, then flip. The
-    //     flip is on rAF so the new src has at least one paint to
-    //     start decoding before the fade begins.
+    //   - otherwise: cold swap into the hidden slot, then flip once
+    //     it has loaded.
     if (mediaRef.mediaId !== lastLiveId.current) {
       lastLiveId.current = mediaRef.mediaId
       if (mediaRef.mediaId === hiddenId) {
-        setVisible(hidden)
+        flipWhenReady(hidden, mediaRef.mediaId)
         return
       }
+      // The hidden slot may still be the outgoing slide; drop it
+      // rather than show a third picture under the fade.
+      setOutgoing(null)
       if (hidden === "A") setSlotA({ mediaId: mediaRef.mediaId })
       else setSlotB({ mediaId: mediaRef.mediaId })
-      requestAnimationFrame(() => setVisible(hidden))
+      flipWhenReady(hidden, mediaRef.mediaId)
       return
     }
     // Keep the hidden slot pointed at the upcoming next slide so its
     // decoder is ready by the time the operator (or auto-advance)
     // pushes it live. Never touch a hidden slot holding the live
-    // media: that's a cold swap waiting for its flip.
-    if (nextMediaId <= 0) return
+    // media (a swap waiting for its flip), or one still on screen
+    // under a fade.
+    if (nextMediaId <= 0 || outgoing || pending.current) return
     if (hiddenId === mediaRef.mediaId || nextMediaId === hiddenId) return
     if (hidden === "A") setSlotA({ mediaId: nextMediaId })
     else setSlotB({ mediaId: nextMediaId })
-  }, [mediaRef.mediaId, nextMediaId, visible, slotA.mediaId, slotB.mediaId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mediaRef.mediaId, nextMediaId, visible, outgoing, slotA.mediaId, slotB.mediaId])
+
+  const role = (slot: "A" | "B"): LayerRole =>
+    visible === slot ? "front" : outgoing === slot ? "behind" : "hidden"
 
   return (
-    <>
+    // Own stacking context: the layers' z-order stays inside this box
+    // and can't rise over the text or overlays above it.
+    <div style={{ position: "absolute", inset: 0, isolation: "isolate" }}>
       <MediaLayer
         mediaId={slotA.mediaId}
         live={visible === "A" ? mediaRef : undefined}
+        role={role("A")}
         durationMs={durationMs}
+        onReady={(id) => onReady("A", id)}
       />
       <MediaLayer
         mediaId={slotB.mediaId}
         live={visible === "B" ? mediaRef : undefined}
+        role={role("B")}
         durationMs={durationMs}
+        onReady={(id) => onReady("B", id)}
       />
-    </>
+    </div>
   )
+}
+
+// front: the live slide (fades in on top). behind: the previous slide,
+// held opaque under the fade. hidden: the preload, invisible.
+type LayerRole = "front" | "behind" | "hidden"
+
+function layerStyle(role: LayerRole, durationMs: number): React.CSSProperties {
+  return {
+    position: "absolute",
+    inset: 0,
+    zIndex: role === "front" ? 1 : 0,
+    opacity: role === "hidden" ? 0 : 1,
+    // Only the incoming slide animates; the others change under cover.
+    transition: role === "front" ? `opacity ${durationMs}ms ease-in-out` : "none",
+  }
 }
 
 // MediaLayer is one of the two persistent layers in the dual buffer.
@@ -444,14 +529,17 @@ function DualLayerMediaCanvas({
 function MediaLayer({
   mediaId,
   live,
+  role,
   durationMs,
+  onReady,
 }: {
   mediaId: number
   live: MediaRef | undefined
+  role: LayerRole
   durationMs: number
+  onReady: (mediaId: number) => void
 }) {
   const { item } = useMediaItem(mediaId)
-  const isVisible = !!live
   const lastRestart = useRef(live?.restartToken ?? 0)
   const videoRef = useRef<HTMLVideoElement>(null)
 
@@ -494,30 +582,21 @@ function MediaLayer({
     item?.type === "video" && mediaId > 0 ? mediaId : undefined
   )
   // Its own framing (deck pages: "contain"), else Settings → Picture fit.
+  // The framing it was live with is kept while it fades out under the
+  // next slide, so it doesn't re-crop mid-transition.
   const settingFit = useMediaFit()
-  const objectFit = resolveFit(live?.mode, settingFit)
+  const lastMode = useRef(live?.mode)
+  if (live) lastMode.current = live.mode
+  const objectFit = resolveFit(live ? live.mode : lastMode.current, settingFit)
 
   if (!src) {
-    return (
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: "#000",
-          opacity: isVisible ? 1 : 0,
-          transition: `opacity ${durationMs}ms ease-in-out`,
-        }}
-      />
-    )
+    return <div style={{ ...layerStyle(role, durationMs), background: "#000" }} />
   }
 
   return (
     <div
       style={{
-        position: "absolute",
-        inset: 0,
-        opacity: isVisible ? 1 : 0,
-        transition: `opacity ${durationMs}ms ease-in-out`,
+        ...layerStyle(role, durationMs),
         // Promote to its own compositor layer so the opacity tween is
         // pure GPU work — no layout, no paint, no decoder thrash.
         willChange: "opacity",
@@ -533,6 +612,7 @@ function MediaLayer({
           // First mount auto-plays muted so the decoder warms. The
           // useEffect above takes over once live arrives.
           autoPlay
+          onLoadedData={() => onReady(mediaId)}
           onLoadedMetadata={(e) => {
             if (live) return
             const el = e.currentTarget
@@ -558,6 +638,12 @@ function MediaLayer({
           alt=""
           draggable={false}
           decoding="async"
+          onLoad={(e) => {
+            void e.currentTarget
+              .decode()
+              .catch(() => {})
+              .finally(() => onReady(mediaId))
+          }}
           style={{
             position: "absolute",
             inset: 0,
