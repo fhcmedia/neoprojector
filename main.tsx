@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { RouterProvider, createRouter } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { shareBindings } from "@/lib/plain-bindings";
 import { AnimationsProvider } from "@/hooks/use-animations";
 import { ServiceNameFormatProvider } from "@/hooks/use-service-name-format";
 import { BibleTranslationsProvider } from "@/hooks/use-bible-translations";
@@ -13,7 +14,16 @@ import { routeTree } from "./routeTree.gen";
 import "./app.css";
 import "@/features/templates/fonts-bundle";
 
-const queryClient = new QueryClient();
+// No refetch-on-focus: every byte of data comes from this app's own
+// database, and each save refreshes what it changed. Refetching on
+// focus only made alt-tabbing back redraw everything (bindings return
+// class instances, so even unchanged data arrives as new objects and
+// every preview re-measured its text: a visible flicker).
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { refetchOnWindowFocus: false, structuralSharing: shareBindings },
+  },
+});
 
 function makeRouter() {
   return createRouter({
