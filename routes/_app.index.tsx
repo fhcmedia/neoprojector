@@ -454,6 +454,10 @@ function Projector() {
                 adHocBibleRef={adHocBibleRef}
                 onAdHocBibleRef={submitAdHocBibleRef}
                 onShowBibleNav={() => setShowBibleNavTick((t) => t + 1)}
+                onClear={() => {
+                  setActiveItemIdState(undefined)
+                  setAdHocBibleRef(undefined)
+                }}
               />
             )}
           </ResizablePanel>

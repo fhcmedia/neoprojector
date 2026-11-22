@@ -32,6 +32,7 @@ import {
   RotateCcwIcon,
   Loader2Icon,
   TriangleAlertIcon,
+  XIcon,
 } from "lucide-react"
 import { useShowTemplate } from "@/features/show/use-show-template"
 import { ScaledTemplate } from "@/features/templates/renderer"
@@ -130,6 +131,8 @@ type Props = {
   // click, arrows, preview). The library uses it to auto-collapse the
   // now-redundant bible drawer. Not fired for drawer-driven changes.
   onShowBibleNav?: () => void
+  // Empties the Show pane (no schedule item, no ad-hoc verse).
+  onClear?: () => void
 }
 
 // ShowPane renders each slide for the previewed source as a 16:9
@@ -141,6 +144,7 @@ export function ShowPane({
   adHocBibleRef,
   onAdHocBibleRef,
   onShowBibleNav,
+  onClear,
 }: Props) {
   const qc = useQueryClient()
 
@@ -858,11 +862,36 @@ export function ShowPane({
     ? "Type a reference in the bible library — Enter to broadcast."
     : "Pick an item in the schedule to preview"
 
+  // Clear: empty the Show pane, and take its content off the screens
+  // if it's what is up right now (something live from elsewhere stays).
+  const hasContent = !!item || !!adHocBibleRef
+  const clearShow = () => {
+    const showingThis =
+      !!live &&
+      (item
+        ? live.sourceItemId === item.id
+        : live.kind === "bible" && live.sourceItemId === sourceItemId)
+    if (showingThis) setLive(null)
+    onClear?.()
+  }
+
   return (
     <div className="relative h-full w-full select-none bg-background">
       <div className="pointer-events-none absolute left-3 top-2 z-10 text-[10px] font-medium uppercase tracking-wider text-muted-foreground/70">
         Show
       </div>
+      {hasContent && onClear && (
+        <Button
+          size="xs"
+          variant="ghost"
+          onClick={clearShow}
+          title="Clear the Show panel (also takes it off the screen if it's showing)"
+          className="absolute right-2 top-1 z-10 text-muted-foreground hover:text-foreground"
+        >
+          <XIcon />
+          Clear
+        </Button>
+      )}
       <div className="flex h-full flex-col pt-7">
         <AnimatePresence mode="wait" initial={false}>
           {!item && !adHocBibleRef ? (
