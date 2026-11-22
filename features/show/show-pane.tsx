@@ -862,18 +862,9 @@ export function ShowPane({
     ? "Type a reference in the bible library — Enter to broadcast."
     : "Pick an item in the schedule to preview"
 
-  // Clear: empty the Show pane, and take its content off the screens
-  // if it's what is up right now (something live from elsewhere stays).
+  // Clear: empty the Show pane only. Whatever is on the screens stays
+  // up; taking it down is Esc's job.
   const hasContent = !!item || !!adHocBibleRef
-  const clearShow = () => {
-    const showingThis =
-      !!live &&
-      (item
-        ? live.sourceItemId === item.id
-        : live.kind === "bible" && live.sourceItemId === sourceItemId)
-    if (showingThis) setLive(null)
-    onClear?.()
-  }
 
   return (
     <div className="relative h-full w-full select-none bg-background">
@@ -884,8 +875,8 @@ export function ShowPane({
         <Button
           size="xs"
           variant="ghost"
-          onClick={clearShow}
-          title="Clear the Show panel (also takes it off the screen if it's showing)"
+          onClick={onClear}
+          title="Clear the Show panel (the screens keep showing; Esc clears them)"
           className="absolute right-2 top-1 z-10 text-muted-foreground hover:text-foreground"
         >
           <XIcon />
