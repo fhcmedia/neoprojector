@@ -114,6 +114,9 @@ export type AdHocBibleRef = {
   // of a 16-18 selection puts 18 live (not the first verse). Defaults
   // to verseStart when unset.
   liveVerse?: number
+  // Shift-selected: the whole range shows on screen as one slide
+  // instead of one verse at a time.
+  combined?: boolean
   // The "Scripture from Library" row this ref was appended to, when the
   // search bar / drawer pushed it live. Lets the live state correlate to
   // that schedule row so it highlights as live in the schedule.
@@ -190,7 +193,8 @@ export function ShowPane({
     adHocBibleRef?.bookLabel ?? "",
     adHocBibleRef?.chapter,
     adHocBibleRef?.verseStart,
-    adHocBibleRef?.verseEnd
+    adHocBibleRef?.verseEnd,
+    adHocBibleRef?.combined
   )
 
   const slides = adHocBibleRef ? adHocSlides.slides : itemSlides.slides
@@ -455,7 +459,7 @@ export function ShowPane({
   // range grew around it. Falls back to the range start.
   const adHocLiveVerse = adHocBibleRef?.liveVerse ?? adHocBibleRef?.verseStart
   const adHocKey = adHocBibleRef
-    ? `${adHocBibleRef.book}-${adHocBibleRef.chapter}-${adHocBibleRef.verseStart}-${adHocBibleRef.verseEnd}-${adHocLiveVerse}`
+    ? `${adHocBibleRef.book}-${adHocBibleRef.chapter}-${adHocBibleRef.verseStart}-${adHocBibleRef.verseEnd}-${adHocLiveVerse}-${adHocBibleRef.combined ? "c" : ""}`
     : null
   useEffect(() => {
     if (!adHocBibleRef) return

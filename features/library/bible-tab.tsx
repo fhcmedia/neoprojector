@@ -222,6 +222,9 @@ export function BibleTab({ search, onSubmit }: Props) {
               verseStart: nextStart,
               verseEnd: nextEnd,
               liveVerse: verse,
+              // Shift-click puts the whole selected passage on screen
+              // together; a plain click keeps one verse live at a time.
+              combined: extend && nextEnd > nextStart,
             })
           }
         }}

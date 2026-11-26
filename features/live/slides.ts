@@ -248,6 +248,49 @@ function buildBibleSlide(
   }
 }
 
+const SUPERSCRIPT = "⁰¹²³⁴⁵⁶⁷⁸⁹"
+
+function superscript(n: number): string {
+  return String(n).replace(/\d/g, (d) => SUPERSCRIPT[Number(d)])
+}
+
+// One slide holding verses start..end, each prefixed with its
+// superscript number ("¹⁶ For God so loved… ¹⁷ For God sent…").
+// Null when the primary translation has none of them.
+function buildCombinedBibleSlide(
+  book: string,
+  bookLabel: string,
+  chapter: number,
+  start: number,
+  end: number,
+  translations: { secondary: string | null; tertiary: string | null },
+  primaryData: ChapterVerse[] | undefined,
+  secondaryData: ChapterVerse[] | undefined,
+  tertiaryData: ChapterVerse[] | undefined
+): Slide | null {
+  const join = (data: ChapterVerse[] | undefined) => {
+    const parts: string[] = []
+    for (let n = start; n <= end; n++) {
+      const t = lookupVerse(data, n)
+      if (t) parts.push(`${superscript(n)} ${t}`)
+    }
+    return parts.join(" ")
+  }
+  const pText = join(primaryData)
+  if (!pText) return null
+  const caption = `${bookLabel} ${chapter}:${start}-${end}`
+  const fill: SlotFill = { primary: pText, caption }
+  if (translations.secondary) fill.secondary = join(secondaryData)
+  if (translations.tertiary) fill.tertiary = join(tertiaryData)
+  return {
+    kind: "bible",
+    caption,
+    body: pText,
+    fill,
+    bibleRef: { book, chapter, verse: start },
+  }
+}
+
 // Ad-hoc bible slides built from a typed reference (library search),
 // without a schedule item. Used when the user "goes live" straight
 // from the Bible library tab.
@@ -256,7 +299,10 @@ export function useAdHocBibleSlides(
   bookLabel: string,
   chapter: number | undefined,
   verseStart: number | undefined,
-  verseEnd: number | undefined
+  verseEnd: number | undefined,
+  // Shift-selected passage: every verse of the range on ONE slide, so
+  // the whole passage is on screen together.
+  combined = false
 ): {
   slides: Slide[]
   isLoading: boolean
@@ -287,6 +333,20 @@ export function useAdHocBibleSlides(
     (!!translations.secondary && secondary.isLoading) ||
     (!!translations.tertiary && tertiary.isLoading)
   const end = verseEnd ?? verseStart
+  if (combined && end > verseStart) {
+    const one = buildCombinedBibleSlide(
+      book!,
+      bookLabel,
+      chapter!,
+      verseStart,
+      end,
+      translations,
+      primary.data,
+      secondary.data,
+      tertiary.data
+    )
+    return { slides: one ? [one] : [], isLoading, peek: null, peekBack: null }
+  }
   const slide = buildBibleSlide(
     book!,
     bookLabel,
