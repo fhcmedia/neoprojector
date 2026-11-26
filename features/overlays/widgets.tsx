@@ -19,6 +19,7 @@ import type {
 } from "@/features/overlays/types"
 import { Input } from "@/components/input"
 import { OptionSelect } from "@/components/option-select"
+import { Slider } from "@/components/slider"
 import { Switch } from "@/components/switch"
 import { ColorPickerButton } from "@/features/templates/editor/fields"
 import { cn } from "@/lib/utils"
@@ -167,6 +168,8 @@ const countdownDef: WidgetDef<CountdownConfig> = {
 type ClockConfig = {
   hour12: boolean
   show_seconds: boolean
+  // Text size as a percent of the default (100 = fills the box height).
+  size: number
 }
 
 const ClockRenderer: WidgetDef<ClockConfig>["Renderer"] = ({
@@ -175,25 +178,18 @@ const ClockRenderer: WidgetDef<ClockConfig>["Renderer"] = ({
 }) => {
   // Clocks always tick — they don't depend on activatedAt; the
   // operator wants real wall-clock time whenever the overlay is on.
-  const now = useNow(config.show_seconds ? 1000 : 15000)
-  const d = new Date(now)
-  let h = d.getHours()
-  const m = pad(d.getMinutes())
-  const s = pad(d.getSeconds())
-  let suffix = ""
-  if (config.hour12) {
-    suffix = h >= 12 ? " PM" : " AM"
-    h = h % 12
-    if (h === 0) h = 12
-  }
-  const text = config.show_seconds
-    ? `${pad(h)}:${m}:${s}${suffix}`
-    : `${pad(h)}:${m}${suffix}`
+  const now = useAlignedNow(config.show_seconds ? 1000 : 60_000)
   const color = (style.color as string | undefined) ?? "#ffffff"
+  const text = formatClock(now, config.hour12, config.show_seconds)
+  const scale = (config.size ?? 100) / 100
   return (
     <div
-      className="flex h-full w-full items-center justify-center font-semibold leading-none tabular-nums"
-      style={{ color, fontFamily: "system-ui, sans-serif", fontSize: "70cqh" }}
+      className="flex h-full w-full items-center justify-center font-semibold leading-none whitespace-nowrap tabular-nums"
+      style={{
+        color,
+        fontFamily: "system-ui, sans-serif",
+        fontSize: fitFontSize(text, 70 * scale, 100 * scale),
+      }}
     >
       {text}
     </div>
@@ -205,7 +201,7 @@ const ClockEditor: WidgetDef<ClockConfig>["ConfigEditor"] = ({
   onChange,
 }) => {
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-3">
       <Toggle
         label="12-hour"
         checked={config.hour12}
@@ -216,6 +212,13 @@ const ClockEditor: WidgetDef<ClockConfig>["ConfigEditor"] = ({
         checked={config.show_seconds}
         onChange={(v) => onChange({ ...config, show_seconds: v })}
       />
+      <SizeField
+        label="Text size"
+        value={config.size ?? 100}
+        min={30}
+        max={140}
+        onChange={(size) => onChange({ ...config, size })}
+      />
     </div>
   )
 }
@@ -225,7 +228,7 @@ const clockDef: WidgetDef<ClockConfig> = {
   label: "Clock",
   icon: ClockIcon,
   defaultName: "Clock",
-  defaultConfig: { hour12: true, show_seconds: false },
+  defaultConfig: { hour12: true, show_seconds: false, size: 100 },
   defaultLayout: {
     x: 0.92,
     y: 0.06,
@@ -271,6 +274,12 @@ type SermonTimerConfig = {
   over_effect: AttentionEffect
   over_message: string
   backdrop: boolean
+  // Current time of day alongside the timer, e.g. "10:42 AM".
+  show_clock: boolean
+  clock_position: "above" | "below"
+  clock_hour12: boolean
+  // Clock text size as a percent of the default.
+  clock_size: number
 }
 
 type TimerPhase = "normal" | "warning" | "over"
@@ -326,6 +335,10 @@ const SermonTimerRenderer: WidgetDef<SermonTimerConfig>["Renderer"] = ({
         : formatHMS(limitMs - elapsedMs + 999)
       : formatHMS(elapsedMs)
   const showMessage = phase === "over" && !!config.over_message
+  const clock = config.show_clock ? (
+    <TimerClock hour12={config.clock_hour12} size={config.clock_size} />
+  ) : null
+  const clockAbove = config.clock_position === "above"
 
   return (
     <div
@@ -343,6 +356,7 @@ const SermonTimerRenderer: WidgetDef<SermonTimerConfig>["Renderer"] = ({
         } as React.CSSProperties
       }
     >
+      {clockAbove ? clock : null}
       {config.label ? (
         <div
           className="uppercase tracking-[0.2em] opacity-70"
@@ -357,6 +371,7 @@ const SermonTimerRenderer: WidgetDef<SermonTimerConfig>["Renderer"] = ({
       >
         {text}
       </div>
+      {clockAbove ? null : clock}
       {showMessage ? (
         <div
           className="font-semibold uppercase tracking-[0.1em]"
@@ -439,6 +454,51 @@ const SermonTimerEditor: WidgetDef<SermonTimerConfig>["ConfigEditor"] = ({
         checked={config.backdrop}
         onChange={(backdrop) => onChange({ ...config, backdrop })}
       />
+      <Toggle
+        label="Show clock"
+        checked={config.show_clock}
+        onChange={(show_clock) => onChange({ ...config, show_clock })}
+      />
+      {config.show_clock ? (
+        <>
+          <SelectField
+            label="Clock position"
+            value={config.clock_position}
+            options={[
+              { value: "below", label: "Below the timer" },
+              { value: "above", label: "Above the timer" },
+            ]}
+            onChange={(clock_position) => onChange({ ...config, clock_position })}
+          />
+          <Toggle
+            label="Clock 12-hour"
+            checked={config.clock_hour12}
+            onChange={(clock_hour12) => onChange({ ...config, clock_hour12 })}
+          />
+          <SizeField
+            label="Clock size"
+            value={config.clock_size}
+            min={50}
+            max={250}
+            onChange={(clock_size) => onChange({ ...config, clock_size })}
+          />
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+// TimerClock is its own component so it ticks on the minute even
+// while the timer itself is idle (library tiles, editor preview).
+function TimerClock({ hour12, size }: { hour12: boolean; size: number }) {
+  const now = useAlignedNow(60_000)
+  const text = formatClock(now, hour12, false)
+  return (
+    <div
+      className="font-medium leading-tight whitespace-nowrap tabular-nums opacity-80"
+      style={{ fontSize: fitFontSize(text, 0.15 * size, 0.9 * size) }}
+    >
+      {text}
     </div>
   )
 }
@@ -459,6 +519,10 @@ const sermonTimerDef: WidgetDef<SermonTimerConfig> = {
     over_effect: "flash",
     over_message: "",
     backdrop: false,
+    show_clock: false,
+    clock_position: "below",
+    clock_hour12: true,
+    clock_size: 100,
   },
   defaultLayout: {
     x: 0.92,
@@ -791,6 +855,86 @@ function useNow(intervalMs: number): number {
     return () => window.clearInterval(t)
   }, [intervalMs])
   return now
+}
+
+// useAlignedNow re-renders exactly on each stepMs boundary of the
+// computer's clock (every second, or every minute), so a clock flips
+// to the new minute the moment it changes instead of drifting behind.
+function useAlignedNow(stepMs: number): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    let t = 0
+    const schedule = () => {
+      const n = Date.now()
+      t = window.setTimeout(tick, stepMs - (n % stepMs) + 5)
+    }
+    const tick = () => {
+      setNow(Date.now())
+      schedule()
+    }
+    setNow(Date.now())
+    schedule()
+    // Timers are throttled in background windows; resync on return.
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return
+      window.clearTimeout(t)
+      tick()
+    }
+    document.addEventListener("visibilitychange", onVisible)
+    return () => {
+      window.clearTimeout(t)
+      document.removeEventListener("visibilitychange", onVisible)
+    }
+  }, [stepMs])
+  return now
+}
+
+function formatClock(ms: number, hour12: boolean, seconds: boolean): string {
+  const d = new Date(ms)
+  let h = d.getHours()
+  let suffix = ""
+  if (hour12) {
+    suffix = h >= 12 ? " PM" : " AM"
+    h = h % 12 || 12
+  }
+  const hh = hour12 ? String(h) : pad(h)
+  const base = `${hh}:${pad(d.getMinutes())}`
+  return (seconds ? `${base}:${pad(d.getSeconds())}` : base) + suffix
+}
+
+// fitFontSize sizes text to `heightPct` of the box height, shrinking
+// to `widthPct` of the box width when the string would overflow it.
+// ~0.6em per character is a safe width for tabular digits plus AM/PM.
+function fitFontSize(text: string, heightPct: number, widthPct: number): string {
+  return `min(${heightPct}cqh, ${widthPct / (text.length * 0.6)}cqw)`
+}
+
+// SizeField: percent slider for text size, 100 = the widget default.
+function SizeField({
+  label,
+  value,
+  min,
+  max,
+  onChange,
+}: {
+  label: string
+  value: number
+  min: number
+  max: number
+  onChange: (v: number) => void
+}) {
+  return (
+    <Field label={`${label} · ${value}%`}>
+      <Slider
+        value={[value]}
+        min={min}
+        max={max}
+        step={5}
+        onValueChange={(v) => onChange(v[0])}
+        className="py-1.5"
+      />
+    </Field>
+  )
 }
 
 // DurationField: integer minutes + seconds input pair. The user
