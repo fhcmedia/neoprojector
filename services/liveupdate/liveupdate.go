@@ -27,7 +27,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"time"
 
@@ -115,11 +114,10 @@ func New(version string, disp *displays.Service, handoffPath string) *Service {
 
 func (*Service) ServiceName() string { return "liveupdate" }
 
-// Supported: instant updates need an installed release build on
-// Windows or Linux (dev builds don't update; the macOS bundle updates
-// at launch only).
+// Supported: instant updates need an installed release build (dev
+// builds don't update).
 func (s *Service) Supported(context.Context) bool {
-	return s.version != "0.0.0-dev" && runtime.GOOS != "darwin"
+	return s.version != "0.0.0-dev"
 }
 
 func (s *Service) Enabled(context.Context) bool {

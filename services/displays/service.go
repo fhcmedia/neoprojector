@@ -500,7 +500,7 @@ func RestoreHandoff(s *Service, h Handoff) {
 	defer s.mu.Unlock()
 	s.lastSlot = h.Payload
 	s.bypassDisplayCheck = h.Bypass
-	s.instant = h.Live && runtime.GOOS == "windows"
+	s.instant = h.Live && (runtime.GOOS == "windows" || runtime.GOOS == "darwin")
 }
 
 // OutputsPending is how many output windows are still hidden or
@@ -620,7 +620,9 @@ func (s *Service) StartLive(ctx context.Context) error {
 			BackgroundColour:           application.RGBA{Red: 0, Green: 0, Blue: 0, Alpha: 255},
 			DisableResize:              true,
 			// Windows: start hidden and topmost; revealOutput shows it.
-			Hidden:      runtime.GOOS == "windows",
+			// macOS instant update: start hidden so it can be made
+			// see-through before its first frame (see below).
+			Hidden:      runtime.GOOS == "windows" || (macInstant && instant),
 			AlwaysOnTop: runtime.GOOS == "windows",
 			// Windows 11's DWM draws a 1px grey border around every
 			// top-level window, which shows as a frame on the projector.
@@ -671,6 +673,18 @@ func (s *Service) StartLive(ctx context.Context) error {
 			// Fallback in case the ready event never arrives (page
 			// error, throttled webview): never leave the audience dark.
 			time.AfterFunc(outputRevealTimeout, func() { s.revealOutput(name) })
+		} else if macInstant && instant {
+			// Instant update on macOS: come up see-through and on top
+			// of the old version's window, which keeps the audience's
+			// picture until this one has painted (see unveil).
+			name := win.Name()
+			s.mu.Lock()
+			s.unveiling[name] = win
+			s.mu.Unlock()
+			application.InvokeSync(func() { setWindowAlpha(win, 0) })
+			win.SetAlwaysOnTop(true)
+			win.Show()
+			time.AfterFunc(unveilTimeout, func() { s.unveil(name) })
 		}
 		log.Info("StartLive: window placed",
 			"display", d.Name,
@@ -711,6 +725,10 @@ func (s *Service) StartLive(ctx context.Context) error {
 	s.refreshAudio(ctx)
 	return nil
 }
+
+// macInstant: instant updates on macOS open output windows see-through
+// over the old version's, as Windows does via revealOutput.
+const macInstant = runtime.GOOS == "darwin"
 
 // outputRevealTimeout bounds how long a hidden output window waits
 // for its "output:ready" event before revealOutput shows it anyway.
@@ -784,6 +802,11 @@ func (s *Service) unveil(name string) {
 		return
 	}
 	application.InvokeSync(func() { setWindowAlpha(win, 255) })
+	if macInstant {
+		// Output windows on macOS sit at the normal level; the old
+		// version's are gone once every screen has painted.
+		win.SetAlwaysOnTop(false)
+	}
 	log.Info("instant update: output window unveiled", "window", name)
 }
 

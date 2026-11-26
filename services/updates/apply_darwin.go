@@ -3,7 +3,6 @@
 package updates
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -22,32 +21,60 @@ import (
 // rename fails — the error propagates and the splash continues on the
 // current version.
 func swapAndRelaunch(archive string) error {
-	exe, err := os.Executable()
+	bundle, err := swapBundle(archive)
 	if err != nil {
 		return err
 	}
+	// The swap is done — from here even a relaunch failure leaves a
+	// valid new install on disk; the running (old) process just keeps
+	// going for this session.
+	if err := exec.Command("open", "-n", bundle).Run(); err != nil {
+		return fmt.Errorf("updated, but relaunch failed: %w", err)
+	}
+	os.Exit(0)
+	return nil
+}
+
+// Swap installs the bundle inside the downloaded zip in place of the
+// running one without relaunching; the running process carries on as
+// the old version until it exits. The executable path stays the same,
+// so os.Executable() now starts the new version (instant updates).
+func Swap(archive string) error {
+	_, err := swapBundle(archive)
+	return err
+}
+
+// swapBundle replaces the running .app bundle with the one inside the
+// zip and returns the bundle path.
+func swapBundle(archive string) (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
 	exe, err = filepath.EvalSymlinks(exe)
 	if err != nil {
-		return err
+		return "", err
 	}
 	// …/NeoProjector.app/Contents/MacOS/neoprojector → bundle root
 	bundle := filepath.Dir(filepath.Dir(filepath.Dir(exe)))
 	if !strings.HasSuffix(bundle, ".app") {
-		return fmt.Errorf("not running from an .app bundle: %s", exe)
+		return "", fmt.Errorf("not running from an .app bundle: %s", exe)
 	}
 
 	staging, err := os.MkdirTemp(filepath.Dir(bundle), ".neoprojector-update-")
 	if err != nil {
-		return fmt.Errorf("staging dir: %w", err)
+		return "", fmt.Errorf("staging dir: %w", err)
 	}
+	// Deleting the old bundle under a running binary is fine on macOS:
+	// the process keeps its mapped executable.
 	defer os.RemoveAll(staging)
 
 	if out, err := exec.Command("ditto", "-x", "-k", archive, staging).CombinedOutput(); err != nil {
-		return fmt.Errorf("extract: %w: %s", err, out)
+		return "", fmt.Errorf("extract: %w: %s", err, out)
 	}
 	entries, err := os.ReadDir(staging)
 	if err != nil {
-		return err
+		return "", err
 	}
 	var newBundle string
 	for _, e := range entries {
@@ -57,34 +84,19 @@ func swapAndRelaunch(archive string) error {
 		}
 	}
 	if newBundle == "" {
-		return fmt.Errorf("archive contains no .app bundle")
+		return "", fmt.Errorf("archive contains no .app bundle")
 	}
 
 	previous := filepath.Join(staging, "previous.app")
 	if err := os.Rename(bundle, previous); err != nil {
-		return fmt.Errorf("move current bundle aside: %w", err)
+		return "", fmt.Errorf("move current bundle aside: %w", err)
 	}
 	if err := os.Rename(newBundle, bundle); err != nil {
 		// Put the old bundle back so the install stays launchable.
 		if rerr := os.Rename(previous, bundle); rerr != nil {
-			return fmt.Errorf("install new bundle: %w (restore also failed: %v)", err, rerr)
+			return "", fmt.Errorf("install new bundle: %w (restore also failed: %v)", err, rerr)
 		}
-		return fmt.Errorf("install new bundle: %w", err)
+		return "", fmt.Errorf("install new bundle: %w", err)
 	}
-
-	// The swap is done — from here even a relaunch failure leaves a
-	// valid new install on disk; the running (old) process just keeps
-	// going for this session.
-	if err := exec.Command("open", "-n", bundle).Run(); err != nil {
-		return fmt.Errorf("updated, but relaunch failed: %w", err)
-	}
-	os.RemoveAll(staging) // deleting the old bundle under a running binary is fine on macOS
-	os.Exit(0)
-	return nil
-}
-
-// Swap is the in-place swap instant updates use. Not supported for the
-// macOS bundle: those installs update at launch only.
-func Swap(string) error {
-	return errors.New("instant updates are not supported on macOS")
+	return bundle, nil
 }
